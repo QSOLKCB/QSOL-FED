@@ -4,7 +4,7 @@ QSOL-FED is being built **protocol first, parliament later**. Each phase has an 
 
 ## Phase 0 — Constitutional bootstrap
 
-**Status: PR #1**
+**Status: complete; claim gate enforced in code and CI.**
 
 - [x] Define QSOL-FED as a sovereign federation protocol, not a NEXUS mode.
 - [x] Preserve QSOL-NEXUS as the Council of Minds.
@@ -18,10 +18,16 @@ QSOL-FED is being built **protocol first, parliament later**. Each phase has an 
 - [x] Add constitution drift validator and CI.
 - [x] Add bootstrap envelope/node-manifest schemas.
 - [x] Explicitly forbid arbitrary remote execution in v1.
+- [x] Add canonical Phase 0 release-claim manifest.
+- [x] Hard-code Phase 0 capability claims in Rust.
+- [x] Add release-claim drift validator and CI gate.
+- [x] Make production networking, cryptographic identity, remote execution and interoperable federation hard-false claims for Phase 0.
 
 ### Phase 0 gate
 
-No production networking claim. No cryptographic identity claim. No remote execution. The repository may claim only that the constitutional model, machine contracts and executable fail-closed admission skeleton exist and are tested.
+No production networking claim. No cryptographic identity claim. No remote execution. No interoperable federation claim. The repository may claim only that the constitutional model, machine contracts and executable fail-closed admission skeleton exist and are tested.
+
+This gate is executable. `claims/phase0.json`, `src/claims.rs`, Rust tests and `tools/validate_phase0_gate.py` must agree. The gate is not runtime configuration and cannot be promoted by peer input, model output, environment variables or API parameters.
 
 ---
 
