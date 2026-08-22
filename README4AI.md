@@ -4,12 +4,22 @@
   "protocol": "qsol-fed/0",
   "charter": "qsol-fed-charter/1",
   "prime_directive": "qsol-fed-prime-directive/1",
-  "status": "bootstrap",
-  "claim_boundary": "constitutional admission logic and protocol data structures exist; production networking, cryptographic verification and interoperable federation are not yet claimed",
+  "status": "phase0_gate_enforced",
+  "claim_boundary": "Only the constitutional model, machine contracts, fail-closed admission skeleton, and tested constitutional core are established. Production networking, cryptographic identity, remote execution, and interoperable federation are not established.",
+  "phase0_claims": {
+    "constitutional_model": true,
+    "machine_contracts": true,
+    "fail_closed_admission_skeleton": true,
+    "tested_constitutional_core": true,
+    "production_networking": false,
+    "cryptographic_identity": false,
+    "remote_execution": false,
+    "interoperable_federation": false
+  },
   "core": {
     "kind": "sovereign federation protocol",
     "reference_implementation_language": "rust",
-    "api_role": "reference transport surface, not constitutional authority",
+    "api_role": "planned reference transport surface, not constitutional authority",
     "nexus_role": "reference Council of Minds and possible member service, not federation sovereign",
     "global_truth": false,
     "central_authority": false,
@@ -17,9 +27,11 @@
     "remote_execution_v1": false
   },
   "normative_precedence": [
-    "src/invariants.rs",
-    "tests_and_ci",
     "invariants/fed-v1.json",
+    "src/invariants.rs",
+    "claims/phase0.json",
+    "src/claims.rs",
+    "tests_and_ci",
     "CHARTER.md",
     "PRIME_DIRECTIVE.md",
     "PROTOCOL.md",
@@ -28,6 +40,13 @@
     "README.md",
     "ROADMAP.md"
   ],
+  "claim_precedence": [
+    "claims/phase0.json",
+    "src/claims.rs",
+    "README4AI.md.phase0_claims",
+    "README.md.phase0_claim_gate"
+  ],
+  "claim_disagreement_policy": "fail_closed",
   "authority_invariants": [
     "peering_is_not_trust",
     "import_is_not_authority",
@@ -46,13 +65,16 @@
     "remote_citizenship_mutation_forbidden",
     "remote_arbitrary_execution_forbidden",
     "remote_local_authority_claim_forbidden",
-    "secrets_in_semantic_state_forbidden"
+    "secrets_in_semantic_state_forbidden",
+    "runtime_constitution_override_forbidden",
+    "unknown_authority_action_rejected"
   ],
   "hardening": {
     "runtime_override_of_constitution": false,
     "environment_override_of_constitution": false,
     "peer_override_of_constitution": false,
     "model_override_of_constitution": false,
+    "runtime_override_of_phase0_claim_gate": false,
     "unknown_authority_action_policy": "reject",
     "foreign_semantic_material_default": "data_only",
     "foreign_state_default": "quarantine_or_reject_until_local_admission"
@@ -102,6 +124,9 @@
     "roadmap": "ROADMAP.md",
     "machine_invariants": "invariants/fed-v1.json",
     "rust_invariants": "src/invariants.rs",
-    "constitution_validator": "tools/validate_constitution.py"
+    "phase0_claims": "claims/phase0.json",
+    "rust_claims": "src/claims.rs",
+    "constitution_validator": "tools/validate_constitution.py",
+    "phase0_claim_validator": "tools/validate_phase0_gate.py"
   }
 }

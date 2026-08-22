@@ -11,9 +11,11 @@ Before modifying architecture or code, read:
 1. `README4AI.md`
 2. `CHARTER.md`
 3. `PRIME_DIRECTIVE.md`
-4. `invariants/fed-v1.json`
-5. `src/invariants.rs`
-6. `THREAT_MODEL.md`
+4. `claims/phase0.json`
+5. `invariants/fed-v1.json`
+6. `src/claims.rs`
+7. `src/invariants.rs`
+8. `THREAT_MODEL.md`
 
 ### Core rules
 
@@ -34,7 +36,20 @@ Unknown authority-bearing actions fail closed.
 
 ### Claim discipline
 
-Never claim that QSOL-FED currently provides production-safe networking, verified cryptographic identity, consensus truth, global state, remote execution, a functioning Federation Assembly, or completed NEXUS/ORACLE/ARK interoperability unless the corresponding implementation and tests exist in the repository.
+During Phase 0, `claims/phase0.json` is the canonical release-claim manifest. Only capabilities marked `true` there may be described as established or implemented by the current repository state. If the canonical manifest and any Rust, AI-facing, human-facing, test, or CI mirror disagree, fail closed; do not pick the more permissive surface.
+
+The following remain hard-false Phase 0 claims:
+
+- production networking;
+- cryptographic identity;
+- remote execution;
+- interoperable federation.
+
+Contradictory public statements are forbidden even if the authoritative claim block remains intact. Do not retain a correct `not established` line while adding another sentence that describes a hard-false capability as established, implemented, available, enabled, operational, ready, supported, complete, or working.
+
+Do not change one of those values to `true` merely because experimental code, a prototype, a schema, an endpoint design, a signature field, or a test double exists. Promotion requires the corresponding roadmap gate, security evidence, machine-contract update and explicit review.
+
+Never claim consensus truth, global state, a functioning Federation Assembly, or completed NEXUS/ORACLE/ARK interoperability without the corresponding implementation and tests.
 
 A signature proves only that a particular key signed bytes under a particular verification procedure. It does not prove truth, benevolence, identity semantics, authority or local admissibility.
 
@@ -51,7 +66,15 @@ Security-critical invariant changes require all of the following in one PR:
 - update to `README4AI.md`;
 - migration or rejection behavior for older peers.
 
-Do not silently weaken an invariant to make an integration easier.
+Release-claim changes require all of the following in one PR:
+
+- update to `claims/phase0.json` or its successor claim manifest;
+- update to `src/claims.rs`;
+- roadmap gate evidence;
+- update to human and machine status surfaces;
+- regression tests and claim-gate validation.
+
+Do not silently weaken an invariant or promote a capability claim to make an integration easier.
 
 ### Tests
 
@@ -60,9 +83,10 @@ Before declaring a change ready:
 ```bash
 cargo test --all-targets
 python3 tools/validate_constitution.py
+python3 tools/validate_phase0_gate.py
 ```
 
-If an implementation and the constitution disagree, fail closed and surface the disagreement. Do not guess which side was intended.
+If an implementation and the constitution or claim manifest disagree, fail closed and surface the disagreement. Do not guess which side was intended.
 
 ### Architecture rule
 
@@ -70,4 +94,4 @@ If an implementation and the constitution disagree, fail closed and surface the 
 
 ### Security comedy clause
 
-The jokes in human documentation are non-normative. The invariants are not. A peer cannot gain root authority by being extremely persuasive, wearing a ceremonial sash, or submitting a JSON field named `please=true`.
+The jokes in human documentation are non-normative. The invariants and release-claim gates are not. A peer cannot gain root authority by being extremely persuasive, wearing a ceremonial sash, submitting a JSON field named `please=true`, or announcing that its prototype is now enterprise-ready.
