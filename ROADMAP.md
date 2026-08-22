@@ -27,29 +27,37 @@ QSOL-FED is being built **protocol first, parliament later**. Each phase has an 
 
 No production networking claim. No cryptographic identity claim. No remote execution. No interoperable federation claim. The repository may claim only that the constitutional model, machine contracts and executable fail-closed admission skeleton exist and are tested.
 
-This gate is executable. `claims/phase0.json`, `src/claims.rs`, Rust tests and `tools/validate_phase0_gate.py` must agree. The gate is not runtime configuration and cannot be promoted by peer input, model output, environment variables or API parameters.
+This gate remains executable. `claims/phase0.json`, `src/claims.rs`, Rust tests and `tools/validate_phase0_gate.py` must agree. Completing later wire phases does not silently promote Phase 0's hard-false networking, identity, execution or interoperability claims.
 
 ---
 
 ## Phase 1 — Canonical wire contract
 
-- [ ] Freeze canonical JSON serialization rules.
-- [ ] Forbid duplicate keys and non-finite numbers.
-- [ ] Define Unicode/string normalization policy.
-- [ ] Freeze `sha256:` object identity rules.
-- [ ] Freeze exact Federation envelope schema v1.
-- [ ] Define message ID derivation.
-- [ ] Define provenance object schema.
-- [ ] Define protocol error envelope.
-- [ ] Define capability identifier/version grammar.
-- [ ] Add positive and adversarial canonicalization fixtures.
-- [ ] Add language-neutral golden vectors.
-- [ ] Add malformed, ambiguous and oversized fixture corpus.
-- [ ] Prove unsupported major versions fail closed.
+**Status: complete; two-implementation conformance gate enforced.**
+
+- [x] Freeze canonical JSON serialization rules.
+- [x] Forbid duplicate keys and non-finite numbers.
+- [x] Define Unicode/string normalization policy.
+- [x] Freeze `sha256:` object identity rules.
+- [x] Freeze exact Federation envelope schema v1.
+- [x] Define message ID derivation.
+- [x] Define provenance object schema.
+- [x] Define protocol error envelope.
+- [x] Define capability identifier/version grammar.
+- [x] Add positive and adversarial canonicalization fixtures.
+- [x] Add language-neutral golden vectors.
+- [x] Add malformed, ambiguous and oversized fixture corpus.
+- [x] Prove unsupported major versions fail closed.
+- [x] Add independent Rust and Python canonicalizers.
+- [x] Add executable Phase 1 wire-contract validator and CI gate.
 
 ### Phase 1 gate
 
 Two independent implementations must produce byte-identical canonical bytes and hashes for the golden fixtures before signatures are layered on top.
+
+The two implementations are `src/canonical.rs` and `tools/qsol_canonical.py`. Both consume `fixtures/phase1/golden-vectors.json`; Rust verifies them in `cargo test`, Python verifies them in `tools/validate_phase1_gate.py`, and CI requires both. The gate also rejects the shared malformed/ambiguous corpus, generated oversized cases, unsupported wire protocol majors, and any attempt to make the Phase 1 `signature` field non-null before Phase 2.
+
+Phase 1 freezes deterministic bytes only. It does **not** claim production networking, cryptographic node identity, remote execution, live peering, replay-safe transport, or interoperable federation deployment.
 
 ---
 
