@@ -200,6 +200,59 @@ pub fn parse_canonical_value(raw: &[u8]) -> Result<CanonicalValue, CanonicalErro
     Ok(value)
 }
 
+fn normalize_constructed(
+    value: &CanonicalValue,
+    depth: usize,
+) -> Result<CanonicalValue, CanonicalError> {
+    if depth > MAX_DEPTH {
+        return Err(CanonicalError("max_depth_exceeded".into()));
+    }
+    match value {
+        CanonicalValue::Null => Ok(CanonicalValue::Null),
+        CanonicalValue::Bool(value) => Ok(CanonicalValue::Bool(*value)),
+        CanonicalValue::Integer(value) => {
+            if !(SAFE_INTEGER_MIN..=SAFE_INTEGER_MAX).contains(value) {
+                return Err(CanonicalError("integer_out_of_range".into()));
+            }
+            Ok(CanonicalValue::Integer(*value))
+        }
+        CanonicalValue::String(value) => {
+            let normalized: String = value.nfc().collect();
+            if normalized.len() > MAX_STRING_UTF8 {
+                return Err(CanonicalError("string_too_large".into()));
+            }
+            Ok(CanonicalValue::String(normalized))
+        }
+        CanonicalValue::Array(values) => {
+            if values.len() > MAX_ARRAY_ITEMS {
+                return Err(CanonicalError("too_many_array_items".into()));
+            }
+            let normalized = values
+                .iter()
+                .map(|value| normalize_constructed(value, depth + 1))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(CanonicalValue::Array(normalized))
+        }
+        CanonicalValue::Object(values) => {
+            if values.len() > MAX_OBJECT_MEMBERS {
+                return Err(CanonicalError("too_many_object_members".into()));
+            }
+            let mut normalized = BTreeMap::new();
+            for (raw_key, value) in values {
+                let key: String = raw_key.nfc().collect();
+                if key.len() > MAX_STRING_UTF8 {
+                    return Err(CanonicalError("string_too_large".into()));
+                }
+                if normalized.contains_key(&key) {
+                    return Err(CanonicalError("normalized_duplicate_key".into()));
+                }
+                normalized.insert(key, normalize_constructed(value, depth + 1)?);
+            }
+            Ok(CanonicalValue::Object(normalized))
+        }
+    }
+}
+
 fn escape_string(value: &str, output: &mut String) {
     output.push('"');
     for character in value.chars() {
@@ -220,10 +273,14 @@ fn escape_string(value: &str, output: &mut String) {
     output.push('"');
 }
 
-pub fn serialize_canonical(value: &CanonicalValue) -> String {
+pub fn serialize_canonical(value: &CanonicalValue) -> Result<String, CanonicalError> {
+    let normalized = normalize_constructed(value, 1)?;
     let mut output = String::new();
-    serialize_into(value, &mut output);
-    output
+    serialize_into(&normalized, &mut output);
+    if output.len() > MAX_INPUT_BYTES {
+        return Err(CanonicalError("output_too_large".into()));
+    }
+    Ok(output)
 }
 
 fn serialize_into(value: &CanonicalValue, output: &mut String) {
@@ -261,7 +318,7 @@ fn serialize_into(value: &CanonicalValue, output: &mut String) {
 }
 
 pub fn canonicalize(raw: &[u8]) -> Result<Vec<u8>, CanonicalError> {
-    Ok(serialize_canonical(&parse_canonical_value(raw)?).into_bytes())
+    Ok(serialize_canonical(&parse_canonical_value(raw)?)?.into_bytes())
 }
 
 fn lowercase_hex(bytes: &[u8]) -> String {
@@ -289,7 +346,7 @@ pub fn derive_message_id(raw_envelope: &[u8]) -> Result<String, CanonicalError> 
     if object.remove("message_id").is_none() || object.remove("signature").is_none() {
         return Err(CanonicalError("envelope_projection_fields_missing".into()));
     }
-    let projection = serialize_canonical(&CanonicalValue::Object(object));
+    let projection = serialize_canonical(&CanonicalValue::Object(object))?;
     let mut preimage = Vec::with_capacity(MESSAGE_ID_DOMAIN.len() + projection.len());
     preimage.extend_from_slice(MESSAGE_ID_DOMAIN);
     preimage.extend_from_slice(projection.as_bytes());
@@ -360,5 +417,31 @@ mod tests {
 
         let oversized_input = format!("\"{}\"", "a".repeat(MAX_INPUT_BYTES));
         assert!(canonicalize(oversized_input.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn manually_constructed_values_are_validated_before_serialization() {
+        assert!(serialize_canonical(&CanonicalValue::Integer(SAFE_INTEGER_MAX + 1)).is_err());
+        assert!(serialize_canonical(&CanonicalValue::Array(vec![
+            CanonicalValue::Null;
+            MAX_ARRAY_ITEMS + 1
+        ]))
+        .is_err());
+        assert!(serialize_canonical(&CanonicalValue::String("a".repeat(MAX_STRING_UTF8 + 1))).is_err());
+
+        let decomposed = CanonicalValue::String("e\u{301}".to_string());
+        assert_eq!(serialize_canonical(&decomposed).unwrap(), "\"é\"");
+
+        let mut collision = BTreeMap::new();
+        collision.insert("é".to_string(), CanonicalValue::Integer(1));
+        collision.insert("e\u{301}".to_string(), CanonicalValue::Integer(2));
+        assert!(serialize_canonical(&CanonicalValue::Object(collision)).is_err());
+
+        let wide = CanonicalValue::Array(
+            (0..MAX_ARRAY_ITEMS)
+                .map(|_| CanonicalValue::String("x".repeat(128)))
+                .collect(),
+        );
+        assert!(serialize_canonical(&wide).is_err());
     }
 }
