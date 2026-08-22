@@ -36,7 +36,7 @@ Unknown authority-bearing actions fail closed.
 
 ### Claim discipline
 
-During Phase 0, `claims/phase0.json` is the canonical release-claim manifest. Only capabilities marked `true` there may be described as established or implemented by the current repository state.
+During Phase 0, `claims/phase0.json` is the canonical release-claim manifest. Only capabilities marked `true` there may be described as established or implemented by the current repository state. If the canonical manifest and any Rust, AI-facing, human-facing, test, or CI mirror disagree, fail closed; do not pick the more permissive surface.
 
 The following remain hard-false Phase 0 claims:
 
@@ -44,6 +44,8 @@ The following remain hard-false Phase 0 claims:
 - cryptographic identity;
 - remote execution;
 - interoperable federation.
+
+Contradictory public statements are forbidden even if the authoritative claim block remains intact. Do not retain a correct `not established` line while adding another sentence that describes a hard-false capability as established, implemented, available, enabled, operational, ready, supported, complete, or working.
 
 Do not change one of those values to `true` merely because experimental code, a prototype, a schema, an endpoint design, a signature field, or a test double exists. Promotion requires the corresponding roadmap gate, security evidence, machine-contract update and explicit review.
 
