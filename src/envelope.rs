@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::invariants::PROTOCOL_ID;
 
@@ -37,6 +37,19 @@ pub enum MessageClass {
     Publication,
 }
 
+/// Deserialize an explicitly present nullable string.
+///
+/// `Option<T>` fields normally treat an omitted key as `None`. The Federation
+/// schema deliberately distinguishes omission from an explicit JSON `null`, so
+/// applying this deserializer without `#[serde(default)]` makes absence an error
+/// while preserving `null -> None`.
+fn deserialize_required_nullable<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FederationEnvelope {
@@ -46,10 +59,13 @@ pub struct FederationEnvelope {
     pub recipient: String,
     pub message_class: MessageClass,
     pub payload_ref: String,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
     pub provenance_ref: Option<String>,
     pub issued_at: String,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
     pub expires_at: Option<String>,
     pub authority_claim: AuthorityClaim,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
     pub signature: Option<String>,
 }
 
@@ -94,6 +110,24 @@ mod tests {
         assert!(envelope.has_bootstrap_protocol());
         assert_eq!(envelope.authority_claim, AuthorityClaim::None);
         assert_eq!(envelope.message_class, MessageClass::CouncilReport);
+        assert_eq!(envelope.provenance_ref, None);
+        assert_eq!(envelope.expires_at, None);
+        assert_eq!(envelope.signature, None);
+    }
+
+    #[test]
+    fn schema_required_nullable_fields_must_be_present() {
+        for field in ["provenance_ref", "expires_at", "signature"] {
+            let mut value: serde_json::Value =
+                serde_json::from_str(sample_envelope_json()).unwrap();
+            value.as_object_mut().unwrap().remove(field);
+            let omitted = serde_json::to_string(&value).unwrap();
+
+            assert!(
+                serde_json::from_str::<FederationEnvelope>(&omitted).is_err(),
+                "omitted required nullable field unexpectedly accepted: {field}"
+            );
+        }
     }
 
     #[test]
