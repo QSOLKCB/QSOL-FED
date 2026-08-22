@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qsol.example/schemas/node-identity-v1.schema.json",
+  "title": "QSOL-FED Node Identity v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "node_id", "algorithm", "root_key_id", "root_public_key", "operational_key_id", "operational_public_key", "created_at", "root_signature"],
+  "properties": {
+    "schema": {"const": "qsol-fed-node-identity/1"},
+    "node_id": {"type": "string", "pattern": "^fed:qsol:[0-9a-f]{64}$"},
+    "algorithm": {"const": "ed25519"},
+    "root_key_id": {"type": "string", "pattern": "^ed25519:[0-9a-f]{64}$"},
+    "root_public_key": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "operational_key_id": {"type": "string", "pattern": "^ed25519:[0-9a-f]{64}$"},
+    "operational_public_key": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "created_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+    "root_signature": {"type": "string", "pattern": "^[0-9a-f]{128}$"}
+  }
+}
