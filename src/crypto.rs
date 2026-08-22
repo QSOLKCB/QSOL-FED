@@ -3,7 +3,7 @@ use std::fmt;
 
 use chrono::DateTime;
 use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::canonical::{canonicalize, derive_message_id};
@@ -108,18 +108,29 @@ impl LocalSigningKey {
     }
 }
 
+fn deserialize_required_nullable<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer)
+}
+
 fn lowercase_hex(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
     let mut out = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
-        use std::fmt::Write as _;
         let _ = write!(out, "{byte:02x}");
     }
     out
 }
 
 fn decode_fixed_hex<const N: usize>(value: &str) -> Result<[u8; N], CryptoError> {
-    if value.len() != N * 2 || !value.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) {
-        return Err(CryptoError(format!("expected_{}_byte_lowercase_hex", N)));
+    if value.len() != N * 2
+        || !value
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+    {
+        return Err(CryptoError(format!("expected_{N}_byte_lowercase_hex")));
     }
     let mut out = [0u8; N];
     for (index, slot) in out.iter_mut().enumerate() {
@@ -148,7 +159,10 @@ pub fn derive_key_id(public_key_hex: &str) -> Result<String, CryptoError> {
 
 pub fn derive_node_id(root_public_key_hex: &str) -> Result<String, CryptoError> {
     let public_key = decode_fixed_hex::<32>(root_public_key_hex)?;
-    Ok(format!("fed:qsol:{}", sha256_hex(NODE_ID_DOMAIN, &public_key)))
+    Ok(format!(
+        "fed:qsol:{}",
+        sha256_hex(NODE_ID_DOMAIN, &public_key)
+    ))
 }
 
 fn verify_signature(
@@ -194,7 +208,11 @@ pub const DEFAULT_CLOCK_POLICY: ClockPolicy = ClockPolicy {
 };
 
 impl ClockPolicy {
-    pub fn validate_envelope(&self, envelope: &FederationEnvelope, now_unix: i64) -> Result<(), CryptoError> {
+    pub fn validate_envelope(
+        &self,
+        envelope: &FederationEnvelope,
+        now_unix: i64,
+    ) -> Result<(), CryptoError> {
         let issued = parse_timestamp(&envelope.issued_at)?;
         let expires_text = envelope
             .expires_at
@@ -262,6 +280,9 @@ pub fn create_identity_document(
     created_at: &str,
 ) -> Result<NodeIdentityDocument, CryptoError> {
     parse_timestamp(created_at)?;
+    if root.key_id() == operational.key_id() {
+        return Err(CryptoError("root_and_operational_keys_must_be_distinct".into()));
+    }
     let root_public_key = root.public_key_hex();
     let operational_public_key = operational.public_key_hex();
     let mut document = NodeIdentityDocument {
@@ -275,12 +296,14 @@ pub fn create_identity_document(
         created_at: created_at.into(),
         root_signature: String::new(),
     };
-    document.root_signature = root.sign_domain(NODE_IDENTITY_DOMAIN, &identity_payload(&document)?);
+    document.root_signature =
+        root.sign_domain(NODE_IDENTITY_DOMAIN, &identity_payload(&document)?);
     Ok(document)
 }
 
 pub fn verify_identity_document(document: &NodeIdentityDocument) -> Result<bool, CryptoError> {
     if document.schema != NODE_IDENTITY_SCHEMA_V1
+        || document.root_key_id == document.operational_key_id
         || document.node_id != derive_node_id(&document.root_public_key)?
         || document.root_key_id != derive_key_id(&document.root_public_key)?
         || document.operational_key_id != derive_key_id(&document.operational_public_key)?
@@ -316,6 +339,7 @@ pub struct KeyRotationRecord {
     pub next_public_key: String,
     pub not_before: String,
     pub overlap_until: String,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
     pub previous_signature: Option<String>,
     pub next_signature: String,
     pub root_signature: String,
@@ -404,7 +428,8 @@ fn key_status_payload(record: &KeyStatusRecord) -> Result<Vec<u8>, CryptoError> 
     })
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum OperationalKeyStatus {
     Active,
     Revoked,
@@ -459,6 +484,21 @@ impl IdentityState {
         self.operational_keys.get(key_id)
     }
 
+    fn ensure_no_other_overlap(
+        &self,
+        current_key_id: &str,
+        not_before: i64,
+    ) -> Result<(), CryptoError> {
+        if self.operational_keys.values().any(|key| {
+            key.key_id != current_key_id
+                && key.status == OperationalKeyStatus::Active
+                && key.valid_until.is_some_and(|until| until > not_before)
+        }) {
+            return Err(CryptoError("overlapping_key_transitions_forbidden".into()));
+        }
+        Ok(())
+    }
+
     pub fn create_transition_rotation(
         &self,
         root: &LocalSigningKey,
@@ -470,6 +510,17 @@ impl IdentityState {
         if root.key_id() != self.root_key_id || previous.key_id() != self.current_key_id {
             return Err(CryptoError("rotation_signing_key_mismatch".into()));
         }
+        if next.key_id() == self.root_key_id || next.key_id() == self.current_key_id {
+            return Err(CryptoError("rotation_next_key_role_invalid".into()));
+        }
+        let not_before_unix = parse_timestamp(not_before)?;
+        let overlap_until_unix = parse_timestamp(overlap_until)?;
+        if overlap_until_unix < not_before_unix
+            || overlap_until_unix - not_before_unix > MAX_ROTATION_OVERLAP_SECONDS
+        {
+            return Err(CryptoError("rotation_overlap_invalid".into()));
+        }
+        self.ensure_no_other_overlap(&self.current_key_id, not_before_unix)?;
         let mut record = KeyRotationRecord {
             schema: KEY_ROTATION_SCHEMA_V1.into(),
             node_id: self.node_id.clone(),
@@ -501,13 +552,23 @@ impl IdentityState {
         if root.key_id() != self.root_key_id {
             return Err(CryptoError("root_key_mismatch".into()));
         }
+        if next.key_id() == self.root_key_id || next.key_id() == self.current_key_id {
+            return Err(CryptoError("rotation_next_key_role_invalid".into()));
+        }
         let previous = self
             .operational_keys
             .get(&self.current_key_id)
             .ok_or_else(|| CryptoError("current_operational_key_missing".into()))?;
-        if !matches!(previous.status, OperationalKeyStatus::Revoked | OperationalKeyStatus::Compromised) {
-            return Err(CryptoError("recovery_requires_revoked_or_compromised_key".into()));
+        if !matches!(
+            previous.status,
+            OperationalKeyStatus::Revoked | OperationalKeyStatus::Compromised
+        ) {
+            return Err(CryptoError(
+                "recovery_requires_revoked_or_compromised_key".into(),
+            ));
         }
+        let not_before_unix = parse_timestamp(not_before)?;
+        self.ensure_no_other_overlap(&self.current_key_id, not_before_unix)?;
         let mut record = KeyRotationRecord {
             schema: KEY_ROTATION_SCHEMA_V1.into(),
             node_id: self.node_id.clone(),
@@ -534,6 +595,7 @@ impl IdentityState {
             || record.node_id != self.node_id
             || record.sequence != self.sequence + 1
             || record.previous_key_id != self.current_key_id
+            || record.next_key_id == self.root_key_id
             || record.next_key_id != derive_key_id(&record.next_public_key)?
             || self.operational_keys.contains_key(&record.next_key_id)
         {
@@ -541,9 +603,12 @@ impl IdentityState {
         }
         let not_before = parse_timestamp(&record.not_before)?;
         let overlap_until = parse_timestamp(&record.overlap_until)?;
-        if overlap_until < not_before || overlap_until - not_before > MAX_ROTATION_OVERLAP_SECONDS {
+        if overlap_until < not_before
+            || overlap_until - not_before > MAX_ROTATION_OVERLAP_SECONDS
+        {
             return Err(CryptoError("rotation_overlap_invalid".into()));
         }
+        self.ensure_no_other_overlap(&record.previous_key_id, not_before)?;
         let payload = rotation_payload(record)?;
         if !verify_signature(
             &self.root_public_key,
@@ -556,7 +621,9 @@ impl IdentityState {
             &payload,
             &record.next_signature,
         )? {
-            return Err(CryptoError("rotation_root_or_next_signature_invalid".into()));
+            return Err(CryptoError(
+                "rotation_root_or_next_signature_invalid".into(),
+            ));
         }
 
         let previous = self
@@ -566,24 +633,30 @@ impl IdentityState {
         match record.mode {
             RotationMode::Transition => {
                 if previous.status != OperationalKeyStatus::Active {
-                    return Err(CryptoError("transition_requires_active_previous_key".into()));
+                    return Err(CryptoError(
+                        "transition_requires_active_previous_key".into(),
+                    ));
                 }
-                let previous_signature = record
-                    .previous_signature
-                    .as_deref()
-                    .ok_or_else(|| CryptoError("transition_previous_signature_required".into()))?;
+                let previous_signature = record.previous_signature.as_deref().ok_or_else(|| {
+                    CryptoError("transition_previous_signature_required".into())
+                })?;
                 if !verify_signature(
                     &previous.public_key,
                     KEY_ROTATION_DOMAIN,
                     &payload,
                     previous_signature,
                 )? {
-                    return Err(CryptoError("transition_previous_signature_invalid".into()));
+                    return Err(CryptoError(
+                        "transition_previous_signature_invalid".into(),
+                    ));
                 }
             }
             RotationMode::Recovery => {
                 if record.previous_signature.is_some()
-                    || !matches!(previous.status, OperationalKeyStatus::Revoked | OperationalKeyStatus::Compromised)
+                    || !matches!(
+                        previous.status,
+                        OperationalKeyStatus::Revoked | OperationalKeyStatus::Compromised
+                    )
                     || overlap_until != not_before
                 {
                     return Err(CryptoError("recovery_transition_invalid".into()));
@@ -618,8 +691,13 @@ impl IdentityState {
         if root.key_id() != self.root_key_id || key_id == self.root_key_id {
             return Err(CryptoError("status_root_or_target_invalid".into()));
         }
-        if !self.operational_keys.contains_key(key_id) {
-            return Err(CryptoError("status_target_unknown".into()));
+        let key = self
+            .operational_keys
+            .get(key_id)
+            .ok_or_else(|| CryptoError("status_target_unknown".into()))?;
+        let effective = parse_timestamp(effective_at)?;
+        if effective < key.valid_from {
+            return Err(CryptoError("status_before_key_activation".into()));
         }
         let mut record = KeyStatusRecord {
             schema: KEY_STATUS_SCHEMA_V1.into(),
@@ -632,7 +710,6 @@ impl IdentityState {
             reason,
             root_signature: String::new(),
         };
-        parse_timestamp(effective_at)?;
         record.root_signature = root.sign_domain(KEY_STATUS_DOMAIN, &key_status_payload(&record)?);
         Ok(record)
     }
@@ -659,11 +736,17 @@ impl IdentityState {
             .operational_keys
             .get_mut(&record.key_id)
             .ok_or_else(|| CryptoError("key_status_target_unknown".into()))?;
+        if effective_at < key.valid_from {
+            return Err(CryptoError("status_before_key_activation".into()));
+        }
         key.status = match record.status {
             KeyStatusKind::Revoked => OperationalKeyStatus::Revoked,
             KeyStatusKind::Compromised => OperationalKeyStatus::Compromised,
         };
-        key.valid_until = Some(key.valid_until.map_or(effective_at, |old| old.min(effective_at)));
+        key.valid_until = Some(
+            key.valid_until
+                .map_or(effective_at, |old| old.min(effective_at)),
+        );
         self.sequence = record.sequence;
         Ok(())
     }
@@ -702,7 +785,10 @@ pub fn sign_envelope(
         .operational_keys
         .get(&key_id)
         .ok_or_else(|| CryptoError("root_or_unregistered_key_cannot_sign_envelope".into()))?;
-    if operational.status != OperationalKeyStatus::Active || envelope.sender != identity.node_id {
+    if operational.status != OperationalKeyStatus::Active
+        || envelope.sender != identity.node_id
+        || key_id == identity.root_key_id
+    {
         return Err(CryptoError("operational_signing_key_not_admitted".into()));
     }
     let canonical = canonical_envelope_bytes(&envelope)?;
@@ -730,7 +816,7 @@ impl SignedEnvelope {
             .map_err(|error| CryptoError(format!("signed_envelope_schema:{error}")))?;
         if signed.schema != SIGNED_ENVELOPE_SCHEMA_V1
             || signed.node_id != signed.envelope.sender
-            || derive_key_id_from_signature_fields(&signed.key_id, &signed.signature).is_err()
+            || validate_key_id_and_signature_shape(&signed.key_id, &signed.signature).is_err()
         {
             return Err(CryptoError("signed_envelope_shape_invalid".into()));
         }
@@ -739,7 +825,7 @@ impl SignedEnvelope {
     }
 }
 
-fn derive_key_id_from_signature_fields(key_id: &str, signature: &str) -> Result<(), CryptoError> {
+fn validate_key_id_and_signature_shape(key_id: &str, signature: &str) -> Result<(), CryptoError> {
     if !key_id.starts_with("ed25519:") || key_id.len() != 72 {
         return Err(CryptoError("invalid_key_id".into()));
     }
@@ -831,14 +917,19 @@ mod tests {
     use crate::envelope::{AuthorityClaim, MessageClass};
     use crate::invariants::{admit_effect, AdmissionDecision, FederationEffect};
 
-    const ROOT_SEED: &str = "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60";
-    const OP_SEED: &str = "4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb";
-    const NEXT_SEED: &str = "c5aa8df43f9f837bedb7442f31dcb7b166d38535076f094b85ce3a2e0b4458f7";
+    const ROOT_SEED: &str =
+        "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60";
+    const OP_SEED: &str =
+        "4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb";
+    const NEXT_SEED: &str =
+        "c5aa8df43f9f837bedb7442f31dcb7b166d38535076f094b85ce3a2e0b4458f7";
+    const VALID_NOW: i64 = 1_787_443_320;
 
     fn identity() -> (LocalSigningKey, LocalSigningKey, IdentityState) {
         let root = LocalSigningKey::from_seed_hex(ROOT_SEED).unwrap();
         let operational = LocalSigningKey::from_seed_hex(OP_SEED).unwrap();
-        let document = create_identity_document(&root, &operational, "2026-08-23T00:00:00Z").unwrap();
+        let document =
+            create_identity_document(&root, &operational, "2026-08-23T00:00:00Z").unwrap();
         assert!(verify_identity_document(&document).unwrap());
         let state = IdentityState::from_document(&document).unwrap();
         (root, operational, state)
@@ -873,31 +964,84 @@ mod tests {
         let signature = key.inner.sign(b"");
         assert_eq!(
             lowercase_hex(&signature.to_bytes()),
-            "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e06522490155fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"
+            "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"
         );
     }
 
     #[test]
     fn node_and_key_derivation_are_stable() {
         let (root, operational, state) = identity();
-        assert_eq!(state.node_id, "fed:qsol:8fbf311d9bd830509a22b40926970621fd31ee14ef238c552517f6a567fbc69d");
-        assert_eq!(root.key_id(), "ed25519:bf8c7661e1c89dad9cc90c6d831f39cc86828af665c8181b19b15cd21d8c6a97");
-        assert_eq!(operational.key_id(), "ed25519:a69898edb88628faa92ffbd47b4b5eec1ffb4a8855540c55037d28c4ba6dfaf3");
+        assert_eq!(
+            state.node_id,
+            "fed:qsol:8fbf311d9bd830509a22b40926970621fd31ee14ef238c552517f6a567fbc69d"
+        );
+        assert_eq!(
+            root.key_id(),
+            "ed25519:bf8c7661e1c89dad9cc90c6d831f39cc86828af665c8181b19b15cd21d8c6a97"
+        );
+        assert_eq!(
+            operational.key_id(),
+            "ed25519:a69898edb88628faa92ffbd47b4b5eec1ffb4a8855540c55037d28c4ba6dfaf3"
+        );
+    }
+
+    #[test]
+    fn root_and_operational_roles_must_remain_distinct() {
+        let root = LocalSigningKey::from_seed_hex(ROOT_SEED).unwrap();
+        assert!(create_identity_document(&root, &root, "2026-08-23T00:00:00Z").is_err());
+        let (root, operational, state) = identity();
+        assert!(state
+            .create_transition_rotation(
+                &root,
+                &operational,
+                &root,
+                "2026-08-23T01:00:00Z",
+                "2026-08-23T01:00:00Z"
+            )
+            .is_err());
     }
 
     #[test]
     fn root_key_cannot_sign_federation_envelope() {
         let (root, _operational, state) = identity();
-        let env = envelope(&state, "2026-08-23T00:00:00Z", "2026-08-23T00:05:00Z");
+        let env = envelope(
+            &state,
+            "2026-08-23T00:00:00Z",
+            "2026-08-23T00:05:00Z",
+        );
         assert!(sign_envelope(&state, &root, env).is_err());
+    }
+
+    #[test]
+    fn signed_envelope_matches_frozen_vector() {
+        let (_root, operational, state) = identity();
+        let env = envelope(
+            &state,
+            "2026-08-23T00:00:00Z",
+            "2026-08-23T00:05:00Z",
+        );
+        assert_eq!(
+            env.message_id,
+            "sha256:180b4d750d683daed2c56f226b277ac8e5eb96b0b85d60c726a27a205ffc998e"
+        );
+        let signed = sign_envelope(&state, &operational, env).unwrap();
+        assert_eq!(
+            signed.signature,
+            "8f2df33a560b3911ea903255e8c7501901fb9af4655afcd2671d17d0d919ef52b97deddda0160bd3e3800897410bb2f8b2a8b0fa71d1afa43fd6037dd319450e"
+        );
     }
 
     #[test]
     fn valid_signature_is_not_trust_or_authority() {
         let (_root, operational, state) = identity();
-        let env = envelope(&state, "2026-08-23T00:00:00Z", "2026-08-23T00:05:00Z");
+        let env = envelope(
+            &state,
+            "2026-08-23T00:00:00Z",
+            "2026-08-23T00:05:00Z",
+        );
         let signed = sign_envelope(&state, &operational, env).unwrap();
-        let assessment = verify_signed_envelope(&signed, &state, 1_777_078_500, DEFAULT_CLOCK_POLICY).unwrap();
+        let assessment =
+            verify_signed_envelope(&signed, &state, VALID_NOW, DEFAULT_CLOCK_POLICY).unwrap();
         assert_eq!(assessment.signature, SignatureValidity::Valid);
         assert_eq!(assessment.trust, TrustDisposition::Unknown);
         assert_eq!(assessment.authority, AuthorityDisposition::None);
@@ -925,8 +1069,43 @@ mod tests {
         assert!(rotation.previous_signature.is_some());
         state.apply_rotation(&rotation).unwrap();
         assert_eq!(state.current_key_id, next.key_id());
-        assert_eq!(state.operational_key(&operational.key_id()).unwrap().valid_until, Some(1_777_085_600));
-        assert_eq!(state.operational_key(&next.key_id()).unwrap().valid_from, 1_777_082_000);
+        assert_eq!(
+            state.operational_key(&operational.key_id()).unwrap().valid_until,
+            Some(1_787_450_400)
+        );
+        assert_eq!(
+            state.operational_key(&next.key_id()).unwrap().valid_from,
+            1_787_446_800
+        );
+    }
+
+    #[test]
+    fn second_transition_cannot_overlap_an_existing_transition() {
+        let (root, operational, mut state) = identity();
+        let next = LocalSigningKey::from_seed_hex(NEXT_SEED).unwrap();
+        let first = state
+            .create_transition_rotation(
+                &root,
+                &operational,
+                &next,
+                "2026-08-23T01:00:00Z",
+                "2026-08-23T02:00:00Z",
+            )
+            .unwrap();
+        state.apply_rotation(&first).unwrap();
+        let third = LocalSigningKey::from_seed_hex(
+            "833fe62409237b9d62ec77587520911e9a759cec1d19755b7da901b96dca3d42",
+        )
+        .unwrap();
+        assert!(state
+            .create_transition_rotation(
+                &root,
+                &next,
+                &third,
+                "2026-08-23T01:30:00Z",
+                "2026-08-23T02:30:00Z"
+            )
+            .is_err());
     }
 
     #[test]
@@ -954,10 +1133,14 @@ mod tests {
     #[test]
     fn compromised_peer_never_bypasses_prime_directive() {
         let (root, operational, mut state) = identity();
-        let env = envelope(&state, "2026-08-23T00:00:00Z", "2026-08-23T00:05:00Z");
+        let env = envelope(
+            &state,
+            "2026-08-23T00:00:00Z",
+            "2026-08-23T00:05:00Z",
+        );
         let signed = sign_envelope(&state, &operational, env).unwrap();
         assert_eq!(
-            verify_signed_envelope(&signed, &state, 1_777_078_500, DEFAULT_CLOCK_POLICY)
+            verify_signed_envelope(&signed, &state, VALID_NOW, DEFAULT_CLOCK_POLICY)
                 .unwrap()
                 .signature,
             SignatureValidity::Valid
@@ -973,7 +1156,7 @@ mod tests {
             .unwrap();
         state.apply_key_status(&status).unwrap();
         assert_eq!(
-            verify_signed_envelope(&signed, &state, 1_777_078_500, DEFAULT_CLOCK_POLICY)
+            verify_signed_envelope(&signed, &state, VALID_NOW, DEFAULT_CLOCK_POLICY)
                 .unwrap()
                 .signature,
             SignatureValidity::Compromised
@@ -987,14 +1170,21 @@ mod tests {
     #[test]
     fn signed_envelope_rejects_algorithm_confusion_and_tampering() {
         let (_root, operational, state) = identity();
-        let env = envelope(&state, "2026-08-23T00:00:00Z", "2026-08-23T00:05:00Z");
+        let env = envelope(
+            &state,
+            "2026-08-23T00:00:00Z",
+            "2026-08-23T00:05:00Z",
+        );
         let signed = sign_envelope(&state, &operational, env).unwrap();
         let wire = String::from_utf8(signed.to_wire().unwrap()).unwrap();
-        assert!(serde_json::from_str::<SignedEnvelope>(&wire.replace("\"ed25519\"", "\"ed25519ph\"")).is_err());
+        assert!(serde_json::from_str::<SignedEnvelope>(
+            &wire.replace("\"ed25519\"", "\"ed25519ph\"")
+        )
+        .is_err());
         let mut tampered = signed.clone();
         tampered.signature.replace_range(0..2, "00");
         assert_eq!(
-            verify_signed_envelope(&tampered, &state, 1_777_078_500, DEFAULT_CLOCK_POLICY)
+            verify_signed_envelope(&tampered, &state, VALID_NOW, DEFAULT_CLOCK_POLICY)
                 .unwrap()
                 .signature,
             SignatureValidity::Invalid
@@ -1004,24 +1194,50 @@ mod tests {
     #[test]
     fn clock_policy_rejects_missing_expiry_and_excessive_lifetime() {
         let (_root, operational, state) = identity();
-        let mut missing = envelope(&state, "2026-08-23T00:00:00Z", "2026-08-23T00:05:00Z");
+        let mut missing = envelope(
+            &state,
+            "2026-08-23T00:00:00Z",
+            "2026-08-23T00:05:00Z",
+        );
         missing.expires_at = None;
         let canonical = canonical_json(&missing).unwrap();
         missing.message_id = derive_message_id(&canonical).unwrap();
         let signed = sign_envelope(&state, &operational, missing).unwrap();
         assert_eq!(
-            verify_signed_envelope(&signed, &state, 1_777_078_500, DEFAULT_CLOCK_POLICY)
+            verify_signed_envelope(&signed, &state, VALID_NOW, DEFAULT_CLOCK_POLICY)
                 .unwrap()
                 .signature,
             SignatureValidity::ClockRejected
         );
-        let long = envelope(&state, "2026-08-23T00:00:00Z", "2026-08-23T02:00:00Z");
+        let long = envelope(
+            &state,
+            "2026-08-23T00:00:00Z",
+            "2026-08-23T02:00:00Z",
+        );
         let signed = sign_envelope(&state, &operational, long).unwrap();
         assert_eq!(
-            verify_signed_envelope(&signed, &state, 1_777_078_500, DEFAULT_CLOCK_POLICY)
+            verify_signed_envelope(&signed, &state, VALID_NOW, DEFAULT_CLOCK_POLICY)
                 .unwrap()
                 .signature,
             SignatureValidity::ClockRejected
         );
+    }
+
+    #[test]
+    fn rotation_previous_signature_is_required_nullable() {
+        let (root, operational, state) = identity();
+        let next = LocalSigningKey::from_seed_hex(NEXT_SEED).unwrap();
+        let rotation = state
+            .create_transition_rotation(
+                &root,
+                &operational,
+                &next,
+                "2026-08-23T01:00:00Z",
+                "2026-08-23T02:00:00Z",
+            )
+            .unwrap();
+        let mut value = serde_json::to_value(rotation).unwrap();
+        value.as_object_mut().unwrap().remove("previous_signature");
+        assert!(serde_json::from_value::<KeyRotationRecord>(value).is_err());
     }
 }
