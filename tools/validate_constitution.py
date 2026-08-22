@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,6 +35,22 @@ def load_json(path: str) -> dict:
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise SystemExit(message)
+
+
+def rust_hard_invariant_ids(source: str) -> list[str]:
+    """Extract only IDs registered in the HARD_INVARIANTS slice.
+
+    This deliberately does not accept an invariant merely because its string
+    appears elsewhere in admission code, tests, or comments.
+    """
+    marker = "pub const HARD_INVARIANTS: &[HardInvariant] = &["
+    start = source.find(marker)
+    require(start >= 0, "Rust HARD_INVARIANTS registry missing")
+    body_start = start + len(marker)
+    body_end = source.find("\n];", body_start)
+    require(body_end >= 0, "Rust HARD_INVARIANTS registry is not terminated")
+    body = source[body_start:body_end]
+    return re.findall(r'\bid:\s*"([a-z0-9_]+)"', body)
 
 
 def main() -> None:
@@ -73,8 +90,18 @@ def main() -> None:
     require(len(set(invariant_ids)) == len(invariant_ids), "duplicate invariant id")
 
     rust_source = (ROOT / "src/invariants.rs").read_text(encoding="utf-8")
-    for invariant_id in invariant_ids:
-        require(f'"{invariant_id}"' in rust_source, f"machine invariant missing from Rust policy: {invariant_id}")
+    rust_registry_ids = rust_hard_invariant_ids(rust_source)
+    require(len(set(rust_registry_ids)) == len(rust_registry_ids), "duplicate Rust HARD_INVARIANTS id")
+    require(
+        set(rust_registry_ids) == set(invariant_ids),
+        "Rust HARD_INVARIANTS registry drift: "
+        f"missing={sorted(set(invariant_ids) - set(rust_registry_ids))}, "
+        f"extra={sorted(set(rust_registry_ids) - set(invariant_ids))}",
+    )
+    require(
+        len(rust_registry_ids) == len(invariant_ids),
+        "Rust HARD_INVARIANTS registry cardinality drift",
+    )
 
     ai_invariants = ai_manifest.get("authority_invariants")
     require(isinstance(ai_invariants, list), "README4AI authority_invariants missing")
@@ -100,11 +127,19 @@ def main() -> None:
         require(properties.get("authority_claim", {}).get("const") == "none", f"{name} authority claim drift")
         require(schema.get("additionalProperties") is False, f"{name} must reject unknown fields")
 
+    envelope_required = set(envelope_schema.get("required", []))
+    for field in ("provenance_ref", "expires_at", "signature"):
+        require(field in envelope_required, f"envelope nullable field must remain required: {field}")
+
     prime_directive = (ROOT / "PRIME_DIRECTIVE.md").read_text(encoding="utf-8")
     require("No emergency backdoor" in prime_directive, "Prime Directive emergency-backdoor section missing")
     require("runtime" in prime_directive.lower(), "Prime Directive runtime boundary missing")
 
-    print(f"constitutional contract OK: {len(invariant_ids)} invariant ids, {len(EXPECTED_FALSE_FLAGS)} hard false flags")
+    print(
+        "constitutional contract OK: "
+        f"{len(invariant_ids)} invariant ids, "
+        f"{len(EXPECTED_FALSE_FLAGS)} hard false flags"
+    )
 
 
 if __name__ == "__main__":
