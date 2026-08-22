@@ -1,0 +1,31 @@
+{
+  "document_type": "qsol-fed-phase2-claims",
+  "schema_version": 1,
+  "protocol": "qsol-fed/0",
+  "wire_protocol": "qsol-fed/1",
+  "phase": 2,
+  "gate_id": "qsol-fed-phase2-claim-gate/1",
+  "gate_status": "enforced",
+  "historical_baseline": "claims/phase0.json",
+  "runtime_override_allowed": false,
+  "capabilities": {
+    "constitutional_model": true,
+    "machine_contracts": true,
+    "fail_closed_admission_skeleton": true,
+    "tested_constitutional_core": true,
+    "canonical_wire_contract": true,
+    "cryptographic_identity": true,
+    "signed_envelope_verification": true,
+    "key_lifecycle": true,
+    "durable_replay_protection": true,
+    "production_networking": false,
+    "remote_execution": false,
+    "interoperable_federation": false
+  },
+  "claim_rule": "Only capabilities with value true may be described as established by the current repository state. Cryptographic validity remains distinct from trust, authority, evidence, and admission.",
+  "promotion_requirements": {
+    "production_networking": "requires Phase 3 reference API security gate and explicit opt-in listener posture",
+    "remote_execution": "not admitted by the current roadmap; requires separate constitutional design and review",
+    "interoperable_federation": "requires deployed networking, peer lifecycle, replay-safe transport, and multi-implementation interop evidence"
+  }
+}
