@@ -10,17 +10,20 @@ It is intentionally **not** a global brain, blockchain, truth oracle, remote adm
 
 ## Phase 0 claim gate
 
+<!-- PHASE0_CLAIM_BOUNDARY:BEGIN -->
 The current repository is deliberately constrained to the bootstrap claim boundary:
 
 - constitutional model: **established and tested**;
 - machine contracts: **established and tested**;
 - fail-closed admission skeleton: **established and tested**;
+- tested constitutional core: **established and tested**;
 - production networking: **not established**;
 - cryptographic identity: **not established**;
 - remote execution: **not established and forbidden by the current protocol posture**;
 - interoperable federation: **not established**.
+<!-- PHASE0_CLAIM_BOUNDARY:END -->
 
-These claims are machine-enforced by [`claims/phase0.json`](claims/phase0.json), [`src/claims.rs`](src/claims.rs), tests, and [`tools/validate_phase0_gate.py`](tools/validate_phase0_gate.py). They are not runtime configuration. A peer, model, API request, environment variable, Council vote, or optimistic README edit cannot promote an unimplemented capability into an established claim.
+These claims are machine-enforced by [`claims/phase0.json`](claims/phase0.json), [`src/claims.rs`](src/claims.rs), tests, and [`tools/validate_phase0_gate.py`](tools/validate_phase0_gate.py). `claims/phase0.json` is canonical for the Phase 0 release-claim boundary; disagreement with a mirror or status surface fails closed. They are not runtime configuration. A peer, model, API request, environment variable, Council vote, or optimistic README edit cannot promote an unimplemented capability into an established claim.
 
 ## Core idea
 
