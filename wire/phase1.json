@@ -1,0 +1,33 @@
+{
+  "document_type": "qsol-fed-phase1-wire-contract",
+  "schema_version": 1,
+  "protocol": "qsol-fed/1",
+  "canonical_profile": "qsol-fed-canonical-json/1",
+  "envelope_schema": "qsol-fed-envelope/1",
+  "provenance_schema": "qsol-fed-provenance/1",
+  "error_schema": "qsol-fed-error/1",
+  "capability_grammar": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*/[1-9][0-9]*$",
+  "object_identity": "sha256(lowercase-hex over canonical UTF-8 bytes)",
+  "message_id_domain": "qsol-fed-message-id/1\\x00",
+  "message_id_projection_excludes": ["message_id", "signature"],
+  "unicode_normalization": "NFC",
+  "numbers": "safe integers only; no floating-point or decimal values",
+  "limits": {
+    "max_input_bytes": 65536,
+    "max_depth": 32,
+    "max_string_utf8": 8192,
+    "max_array_items": 1024,
+    "max_object_members": 1024
+  },
+  "independent_implementations": [
+    "src/canonical.rs",
+    "tools/qsol_canonical.py"
+  ],
+  "golden_vectors": "fixtures/phase1/golden-vectors.json",
+  "adversarial_corpus": "fixtures/phase1/adversarial.json",
+  "unsupported_major_policy": "reject",
+  "signatures": "not_implemented_phase2_gate_required",
+  "production_networking": false,
+  "remote_execution": false,
+  "gate": "both independent implementations must match every golden canonical byte sequence and hash before Phase 2"
+}
