@@ -1,0 +1,117 @@
+{
+  "registry": "qsol-fed-invariants/1",
+  "protocol": "qsol-fed/0",
+  "charter": "qsol-fed-charter/1",
+  "prime_directive": "qsol-fed-prime-directive/1",
+  "constitutional_flags": {
+    "remote_arbitrary_execution_enabled": false,
+    "remote_governance_mutation_enabled": false,
+    "remote_evidence_promotion_enabled": false,
+    "remote_vote_creation_enabled": false,
+    "remote_capability_installation_enabled": false,
+    "remote_history_rewrite_enabled": false,
+    "remote_citizenship_mutation_enabled": false,
+    "remote_local_authority_claim_enabled": false,
+    "foreign_import_becomes_local_authority": false,
+    "secrets_in_semantic_state_allowed": false,
+    "runtime_constitution_override_allowed": false
+  },
+  "default_policies": {
+    "unknown_authority_action": "reject",
+    "foreign_semantic_material": "accept_as_data_only",
+    "foreign_state_import": "quarantine",
+    "unsupported_major_protocol": "reject",
+    "unknown_message_class": "reject"
+  },
+  "invariants": [
+    {
+      "id": "peering_is_not_trust",
+      "severity": "constitutional"
+    },
+    {
+      "id": "import_is_not_authority",
+      "severity": "constitutional"
+    },
+    {
+      "id": "consensus_is_not_truth",
+      "severity": "constitutional"
+    },
+    {
+      "id": "discovery_is_not_permission",
+      "severity": "constitutional"
+    },
+    {
+      "id": "capability_is_not_entitlement",
+      "severity": "constitutional"
+    },
+    {
+      "id": "federation_is_not_central_control",
+      "severity": "constitutional"
+    },
+    {
+      "id": "foreign_state_is_not_local_state",
+      "severity": "constitutional"
+    },
+    {
+      "id": "observation_is_not_intervention",
+      "severity": "constitutional"
+    },
+    {
+      "id": "local_sovereignty_over_federation_convenience",
+      "severity": "constitutional"
+    },
+    {
+      "id": "remote_governance_mutation_forbidden",
+      "severity": "constitutional"
+    },
+    {
+      "id": "remote_evidence_promotion_forbidden",
+      "severity": "constitutional"
+    },
+    {
+      "id": "remote_vote_creation_forbidden",
+      "severity": "constitutional"
+    },
+    {
+      "id": "remote_capability_installation_forbidden",
+      "severity": "constitutional"
+    },
+    {
+      "id": "remote_history_rewrite_forbidden",
+      "severity": "constitutional"
+    },
+    {
+      "id": "remote_citizenship_mutation_forbidden",
+      "severity": "constitutional"
+    },
+    {
+      "id": "remote_arbitrary_execution_forbidden",
+      "severity": "constitutional"
+    },
+    {
+      "id": "remote_local_authority_claim_forbidden",
+      "severity": "constitutional"
+    },
+    {
+      "id": "secrets_in_semantic_state_forbidden",
+      "severity": "constitutional"
+    },
+    {
+      "id": "runtime_constitution_override_forbidden",
+      "severity": "constitutional"
+    },
+    {
+      "id": "unknown_authority_action_rejected",
+      "severity": "constitutional"
+    }
+  ],
+  "runtime_override_sources": {
+    "environment": false,
+    "cli": false,
+    "config": false,
+    "peer_message": false,
+    "model_output": false,
+    "council_consensus": false,
+    "federation_consensus": false
+  }
+}

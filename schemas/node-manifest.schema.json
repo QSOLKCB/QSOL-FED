@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qsol.example/schemas/node-manifest.schema.json",
+  "title": "QSOL-FED Bootstrap Node Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol", "node_id", "capabilities", "authority_claim"],
+  "properties": {
+    "protocol": {
+      "const": "qsol-fed/0"
+    },
+    "node_id": {
+      "type": "string",
+      "pattern": "^fed:qsol:[A-Za-z0-9._~-]{1,128}$"
+    },
+    "capabilities": {
+      "type": "array",
+      "maxItems": 128,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      }
+    },
+    "authority_claim": {
+      "const": "none"
+    }
+  }
+}
