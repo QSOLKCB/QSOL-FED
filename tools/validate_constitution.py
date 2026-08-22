@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail closed when the bootstrap constitutional surfaces drift."""
+"""Fail closed when the constitutional surfaces drift."""
 
 from __future__ import annotations
 
@@ -38,11 +38,6 @@ def require(condition: bool, message: str) -> None:
 
 
 def rust_hard_invariant_ids(source: str) -> list[str]:
-    """Extract only IDs registered in the HARD_INVARIANTS slice.
-
-    This deliberately does not accept an invariant merely because its string
-    appears elsewhere in admission code, tests, or comments.
-    """
     marker = "pub const HARD_INVARIANTS: &[HardInvariant] = &["
     start = source.find(marker)
     require(start >= 0, "Rust HARD_INVARIANTS registry missing")
@@ -60,14 +55,14 @@ def main() -> None:
     node_schema = load_json("schemas/node-manifest.schema.json")
 
     require(registry.get("registry") == "qsol-fed-invariants/1", "wrong invariant registry id")
-    require(registry.get("protocol") == "qsol-fed/0", "wrong registry protocol")
-    require(ai_manifest.get("protocol") == "qsol-fed/0", "README4AI protocol drift")
+    require(registry.get("protocol") == "qsol-fed/0", "wrong constitutional registry protocol")
+    require(ai_manifest.get("protocol") == "qsol-fed/0", "README4AI constitutional protocol drift")
 
     flags = registry.get("constitutional_flags")
     require(isinstance(flags, dict), "missing constitutional_flags")
     require(set(flags) == EXPECTED_FALSE_FLAGS, "constitutional flag set drift")
     for name in sorted(EXPECTED_FALSE_FLAGS):
-        require(flags[name] is False, f"constitutional flag must remain false in bootstrap: {name}")
+        require(flags[name] is False, f"constitutional flag must remain false: {name}")
 
     overrides = registry.get("runtime_override_sources")
     require(isinstance(overrides, dict) and overrides, "missing runtime_override_sources")
@@ -92,21 +87,12 @@ def main() -> None:
     rust_source = (ROOT / "src/invariants.rs").read_text(encoding="utf-8")
     rust_registry_ids = rust_hard_invariant_ids(rust_source)
     require(len(set(rust_registry_ids)) == len(rust_registry_ids), "duplicate Rust HARD_INVARIANTS id")
-    require(
-        set(rust_registry_ids) == set(invariant_ids),
-        "Rust HARD_INVARIANTS registry drift: "
-        f"missing={sorted(set(invariant_ids) - set(rust_registry_ids))}, "
-        f"extra={sorted(set(rust_registry_ids) - set(invariant_ids))}",
-    )
-    require(
-        len(rust_registry_ids) == len(invariant_ids),
-        "Rust HARD_INVARIANTS registry cardinality drift",
-    )
+    require(set(rust_registry_ids) == set(invariant_ids), "Rust HARD_INVARIANTS registry drift")
+    require(len(rust_registry_ids) == len(invariant_ids), "Rust HARD_INVARIANTS cardinality drift")
 
     ai_invariants = ai_manifest.get("authority_invariants")
     require(isinstance(ai_invariants, list), "README4AI authority_invariants missing")
-    unknown_ai = sorted(set(ai_invariants) - set(invariant_ids))
-    require(not unknown_ai, f"README4AI references unknown invariants: {unknown_ai}")
+    require(not (set(ai_invariants) - set(invariant_ids)), "README4AI references unknown invariants")
 
     hardening = ai_manifest.get("hardening")
     require(isinstance(hardening, dict), "README4AI hardening missing")
@@ -118,28 +104,25 @@ def main() -> None:
     ):
         require(hardening.get(key) is False, f"README4AI hardening drift: {key}")
 
-    for name, schema in (
-        ("envelope", envelope_schema),
-        ("node manifest", node_schema),
-    ):
-        properties = schema.get("properties", {})
-        require(properties.get("protocol", {}).get("const") == "qsol-fed/0", f"{name} protocol drift")
-        require(properties.get("authority_claim", {}).get("const") == "none", f"{name} authority claim drift")
-        require(schema.get("additionalProperties") is False, f"{name} must reject unknown fields")
+    envelope_properties = envelope_schema.get("properties", {})
+    require(envelope_properties.get("protocol", {}).get("const") == "qsol-fed/1", "frozen wire envelope protocol drift")
+    require(envelope_properties.get("authority_claim", {}).get("const") == "none", "envelope authority claim drift")
+    require(envelope_schema.get("additionalProperties") is False, "envelope must reject unknown fields")
+
+    node_properties = node_schema.get("properties", {})
+    require(node_properties.get("protocol", {}).get("const") == "qsol-fed/0", "bootstrap node-manifest protocol drift")
+    require(node_properties.get("authority_claim", {}).get("const") == "none", "node manifest authority claim drift")
+    require(node_schema.get("additionalProperties") is False, "node manifest must reject unknown fields")
 
     envelope_required = set(envelope_schema.get("required", []))
     for field in ("provenance_ref", "expires_at", "signature"):
-        require(field in envelope_required, f"envelope nullable field must remain required: {field}")
+        require(field in envelope_required, f"envelope required field drift: {field}")
 
     prime_directive = (ROOT / "PRIME_DIRECTIVE.md").read_text(encoding="utf-8")
     require("No emergency backdoor" in prime_directive, "Prime Directive emergency-backdoor section missing")
     require("runtime" in prime_directive.lower(), "Prime Directive runtime boundary missing")
 
-    print(
-        "constitutional contract OK: "
-        f"{len(invariant_ids)} invariant ids, "
-        f"{len(EXPECTED_FALSE_FLAGS)} hard false flags"
-    )
+    print(f"constitutional contract OK: {len(invariant_ids)} invariant ids, {len(EXPECTED_FALSE_FLAGS)} hard false flags")
 
 
 if __name__ == "__main__":
