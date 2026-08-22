@@ -27,11 +27,11 @@
     "remote_execution_v1": false
   },
   "normative_precedence": [
+    "invariants/fed-v1.json",
     "src/invariants.rs",
+    "claims/phase0.json",
     "src/claims.rs",
     "tests_and_ci",
-    "invariants/fed-v1.json",
-    "claims/phase0.json",
     "CHARTER.md",
     "PRIME_DIRECTIVE.md",
     "PROTOCOL.md",
@@ -40,6 +40,13 @@
     "README.md",
     "ROADMAP.md"
   ],
+  "claim_precedence": [
+    "claims/phase0.json",
+    "src/claims.rs",
+    "README4AI.md.phase0_claims",
+    "README.md.phase0_claim_gate"
+  ],
+  "claim_disagreement_policy": "fail_closed",
   "authority_invariants": [
     "peering_is_not_trust",
     "import_is_not_authority",
