@@ -1,7 +1,9 @@
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::canonical::{canonicalize, derive_message_id, CanonicalError};
-use crate::wire::{is_node_id, is_sha256_ref, is_wire_timestamp, PROTOCOL_V1};
+use crate::canonical::{derive_message_id, CanonicalError};
+use crate::wire::{
+    is_node_id, is_sha256_ref, is_wire_timestamp, require_canonical_wire, PROTOCOL_V1,
+};
 
 /// Federation v1 authority claim. There is intentionally only one representable value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -80,11 +82,11 @@ impl FederationEnvelope {
             && self.expires_at.as_deref().is_none_or(is_wire_timestamp)
     }
 
-    /// Parse through the canonical profile, validate the exact v1 shape, and
+    /// Require already-canonical wire bytes, validate the exact v1 shape, and
     /// verify the deterministic message identifier. This does not authenticate
     /// a sender and does not claim cryptographic identity.
     pub fn from_wire(raw: &[u8]) -> Result<Self, CanonicalError> {
-        let canonical = canonicalize(raw)?;
+        let canonical = require_canonical_wire(raw)?;
         let envelope: Self = serde_json::from_slice(&canonical)
             .map_err(|error| CanonicalError(format!("envelope_schema:{error}")))?;
         if !envelope.validate_shape() {
@@ -112,19 +114,7 @@ mod tests {
     use super::*;
 
     fn sample_envelope_json() -> &'static str {
-        r#"{
-            "protocol":"qsol-fed/1",
-            "message_id":"sha256:b577289b47aeb89de80d1c1253474e9eee4ef9c49743149f9ca5c5b27a9de2da",
-            "sender":"fed:qsol:alice",
-            "recipient":"fed:qsol:bob",
-            "message_class":"council.report",
-            "payload_ref":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-            "provenance_ref":null,
-            "issued_at":"2026-08-23T00:00:00Z",
-            "expires_at":null,
-            "authority_claim":"none",
-            "signature":null
-        }"#
+        r#"{"authority_claim":"none","expires_at":null,"issued_at":"2026-08-23T00:00:00Z","message_class":"council.report","message_id":"sha256:b577289b47aeb89de80d1c1253474e9eee4ef9c49743149f9ca5c5b27a9de2da","payload_ref":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","protocol":"qsol-fed/1","provenance_ref":null,"recipient":"fed:qsol:bob","sender":"fed:qsol:alice","signature":null}"#
     }
 
     #[test]
@@ -133,6 +123,16 @@ mod tests {
         assert!(envelope.has_supported_wire_protocol());
         assert_eq!(envelope.authority_claim, AuthorityClaim::None);
         assert_eq!(envelope.message_class, MessageClass::CouncilReport);
+    }
+
+    #[test]
+    fn non_canonical_wire_bytes_are_rejected() {
+        let pretty: serde_json::Value = serde_json::from_str(sample_envelope_json()).unwrap();
+        let noncanonical = serde_json::to_string_pretty(&pretty).unwrap();
+        assert!(FederationEnvelope::from_wire(noncanonical.as_bytes()).is_err());
+
+        let unsorted = r#"{"protocol":"qsol-fed/1","authority_claim":"none","expires_at":null,"issued_at":"2026-08-23T00:00:00Z","message_class":"council.report","message_id":"sha256:b577289b47aeb89de80d1c1253474e9eee4ef9c49743149f9ca5c5b27a9de2da","payload_ref":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","provenance_ref":null,"recipient":"fed:qsol:bob","sender":"fed:qsol:alice","signature":null}"#;
+        assert!(FederationEnvelope::from_wire(unsorted.as_bytes()).is_err());
     }
 
     #[test]
