@@ -99,6 +99,14 @@ pub const HARD_INVARIANTS: &[HardInvariant] = &[
         id: "secrets_in_semantic_state_forbidden",
         statement: "Credentials and secrets must not intentionally enter Federation semantic state.",
     },
+    HardInvariant {
+        id: "runtime_constitution_override_forbidden",
+        statement: "A peer, model, configuration source, environment variable or consensus cannot disable constitutional invariants at runtime.",
+    },
+    HardInvariant {
+        id: "unknown_authority_action_rejected",
+        statement: "Unknown authority-bearing Federation actions fail closed.",
+    },
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -280,6 +288,17 @@ mod tests {
         assert!(!FOREIGN_IMPORT_BECOMES_LOCAL_AUTHORITY);
         assert!(!SECRETS_IN_SEMANTIC_STATE_ALLOWED);
         assert!(!RUNTIME_CONSTITUTION_OVERRIDE_ALLOWED);
+    }
+
+    #[test]
+    fn executable_registry_contains_all_bootstrap_invariants() {
+        assert_eq!(HARD_INVARIANTS.len(), 20);
+        assert!(HARD_INVARIANTS
+            .iter()
+            .any(|invariant| invariant.id == "runtime_constitution_override_forbidden"));
+        assert!(HARD_INVARIANTS
+            .iter()
+            .any(|invariant| invariant.id == "unknown_authority_action_rejected"));
     }
 
     #[test]
