@@ -1,0 +1,48 @@
+{
+  "profile": "qsol-fed-canonical-json/1",
+  "safe_integer_min": -9007199254740991,
+  "safe_integer_max": 9007199254740991,
+  "vectors": [
+    {
+      "id": "simple_object",
+      "input": "{\"b\":2,\"a\":1}",
+      "canonical": "{\"a\":1,\"b\":2}",
+      "canonical_utf8_hex": "7b2261223a312c2262223a327d",
+      "sha256": "43258cff783fe7036d8a43033f830adfc60ec037382473548ac742b888292777",
+      "object_id": "sha256:43258cff783fe7036d8a43033f830adfc60ec037382473548ac742b888292777"
+    },
+    {
+      "id": "unicode_nfc",
+      "input": "{\"word\":\"e\\u0301\",\"snowman\":\"☃\"}",
+      "canonical": "{\"snowman\":\"☃\",\"word\":\"é\"}",
+      "canonical_utf8_hex": "7b22736e6f776d616e223a22e29883222c22776f7264223a22c3a9227d",
+      "sha256": "71e96f639860474822119f9831167db381feada3000d45e85f5171d09d764132",
+      "object_id": "sha256:71e96f639860474822119f9831167db381feada3000d45e85f5171d09d764132"
+    },
+    {
+      "id": "escapes",
+      "input": "{\"s\":\"quote:\\\" slash:/ backslash:\\\\ newline:\\n tab:\\t ctrl:\\u0001\"}",
+      "canonical": "{\"s\":\"quote:\\\" slash:/ backslash:\\\\ newline:\\n tab:\\t ctrl:\\u0001\"}",
+      "canonical_utf8_hex": "7b2273223a2271756f74653a5c2220736c6173683a2f206261636b736c6173683a5c5c206e65776c696e653a5c6e207461623a5c74206374726c3a5c7530303031227d",
+      "sha256": "401a0d8d271754470d955d47b5a16e4039dbc242939edf23f6ee73c29e128c68",
+      "object_id": "sha256:401a0d8d271754470d955d47b5a16e4039dbc242939edf23f6ee73c29e128c68"
+    },
+    {
+      "id": "nested",
+      "input": "{\"z\":[3,2,1],\"a\":{\"y\":true,\"x\":null},\"n\":-9007199254740991}",
+      "canonical": "{\"a\":{\"x\":null,\"y\":true},\"n\":-9007199254740991,\"z\":[3,2,1]}",
+      "canonical_utf8_hex": "7b2261223a7b2278223a6e756c6c2c2279223a747275657d2c226e223a2d393030373139393235343734303939312c227a223a5b332c322c315d7d",
+      "sha256": "55ae2444a731f85135ec3257aaa0d1503e8518aa4a0f2883b09c756bd51d0e6c",
+      "object_id": "sha256:55ae2444a731f85135ec3257aaa0d1503e8518aa4a0f2883b09c756bd51d0e6c"
+    },
+    {
+      "id": "federation_envelope_v1",
+      "input": "{\"protocol\":\"qsol-fed/1\",\"message_id\":\"sha256:b577289b47aeb89de80d1c1253474e9eee4ef9c49743149f9ca5c5b27a9de2da\",\"sender\":\"fed:qsol:alice\",\"recipient\":\"fed:qsol:bob\",\"message_class\":\"council.report\",\"payload_ref\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"provenance_ref\":null,\"issued_at\":\"2026-08-23T00:00:00Z\",\"expires_at\":null,\"authority_claim\":\"none\",\"signature\":null}",
+      "canonical": "{\"authority_claim\":\"none\",\"expires_at\":null,\"issued_at\":\"2026-08-23T00:00:00Z\",\"message_class\":\"council.report\",\"message_id\":\"sha256:b577289b47aeb89de80d1c1253474e9eee4ef9c49743149f9ca5c5b27a9de2da\",\"payload_ref\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"protocol\":\"qsol-fed/1\",\"provenance_ref\":null,\"recipient\":\"fed:qsol:bob\",\"sender\":\"fed:qsol:alice\",\"signature\":null}",
+      "canonical_utf8_hex": "7b22617574686f726974795f636c61696d223a226e6f6e65222c22657870697265735f6174223a6e756c6c2c226973737565645f6174223a22323032362d30382d32335430303a30303a30305a222c226d6573736167655f636c617373223a22636f756e63696c2e7265706f7274222c226d6573736167655f6964223a227368613235363a62353737323839623437616562383964653830643163313235333437346539656565346566396334393734333134396639636135633562323761396465326461222c227061796c6f61645f726566223a227368613235363a62626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262222c2270726f746f636f6c223a2271736f6c2d6665642f31222c2270726f76656e616e63655f726566223a6e756c6c2c22726563697069656e74223a226665643a71736f6c3a626f62222c2273656e646572223a226665643a71736f6c3a616c696365222c227369676e6174757265223a6e756c6c7d",
+      "sha256": "207c5743485b09efc9d2207507f7bfb067a89ee8d787a3882eb4663235438bbd",
+      "object_id": "sha256:207c5743485b09efc9d2207507f7bfb067a89ee8d787a3882eb4663235438bbd",
+      "message_id": "sha256:b577289b47aeb89de80d1c1253474e9eee4ef9c49743149f9ca5c5b27a9de2da"
+    }
+  ]
+}
