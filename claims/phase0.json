@@ -1,0 +1,26 @@
+{
+  "document_type": "qsol-fed-phase0-claims",
+  "schema_version": 1,
+  "protocol": "qsol-fed/0",
+  "phase": 0,
+  "gate_id": "qsol-fed-phase0-claim-gate/1",
+  "gate_status": "enforced",
+  "runtime_override_allowed": false,
+  "capabilities": {
+    "constitutional_model": true,
+    "machine_contracts": true,
+    "fail_closed_admission_skeleton": true,
+    "tested_constitutional_core": true,
+    "production_networking": false,
+    "cryptographic_identity": false,
+    "remote_execution": false,
+    "interoperable_federation": false
+  },
+  "claim_rule": "Only capabilities with value true may be described as established or implemented by the current repository state. False capabilities may be described only as absent, deferred, planned, prohibited, or not yet established.",
+  "promotion_requirements": {
+    "production_networking": "requires later networking phases and their explicit security gates",
+    "cryptographic_identity": "requires Phase 2 cryptographic node identity gate",
+    "remote_execution": "not admitted by the current roadmap; requires separate constitutional design and review",
+    "interoperable_federation": "requires implemented networking, identity, replay protection, limits and interop evidence"
+  }
+}
