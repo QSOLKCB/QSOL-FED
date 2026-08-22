@@ -5,9 +5,11 @@
   "wire_protocol": "qsol-fed/1",
   "charter": "qsol-fed-charter/1",
   "prime_directive": "qsol-fed-prime-directive/1",
-  "status": "phase0_gate_enforced",
+  "status": "phase2_gate_enforced",
+  "phase0_status": "historical_gate_preserved",
   "phase1_status": "canonical_wire_gate_enforced",
-  "claim_boundary": "The constitutional model, machine contracts, fail-closed admission skeleton, tested constitutional core, and Phase 1 canonical wire contract are established. Production networking, cryptographic identity, remote execution, and interoperable federation are not established.",
+  "phase2_status": "cryptographic_identity_gate_enforced",
+  "claim_boundary": "The constitutional model, machine contracts, fail-closed admission skeleton, tested constitutional core, canonical wire contract, cryptographic identity, signed-envelope verification, key lifecycle, and durable single-process replay protection are established. Production networking, remote execution, and interoperable federation deployment are not established.",
   "phase0_claims": {
     "constitutional_model": true,
     "machine_contracts": true,
@@ -15,6 +17,21 @@
     "tested_constitutional_core": true,
     "production_networking": false,
     "cryptographic_identity": false,
+    "remote_execution": false,
+    "interoperable_federation": false
+  },
+  "current_claim_manifest": "claims/phase2.json",
+  "current_claims": {
+    "constitutional_model": true,
+    "machine_contracts": true,
+    "fail_closed_admission_skeleton": true,
+    "tested_constitutional_core": true,
+    "canonical_wire_contract": true,
+    "cryptographic_identity": true,
+    "signed_envelope_verification": true,
+    "key_lifecycle": true,
+    "durable_replay_protection": true,
+    "production_networking": false,
     "remote_execution": false,
     "interoperable_federation": false
   },
@@ -30,8 +47,29 @@
     "golden_vectors": "fixtures/phase1/golden-vectors.json",
     "adversarial_corpus": "fixtures/phase1/adversarial.json",
     "gate_validator": "tools/validate_phase1_gate.py",
-    "signature_state": "null_only_not_implemented",
+    "embedded_signature_state": "null_only_frozen",
+    "phase2_signature_wrapper": "qsol-fed-signed-envelope/1",
     "unsupported_major_policy": "reject"
+  },
+  "phase2_crypto": {
+    "contract": "crypto/phase2.json",
+    "documentation": "CRYPTOGRAPHY.md",
+    "suite": "ed25519-rfc8032",
+    "algorithm_id": "ed25519",
+    "root_key_role": "identity_lifecycle_only",
+    "operational_key_role": "envelope_signing_and_transition",
+    "node_identity_schema": "schemas/node-identity-v1.schema.json",
+    "signed_envelope_schema": "schemas/signed-envelope-v1.schema.json",
+    "rotation_schema": "schemas/key-rotation-v1.schema.json",
+    "key_status_schema": "schemas/key-status-v1.schema.json",
+    "signature_vectors": "fixtures/phase2/signature-vectors.json",
+    "rust_crypto": "src/crypto.rs",
+    "rust_replay": "src/replay.rs",
+    "gate_validator": "tools/validate_phase2_gate.py",
+    "signature_validity_is_trust": false,
+    "signature_validity_is_authority": false,
+    "root_compromise_policy": "terminal_new_node_id_required",
+    "production_network_listener": false
   },
   "core": {
     "kind": "sovereign federation protocol",
@@ -45,14 +83,23 @@
   },
   "normative_precedence": [
     "invariants/fed-v1.json",
-    "src/invariants.rs",
     "claims/phase0.json",
+    "claims/phase2.json",
+    "src/invariants.rs",
     "src/claims.rs",
     "wire/phase1.json",
     "CANONICAL_JSON.md",
     "schemas/federation-envelope-v1.schema.json",
     "src/canonical.rs",
     "tools/qsol_canonical.py",
+    "crypto/phase2.json",
+    "CRYPTOGRAPHY.md",
+    "schemas/signed-envelope-v1.schema.json",
+    "schemas/node-identity-v1.schema.json",
+    "schemas/key-rotation-v1.schema.json",
+    "schemas/key-status-v1.schema.json",
+    "src/crypto.rs",
+    "src/replay.rs",
     "tests_and_ci",
     "CHARTER.md",
     "PRIME_DIRECTIVE.md",
@@ -67,6 +114,12 @@
     "src/claims.rs",
     "README4AI.md.phase0_claims",
     "README.md.phase0_claim_gate"
+  ],
+  "current_claim_precedence": [
+    "claims/phase2.json",
+    "src/claims.rs.CURRENT_CLAIMS",
+    "README4AI.md.current_claims",
+    "README.md.current_claim_gate"
   ],
   "claim_disagreement_policy": "fail_closed",
   "authority_invariants": [
@@ -97,22 +150,22 @@
     "peer_override_of_constitution": false,
     "model_override_of_constitution": false,
     "runtime_override_of_phase0_claim_gate": false,
+    "runtime_override_of_phase2_claim_gate": false,
+    "signature_bypasses_admission": false,
+    "signature_creates_authority": false,
+    "root_key_signs_envelopes": false,
     "unknown_authority_action_policy": "reject",
     "foreign_semantic_material_default": "data_only",
     "foreign_state_default": "quarantine_or_reject_until_local_admission"
   },
-  "planned_message_classes": [
-    "hello", "capabilities", "evidence.offer", "evidence.request", "hypothesis", "challenge",
-    "response", "council.report", "minority.report", "experiment.receipt", "citation", "publication"
-  ],
   "planned_http_surface": [
     "GET /fed/v1/node", "GET /fed/v1/capabilities", "POST /fed/v1/peer/hello",
     "POST /fed/v1/envelopes", "GET /fed/v1/objects/{sha256}", "GET /fed/v1/provenance/{sha256}"
   ],
-  "forbidden_in_v1": [
+  "forbidden_current": [
     "remote_exec_endpoint", "arbitrary_remote_tool_invocation", "peer_supplied_authority_weight",
     "peer_supplied_local_evidence_status", "peer_supplied_governance_override", "silent_baseline_refresh",
-    "secret_material_in_federated_semantic_objects"
+    "secret_or_private_key_material_in_federated_semantic_objects", "production_network_listener_claim"
   ],
   "files": {
     "human_readme": "README.md",
@@ -122,6 +175,7 @@
     "prime_directive": "PRIME_DIRECTIVE.md",
     "protocol": "PROTOCOL.md",
     "canonical_json": "CANONICAL_JSON.md",
+    "cryptography": "CRYPTOGRAPHY.md",
     "api": "API.md",
     "security": "SECURITY.md",
     "threat_model": "THREAT_MODEL.md",
@@ -130,12 +184,17 @@
     "machine_invariants": "invariants/fed-v1.json",
     "rust_invariants": "src/invariants.rs",
     "phase0_claims": "claims/phase0.json",
+    "phase2_claims": "claims/phase2.json",
     "rust_claims": "src/claims.rs",
     "phase1_wire": "wire/phase1.json",
+    "phase2_crypto": "crypto/phase2.json",
     "rust_canonicalizer": "src/canonical.rs",
     "python_canonicalizer": "tools/qsol_canonical.py",
+    "rust_crypto": "src/crypto.rs",
+    "rust_replay": "src/replay.rs",
     "constitution_validator": "tools/validate_constitution.py",
     "phase0_claim_validator": "tools/validate_phase0_gate.py",
-    "phase1_wire_validator": "tools/validate_phase1_gate.py"
+    "phase1_wire_validator": "tools/validate_phase1_gate.py",
+    "phase2_crypto_validator": "tools/validate_phase2_gate.py"
   }
 }
