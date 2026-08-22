@@ -1,57 +1,72 @@
 # Protocol
 
-**Protocol family:** `qsol-fed/0`
+**Constitutional bootstrap lineage:** `qsol-fed/0`  
+**Frozen wire protocol:** `qsol-fed/1`
 
-This document defines the bootstrap semantics that later wire-compatible implementations must preserve.
+Phase 1 freezes deterministic wire semantics while preserving every Phase 0 sovereignty and non-interference invariant. It does not add production networking or cryptographic identity.
 
-## 1. Design goals
+## 1. Canonical wire representation
 
-QSOL-FED aims for:
+Every Phase 1 wire object uses [`qsol-fed-canonical-json/1`](CANONICAL_JSON.md).
 
-- sovereign nodes;
-- transport-independent canonical messages;
-- explicit provenance;
-- cryptographic identity without conflating identity with authority;
-- capability negotiation;
-- fail-closed versioning;
-- bounded message classes;
-- independent local evidence and governance;
-- support for disagreement and partition;
-- offline-verifiable exchange where practical.
+The profile is UTF-8, NFC-normalized, whitespace-free canonical JSON with sorted normalized keys, duplicate-key rejection, safe integers only, deterministic escaping, and fixed resource limits. Floating-point/decimal JSON numbers, NaN/Infinity extensions, duplicate keys, NFC key collisions, unsupported JSON extensions, BOM input, and oversized inputs are rejected.
 
-## 2. Node identity
-
-A future cryptographic profile will bind a stable Federation node identifier to one or more keys. The conceptual identifier form is:
+Object identity is:
 
 ```text
-fed:qsol:<node-id>
+sha256:<lowercase SHA-256 of canonical UTF-8 bytes>
 ```
 
-PR #1 does not freeze a key algorithm or identity derivation scheme. Those choices require cryptographic review and test vectors.
+## 2. Exact Federation envelope v1
 
-## 3. Envelope
+The exact schema is frozen at:
 
-The conceptual v1 envelope is represented by `FederationEnvelope` in `src/envelope.rs` and by `schemas/federation-envelope.schema.json`.
+- `schemas/federation-envelope.schema.json`;
+- `schemas/federation-envelope-v1.schema.json`;
+- Rust type `FederationEnvelope` in `src/envelope.rs`.
 
-Core fields:
+Required fields are:
 
-- `protocol` — exact protocol identifier;
-- `message_id` — content identity once canonicalization is frozen;
-- `sender` — attributed sender identifier;
-- `recipient` — intended recipient or explicit broadcast scope;
-- `message_class` — bounded semantic class;
-- `payload_ref` — content-addressed payload reference;
-- `provenance_ref` — optional provenance object reference;
-- `issued_at` — sender timestamp;
-- `expires_at` — optional expiry;
-- `authority_claim` — MUST be `none` in the bootstrap contract;
-- `signature` — future signature object/string representation.
+```text
+protocol
+message_id
+sender
+recipient
+message_class
+payload_ref
+provenance_ref
+issued_at
+expires_at
+authority_claim
+signature
+```
 
-A valid envelope is not automatically admissible. Parsing, authentication and admission are separate steps.
+`protocol` MUST be `qsol-fed/1`. `authority_claim` MUST be `none`. `signature` MUST be JSON `null` in Phase 1. A non-null signature is rejected until Phase 2 defines a reviewed cryptographic profile.
 
-## 4. Planned message classes
+## 3. Message ID derivation
 
-The initial protocol vocabulary is intentionally narrow:
+For envelope `E`, remove exactly the top-level `message_id` and `signature` fields to form `P(E)`.
+
+```text
+preimage = UTF8("qsol-fed-message-id/1") || 0x00 || canonical_bytes(P(E))
+message_id = "sha256:" + lowercase_hex(SHA-256(preimage))
+```
+
+The domain separator prevents confusion with ordinary object identity. Excluding `signature` prevents Phase 2 signing from changing message identity.
+
+## 4. Node identifiers
+
+Phase 1 envelope attribution uses the bounded syntax:
+
+```text
+^fed:qsol:[a-z0-9][a-z0-9._-]{0,127}$
+```
+
+This is an attributed protocol identifier only. It is **not yet cryptographically bound to a key**.
+
+## 5. Message classes
+
+The exact Phase 1 vocabulary is:
 
 ```text
 hello
@@ -68,92 +83,79 @@ citation
 publication
 ```
 
-Unknown classes must not be interpreted as authority-bearing actions. Implementations should reject or quarantine them according to negotiated extension rules.
+Unknown classes fail closed.
 
-## 5. Capability negotiation
+## 6. Capability identifiers
 
-A node advertises capabilities. A receiver separately decides whether a capability is locally allowed.
+Capabilities use:
 
 ```text
-advertised capability != permission to invoke
+^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*/[1-9][0-9]*$
 ```
 
-Capabilities should be versioned independently where useful, for example:
+Examples:
 
 ```text
 evidence.exchange/1
 council.report/1
-experiment.receipt/1
+experiment.receipt/2
 ```
 
-The v1 contract does not include arbitrary remote execution.
+Advertisement remains distinct from permission or authority.
 
-## 6. Provenance
+## 7. Provenance
 
-Foreign data must remain attributable to its source. A receiving node may create a new local descendant, but it must not silently rewrite the foreign object to appear locally originated.
+The exact provenance object schema is `qsol-fed-provenance/1` in `schemas/provenance-v1.schema.json`.
 
-A provenance chain should distinguish:
+It binds:
 
 - source node;
 - source object identity;
-- transport receipt;
-- local admission event;
-- locally derived descendants.
+- relation (`observed`, `derived`, `quoted`, `transported`);
+- zero or more parent object references;
+- creation timestamp.
 
-## 7. Content addressing
+Import still does not create local authority.
 
-Payload and provenance references are planned as SHA-256 content references:
+## 8. Protocol errors
 
-```text
-sha256:<64 lowercase hex characters>
-```
+The exact structured error envelope is `qsol-fed-error/1` in `schemas/protocol-error-v1.schema.json`.
 
-Exact canonical JSON rules, duplicate-key handling, number normalization, Unicode normalization and signature bytes are protocol-freezing tasks on the roadmap. Implementations must not independently invent incompatible canonicalization while claiming conformance.
+Stable error codes include malformed input, unsupported protocol/capability, authentication failure, expiry, replay, Prime Directive rejection, quarantine, local policy rejection, not-found, and rate limiting. Error messages are bounded and must not intentionally contain secrets.
 
-## 8. Replay protection
+## 9. Version handling
 
-Production nodes will require bounded replay protection using message identity, expiry and durable/local replay state as appropriate.
-
-A replayed valid signature is still a replayed message.
-
-## 9. Version negotiation
-
-- unsupported major protocol versions: reject;
-- additive known-compatible capability versions: negotiate explicitly;
-- unknown authority semantics: reject;
-- no silent downgrade that weakens constitutional invariants.
-
-## 10. Error semantics
-
-Errors should be structured and should not leak secrets. Planned broad classes:
+Phase 1 accepts exactly wire major `qsol-fed/1`.
 
 ```text
-malformed
-unsupported_protocol
-unsupported_capability
-authentication_failed
-expired
-replay
-prime_directive_rejected
-quarantined
-local_policy_rejected
-not_found
-rate_limited
+qsol-fed/0 -> reject as unsupported wire major
+qsol-fed/1 -> supported
+qsol-fed/2 -> reject as unsupported wire major
+unknown     -> reject
 ```
 
-A rejection reason may identify the violated invariant by stable ID.
+There is no silent downgrade.
 
-## 11. Transport requirements
+## 10. Language-neutral conformance
 
-A conforming transport must preserve message bytes/semantics and must not grant additional authority. HTTPS is expected for the first network reference implementation, but transport encryption does not replace envelope-level provenance, identity and admission.
+Golden vectors live in `fixtures/phase1/golden-vectors.json`. The malformed, ambiguous, and oversized corpus is defined in `fixtures/phase1/adversarial.json`.
 
-## 12. Non-goals
+Two independent implementations must agree:
 
-QSOL-FED is not designed to provide:
+- Rust: `src/canonical.rs`;
+- Python: `tools/qsol_canonical.py`.
 
-- one global database;
-- global consensus truth;
-- distributed superuser access;
-- remote shell semantics;
-- automatic trust transitivity;
-- proof that a model is conscious, correct or benevolent.
+`cargo test --all-targets` verifies the Rust implementation. `python3 tools/validate_phase1_gate.py` independently verifies the Python implementation and the machine contract.
+
+## 11. Phase 1 claim boundary
+
+Phase 1 establishes deterministic canonical bytes, hashes, message IDs, exact schemas, and conformance fixtures. It does **not** establish:
+
+- production networking;
+- cryptographic node identity;
+- signatures;
+- replay-safe live peering;
+- remote execution;
+- deployed interoperable federation.
+
+Those claims remain gated by later phases.
