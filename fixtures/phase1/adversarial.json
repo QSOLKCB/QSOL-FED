@@ -1,0 +1,26 @@
+{
+  "profile": "qsol-fed-canonical-json/1",
+  "cases": [
+    {"id":"duplicate_key","raw":"{\"a\":1,\"a\":2}","expect":"reject"},
+    {"id":"normalized_duplicate_key","raw":"{\"é\":1,\"e\\u0301\":2}","expect":"reject"},
+    {"id":"decimal_number","raw":"{\"n\":1.0}","expect":"reject"},
+    {"id":"exponent_number","raw":"{\"n\":1e0}","expect":"reject"},
+    {"id":"nan_extension","raw":"{\"n\":NaN}","expect":"reject"},
+    {"id":"positive_infinity_extension","raw":"{\"n\":Infinity}","expect":"reject"},
+    {"id":"negative_infinity_extension","raw":"{\"n\":-Infinity}","expect":"reject"},
+    {"id":"safe_integer_overflow","raw":"{\"n\":9007199254740992}","expect":"reject"},
+    {"id":"safe_integer_underflow","raw":"{\"n\":-9007199254740992}","expect":"reject"},
+    {"id":"utf8_bom","raw":"﻿{\"a\":1}","expect":"reject"},
+    {"id":"lone_surrogate","raw":"{\"s\":\"\\ud800\"}","expect":"reject"},
+    {"id":"trailing_comma","raw":"{\"a\":1,}","expect":"reject"},
+    {"id":"comment_extension","raw":"{\"a\":1/*nope*/}","expect":"reject"},
+    {"id":"multiple_documents","raw":"{\"a\":1}{\"b\":2}","expect":"reject"}
+  ],
+  "oversized_generators": [
+    {"id":"input_over_65536_bytes","rule":"generate UTF-8 JSON input whose encoded length exceeds 65536"},
+    {"id":"depth_over_32","rule":"generate nested arrays with logical depth greater than 32"},
+    {"id":"string_over_8192_utf8_bytes","rule":"generate one decoded NFC string exceeding 8192 UTF-8 bytes"},
+    {"id":"array_over_1024_items","rule":"generate an array containing more than 1024 items"},
+    {"id":"object_over_1024_members","rule":"generate an object containing more than 1024 members"}
+  ]
+}

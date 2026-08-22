@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qsol.example/schema/qsol-fed-error-1",
+  "title": "QSOL-FED Protocol Error Envelope v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol","error_code","request_message_id","invariant_id","message","retryable"],
+  "properties": {
+    "protocol": {"const":"qsol-fed/1"},
+    "error_code": {"enum":["malformed","unsupported_protocol","unsupported_capability","authentication_failed","expired","replay","prime_directive_rejected","quarantined","local_policy_rejected","not_found","rate_limited"]},
+    "request_message_id": {"oneOf":[{"type":"null"},{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"}]},
+    "invariant_id": {"oneOf":[{"type":"null"},{"type":"string","pattern":"^[a-z][a-z0-9_]{0,95}$"}]},
+    "message": {"type":"string","maxLength":512},
+    "retryable": {"type":"boolean"}
+  }
+}

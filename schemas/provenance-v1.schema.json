@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qsol.example/schema/qsol-fed-provenance-1",
+  "title": "QSOL-FED Provenance Object v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema","source_node","source_object","relation","parents","created_at"],
+  "properties": {
+    "schema": {"const":"qsol-fed-provenance/1"},
+    "source_node": {"type":"string","pattern":"^fed:qsol:[a-z0-9][a-z0-9._-]{0,127}$"},
+    "source_object": {"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},
+    "relation": {"enum":["observed","derived","quoted","transported"]},
+    "parents": {"type":"array","maxItems":64,"uniqueItems":true,"items":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"}},
+    "created_at": {"type":"string","pattern":"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"}
+  }
+}

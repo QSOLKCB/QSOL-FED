@@ -2,10 +2,12 @@
   "document_type": "qsol-fed-ai-manifest",
   "schema_version": 1,
   "protocol": "qsol-fed/0",
+  "wire_protocol": "qsol-fed/1",
   "charter": "qsol-fed-charter/1",
   "prime_directive": "qsol-fed-prime-directive/1",
   "status": "phase0_gate_enforced",
-  "claim_boundary": "Only the constitutional model, machine contracts, fail-closed admission skeleton, and tested constitutional core are established. Production networking, cryptographic identity, remote execution, and interoperable federation are not established.",
+  "phase1_status": "canonical_wire_gate_enforced",
+  "claim_boundary": "The constitutional model, machine contracts, fail-closed admission skeleton, tested constitutional core, and Phase 1 canonical wire contract are established. Production networking, cryptographic identity, remote execution, and interoperable federation are not established.",
   "phase0_claims": {
     "constitutional_model": true,
     "machine_contracts": true,
@@ -15,6 +17,21 @@
     "cryptographic_identity": false,
     "remote_execution": false,
     "interoperable_federation": false
+  },
+  "phase1_wire": {
+    "contract": "wire/phase1.json",
+    "canonical_profile": "qsol-fed-canonical-json/1",
+    "wire_protocol": "qsol-fed/1",
+    "envelope_schema": "schemas/federation-envelope-v1.schema.json",
+    "provenance_schema": "schemas/provenance-v1.schema.json",
+    "error_schema": "schemas/protocol-error-v1.schema.json",
+    "rust_implementation": "src/canonical.rs",
+    "python_implementation": "tools/qsol_canonical.py",
+    "golden_vectors": "fixtures/phase1/golden-vectors.json",
+    "adversarial_corpus": "fixtures/phase1/adversarial.json",
+    "gate_validator": "tools/validate_phase1_gate.py",
+    "signature_state": "null_only_not_implemented",
+    "unsupported_major_policy": "reject"
   },
   "core": {
     "kind": "sovereign federation protocol",
@@ -31,6 +48,11 @@
     "src/invariants.rs",
     "claims/phase0.json",
     "src/claims.rs",
+    "wire/phase1.json",
+    "CANONICAL_JSON.md",
+    "schemas/federation-envelope-v1.schema.json",
+    "src/canonical.rs",
+    "tools/qsol_canonical.py",
     "tests_and_ci",
     "CHARTER.md",
     "PRIME_DIRECTIVE.md",
@@ -80,34 +102,16 @@
     "foreign_state_default": "quarantine_or_reject_until_local_admission"
   },
   "planned_message_classes": [
-    "hello",
-    "capabilities",
-    "evidence.offer",
-    "evidence.request",
-    "hypothesis",
-    "challenge",
-    "response",
-    "council.report",
-    "minority.report",
-    "experiment.receipt",
-    "citation",
-    "publication"
+    "hello", "capabilities", "evidence.offer", "evidence.request", "hypothesis", "challenge",
+    "response", "council.report", "minority.report", "experiment.receipt", "citation", "publication"
   ],
   "planned_http_surface": [
-    "GET /fed/v1/node",
-    "GET /fed/v1/capabilities",
-    "POST /fed/v1/peer/hello",
-    "POST /fed/v1/envelopes",
-    "GET /fed/v1/objects/{sha256}",
-    "GET /fed/v1/provenance/{sha256}"
+    "GET /fed/v1/node", "GET /fed/v1/capabilities", "POST /fed/v1/peer/hello",
+    "POST /fed/v1/envelopes", "GET /fed/v1/objects/{sha256}", "GET /fed/v1/provenance/{sha256}"
   ],
   "forbidden_in_v1": [
-    "remote_exec_endpoint",
-    "arbitrary_remote_tool_invocation",
-    "peer_supplied_authority_weight",
-    "peer_supplied_local_evidence_status",
-    "peer_supplied_governance_override",
-    "silent_baseline_refresh",
+    "remote_exec_endpoint", "arbitrary_remote_tool_invocation", "peer_supplied_authority_weight",
+    "peer_supplied_local_evidence_status", "peer_supplied_governance_override", "silent_baseline_refresh",
     "secret_material_in_federated_semantic_objects"
   ],
   "files": {
@@ -117,6 +121,7 @@
     "charter": "CHARTER.md",
     "prime_directive": "PRIME_DIRECTIVE.md",
     "protocol": "PROTOCOL.md",
+    "canonical_json": "CANONICAL_JSON.md",
     "api": "API.md",
     "security": "SECURITY.md",
     "threat_model": "THREAT_MODEL.md",
@@ -126,7 +131,11 @@
     "rust_invariants": "src/invariants.rs",
     "phase0_claims": "claims/phase0.json",
     "rust_claims": "src/claims.rs",
+    "phase1_wire": "wire/phase1.json",
+    "rust_canonicalizer": "src/canonical.rs",
+    "python_canonicalizer": "tools/qsol_canonical.py",
     "constitution_validator": "tools/validate_constitution.py",
-    "phase0_claim_validator": "tools/validate_phase0_gate.py"
+    "phase0_claim_validator": "tools/validate_phase0_gate.py",
+    "phase1_wire_validator": "tools/validate_phase1_gate.py"
   }
 }

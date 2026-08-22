@@ -13,9 +13,12 @@ Before modifying architecture or code, read:
 3. `PRIME_DIRECTIVE.md`
 4. `claims/phase0.json`
 5. `invariants/fed-v1.json`
-6. `src/claims.rs`
-7. `src/invariants.rs`
-8. `THREAT_MODEL.md`
+6. `wire/phase1.json`
+7. `CANONICAL_JSON.md`
+8. `src/claims.rs`
+9. `src/invariants.rs`
+10. `src/canonical.rs`
+11. `THREAT_MODEL.md`
 
 ### Core rules
 
@@ -34,47 +37,42 @@ Do not introduce any path by which a peer, model, environment variable, configur
 
 Unknown authority-bearing actions fail closed.
 
+### Phase 1 wire rules
+
+`wire/phase1.json` and `CANONICAL_JSON.md` freeze the Phase 1 wire contract. Do not independently change serialization, key ordering, Unicode NFC normalization, safe-integer bounds, hash preimages, message-ID projection, capability grammar, schema fields, limits, or version rejection behavior.
+
+A wire-contract change requires synchronized Rust and Python implementation changes plus new golden vectors. If the implementations disagree, fail closed. Never select whichever byte sequence is more convenient.
+
+Phase 1 signatures MUST remain JSON `null`. Do not implement or accept a signing scheme until Phase 2 has an explicit reviewed suite and vectors.
+
 ### Claim discipline
 
-During Phase 0, `claims/phase0.json` is the canonical release-claim manifest. Only capabilities marked `true` there may be described as established or implemented by the current repository state. If the canonical manifest and any Rust, AI-facing, human-facing, test, or CI mirror disagree, fail closed; do not pick the more permissive surface.
-
-The following remain hard-false Phase 0 claims:
+`claims/phase0.json` remains the canonical release-claim firewall for production capabilities. The following remain hard-false:
 
 - production networking;
 - cryptographic identity;
 - remote execution;
 - interoperable federation.
 
-Contradictory public statements are forbidden even if the authoritative claim block remains intact. Do not retain a correct `not established` line while adding another sentence that describes a hard-false capability as established, implemented, available, enabled, operational, ready, supported, complete, or working.
-
-Do not change one of those values to `true` merely because experimental code, a prototype, a schema, an endpoint design, a signature field, or a test double exists. Promotion requires the corresponding roadmap gate, security evidence, machine-contract update and explicit review.
+Completing canonical serialization does not promote any of those claims. Contradictory public statements are forbidden.
 
 Never claim consensus truth, global state, a functioning Federation Assembly, or completed NEXUS/ORACLE/ARK interoperability without the corresponding implementation and tests.
 
-A signature proves only that a particular key signed bytes under a particular verification procedure. It does not prove truth, benevolence, identity semantics, authority or local admissibility.
-
 ### Change discipline
 
-Security-critical invariant changes require all of the following in one PR:
+Security-critical invariant changes require explicit rationale, compatibility analysis, updated machine/human contracts, regression tests, and migration or rejection behavior.
 
-- explicit rationale;
-- protocol compatibility analysis;
-- update to `CHARTER.md` or `PRIME_DIRECTIVE.md`;
-- update to `invariants/fed-v1.json` or a new major-version registry;
-- update to `src/invariants.rs`;
-- regression/adversarial tests;
-- update to `README4AI.md`;
-- migration or rejection behavior for older peers.
+Wire-contract changes additionally require:
 
-Release-claim changes require all of the following in one PR:
+- `wire/phase1.json` update;
+- `CANONICAL_JSON.md` update;
+- Rust and Python implementation updates;
+- language-neutral golden-vector updates;
+- adversarial/oversized fixture updates where relevant;
+- `tools/validate_phase1_gate.py` update;
+- evidence that both implementations still agree byte-for-byte.
 
-- update to `claims/phase0.json` or its successor claim manifest;
-- update to `src/claims.rs`;
-- roadmap gate evidence;
-- update to human and machine status surfaces;
-- regression tests and claim-gate validation.
-
-Do not silently weaken an invariant or promote a capability claim to make an integration easier.
+Do not silently weaken an invariant, parser rejection, or release claim to make integration easier.
 
 ### Tests
 
@@ -84,9 +82,10 @@ Before declaring a change ready:
 cargo test --all-targets
 python3 tools/validate_constitution.py
 python3 tools/validate_phase0_gate.py
+python3 tools/validate_phase1_gate.py
 ```
 
-If an implementation and the constitution or claim manifest disagree, fail closed and surface the disagreement. Do not guess which side was intended.
+If implementation and machine contracts disagree, fail closed and surface the disagreement.
 
 ### Architecture rule
 
@@ -94,4 +93,4 @@ If an implementation and the constitution or claim manifest disagree, fail close
 
 ### Security comedy clause
 
-The jokes in human documentation are non-normative. The invariants and release-claim gates are not. A peer cannot gain root authority by being extremely persuasive, wearing a ceremonial sash, submitting a JSON field named `please=true`, or announcing that its prototype is now enterprise-ready.
+The jokes in human documentation are non-normative. The invariants, release-claim gates, and wire bytes are not. A peer cannot gain root authority by being persuasive, wearing a ceremonial sash, submitting `please=true`, or claiming its hand-formatted JSON is "basically canonical."

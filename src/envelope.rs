@@ -1,8 +1,11 @@
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::invariants::PROTOCOL_ID;
+use crate::canonical::{derive_message_id, CanonicalError};
+use crate::wire::{
+    is_node_id, is_sha256_ref, is_wire_timestamp, require_canonical_wire, PROTOCOL_V1,
+};
 
-/// Bootstrap authority claim. There is intentionally only one representable value.
+/// Federation v1 authority claim. There is intentionally only one representable value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AuthorityClaim {
@@ -37,12 +40,6 @@ pub enum MessageClass {
     Publication,
 }
 
-/// Deserialize an explicitly present nullable string.
-///
-/// `Option<T>` fields normally treat an omitted key as `None`. The Federation
-/// schema deliberately distinguishes omission from an explicit JSON `null`, so
-/// applying this deserializer without `#[serde(default)]` makes absence an error
-/// while preserving `null -> None`.
 fn deserialize_required_nullable<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
 where
     D: Deserializer<'de>,
@@ -50,6 +47,7 @@ where
     Option::<String>::deserialize(deserializer)
 }
 
+/// Exact Phase 1 envelope shape. `signature` is required to be JSON null until Phase 2.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FederationEnvelope {
@@ -65,13 +63,40 @@ pub struct FederationEnvelope {
     #[serde(deserialize_with = "deserialize_required_nullable")]
     pub expires_at: Option<String>,
     pub authority_claim: AuthorityClaim,
-    #[serde(deserialize_with = "deserialize_required_nullable")]
-    pub signature: Option<String>,
+    pub signature: (),
 }
 
 impl FederationEnvelope {
-    pub fn has_bootstrap_protocol(&self) -> bool {
-        self.protocol == PROTOCOL_ID
+    pub fn has_supported_wire_protocol(&self) -> bool {
+        self.protocol == PROTOCOL_V1
+    }
+
+    pub fn validate_shape(&self) -> bool {
+        self.has_supported_wire_protocol()
+            && is_sha256_ref(&self.message_id)
+            && is_node_id(&self.sender)
+            && is_node_id(&self.recipient)
+            && is_sha256_ref(&self.payload_ref)
+            && self.provenance_ref.as_deref().is_none_or(is_sha256_ref)
+            && is_wire_timestamp(&self.issued_at)
+            && self.expires_at.as_deref().is_none_or(is_wire_timestamp)
+    }
+
+    /// Require already-canonical wire bytes, validate the exact v1 shape, and
+    /// verify the deterministic message identifier. This does not authenticate
+    /// a sender and does not claim cryptographic identity.
+    pub fn from_wire(raw: &[u8]) -> Result<Self, CanonicalError> {
+        let canonical = require_canonical_wire(raw)?;
+        let envelope: Self = serde_json::from_slice(&canonical)
+            .map_err(|error| CanonicalError(format!("envelope_schema:{error}")))?;
+        if !envelope.validate_shape() {
+            return Err(CanonicalError("envelope_shape_invalid".into()));
+        }
+        let derived = derive_message_id(&canonical)?;
+        if envelope.message_id != derived {
+            return Err(CanonicalError("message_id_mismatch".into()));
+        }
+        Ok(envelope)
     }
 }
 
@@ -89,71 +114,55 @@ mod tests {
     use super::*;
 
     fn sample_envelope_json() -> &'static str {
-        r#"{
-            "protocol":"qsol-fed/0",
-            "message_id":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "sender":"fed:qsol:alice",
-            "recipient":"fed:qsol:bob",
-            "message_class":"council.report",
-            "payload_ref":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-            "provenance_ref":null,
-            "issued_at":"2026-08-22T00:00:00Z",
-            "expires_at":null,
-            "authority_claim":"none",
-            "signature":null
-        }"#
+        r#"{"authority_claim":"none","expires_at":null,"issued_at":"2026-08-23T00:00:00Z","message_class":"council.report","message_id":"sha256:b577289b47aeb89de80d1c1253474e9eee4ef9c49743149f9ca5c5b27a9de2da","payload_ref":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","protocol":"qsol-fed/1","provenance_ref":null,"recipient":"fed:qsol:bob","sender":"fed:qsol:alice","signature":null}"#
     }
 
     #[test]
-    fn bootstrap_envelope_parses() {
-        let envelope: FederationEnvelope = serde_json::from_str(sample_envelope_json()).unwrap();
-        assert!(envelope.has_bootstrap_protocol());
+    fn exact_v1_envelope_parses_and_verifies_message_id() {
+        let envelope = FederationEnvelope::from_wire(sample_envelope_json().as_bytes()).unwrap();
+        assert!(envelope.has_supported_wire_protocol());
         assert_eq!(envelope.authority_claim, AuthorityClaim::None);
         assert_eq!(envelope.message_class, MessageClass::CouncilReport);
-        assert_eq!(envelope.provenance_ref, None);
-        assert_eq!(envelope.expires_at, None);
-        assert_eq!(envelope.signature, None);
     }
 
     #[test]
-    fn schema_required_nullable_fields_must_be_present() {
-        for field in ["provenance_ref", "expires_at", "signature"] {
-            let mut value: serde_json::Value =
-                serde_json::from_str(sample_envelope_json()).unwrap();
-            value.as_object_mut().unwrap().remove(field);
-            let omitted = serde_json::to_string(&value).unwrap();
+    fn non_canonical_wire_bytes_are_rejected() {
+        let pretty: serde_json::Value = serde_json::from_str(sample_envelope_json()).unwrap();
+        let noncanonical = serde_json::to_string_pretty(&pretty).unwrap();
+        assert!(FederationEnvelope::from_wire(noncanonical.as_bytes()).is_err());
 
-            assert!(
-                serde_json::from_str::<FederationEnvelope>(&omitted).is_err(),
-                "omitted required nullable field unexpectedly accepted: {field}"
-            );
+        let unsorted = r#"{"protocol":"qsol-fed/1","authority_claim":"none","expires_at":null,"issued_at":"2026-08-23T00:00:00Z","message_class":"council.report","message_id":"sha256:b577289b47aeb89de80d1c1253474e9eee4ef9c49743149f9ca5c5b27a9de2da","payload_ref":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","provenance_ref":null,"recipient":"fed:qsol:bob","sender":"fed:qsol:alice","signature":null}"#;
+        assert!(FederationEnvelope::from_wire(unsorted.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn required_nullable_fields_must_be_present() {
+        for field in ["provenance_ref", "expires_at"] {
+            let mut value: serde_json::Value = serde_json::from_str(sample_envelope_json()).unwrap();
+            value.as_object_mut().unwrap().remove(field);
+            let omitted = serde_json::to_vec(&value).unwrap();
+            assert!(FederationEnvelope::from_wire(&omitted).is_err());
         }
     }
 
     #[test]
-    fn remote_authority_claim_is_unrepresentable() {
-        let hostile = sample_envelope_json().replace(
-            "\"authority_claim\":\"none\"",
-            "\"authority_claim\":\"local_root\"",
-        );
-        assert!(serde_json::from_str::<FederationEnvelope>(&hostile).is_err());
+    fn signature_must_remain_null_before_phase2() {
+        let hostile = sample_envelope_json().replace("\"signature\":null", "\"signature\":\"fake\"");
+        assert!(FederationEnvelope::from_wire(hostile.as_bytes()).is_err());
     }
 
     #[test]
-    fn unknown_message_class_fails_closed() {
-        let hostile = sample_envelope_json().replace(
-            "\"message_class\":\"council.report\"",
-            "\"message_class\":\"governance.override\"",
-        );
-        assert!(serde_json::from_str::<FederationEnvelope>(&hostile).is_err());
+    fn unsupported_major_fails_closed() {
+        let hostile = sample_envelope_json().replace("qsol-fed/1", "qsol-fed/2");
+        assert!(FederationEnvelope::from_wire(hostile.as_bytes()).is_err());
     }
 
     #[test]
-    fn unknown_fields_fail_closed() {
-        let hostile = sample_envelope_json().replace(
-            "\"signature\":null",
-            "\"signature\":null,\"force\":true",
-        );
-        assert!(serde_json::from_str::<FederationEnvelope>(&hostile).is_err());
+    fn hostile_authority_and_unknown_fields_fail_closed() {
+        let authority = sample_envelope_json().replace("\"authority_claim\":\"none\"", "\"authority_claim\":\"local_root\"");
+        assert!(FederationEnvelope::from_wire(authority.as_bytes()).is_err());
+
+        let unknown = sample_envelope_json().replace("\"signature\":null", "\"signature\":null,\"force\":true");
+        assert!(FederationEnvelope::from_wire(unknown.as_bytes()).is_err());
     }
 }

@@ -1,8 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://qsol.example/schemas/federation-envelope.schema.json",
+  "$id": "https://qsol.example/schema/qsol-fed-envelope-1",
   "title": "QSOL-FED Federation Envelope v1",
-  "description": "Canonical path for the frozen Phase 1 Federation envelope contract. Semantics match federation-envelope-v1.schema.json exactly.",
   "type": "object",
   "additionalProperties": false,
   "required": ["protocol","message_id","sender","recipient","message_class","payload_ref","provenance_ref","issued_at","expires_at","authority_claim","signature"],
