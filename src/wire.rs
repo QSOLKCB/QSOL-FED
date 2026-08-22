@@ -1,4 +1,6 @@
-use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::canonical::{canonicalize, derive_message_id, CanonicalError};
 
@@ -47,7 +49,7 @@ pub fn is_node_id(value: &str) -> bool {
 }
 
 pub fn is_capability_id(value: &str) -> bool {
-    if value.is_empty() || value.len() > 96 {
+    if value.is_empty() {
         return false;
     }
     let Some((name, version)) = value.rsplit_once('/') else {
@@ -105,6 +107,13 @@ pub fn is_wire_timestamp(value: &str) -> bool {
     true
 }
 
+fn deserialize_required_nullable<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProvenanceRelation {
@@ -127,11 +136,15 @@ pub struct ProvenanceObject {
 
 impl ProvenanceObject {
     pub fn validate(&self) -> bool {
+        let mut parents = HashSet::new();
         self.schema == PROVENANCE_SCHEMA_V1
             && is_node_id(&self.source_node)
             && is_sha256_ref(&self.source_object)
             && self.parents.len() <= 64
-            && self.parents.iter().all(|value| is_sha256_ref(value))
+            && self
+                .parents
+                .iter()
+                .all(|value| is_sha256_ref(value) && parents.insert(value.as_str()))
             && is_wire_timestamp(&self.created_at)
     }
 }
@@ -157,7 +170,9 @@ pub enum ProtocolErrorCode {
 pub struct ProtocolErrorEnvelope {
     pub protocol: String,
     pub error_code: ProtocolErrorCode,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
     pub request_message_id: Option<String>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
     pub invariant_id: Option<String>,
     pub message: String,
     pub retryable: bool,
@@ -209,6 +224,8 @@ mod tests {
         for value in ["evidence.exchange/1", "council.report/1", "x/12", "a-b.c9/3"] {
             assert!(is_capability_id(value), "expected valid: {value}");
         }
+        let long_but_grammatical = format!("a{}/1", "b".repeat(128));
+        assert!(is_capability_id(&long_but_grammatical));
         for value in ["Evidence/1", "evidence_exchange/1", "evidence/01", "evidence/0", "/1", "evidence/"] {
             assert!(!is_capability_id(value), "expected invalid: {value}");
         }
@@ -219,6 +236,37 @@ mod tests {
         assert_eq!(classify_protocol("qsol-fed/1"), ProtocolDisposition::Supported);
         for value in ["qsol-fed/0", "qsol-fed/2", "qsol-fed/99", "other/1"] {
             assert_eq!(classify_protocol(value), ProtocolDisposition::UnsupportedMajor);
+        }
+    }
+
+    #[test]
+    fn provenance_parents_must_be_unique() {
+        let parent = format!("sha256:{}", "a".repeat(64));
+        let provenance = ProvenanceObject {
+            schema: PROVENANCE_SCHEMA_V1.to_string(),
+            source_node: "fed:qsol:alice".to_string(),
+            source_object: format!("sha256:{}", "b".repeat(64)),
+            relation: ProvenanceRelation::Derived,
+            parents: vec![parent.clone(), parent],
+            created_at: "2026-08-23T00:00:00Z".to_string(),
+        };
+        assert!(!provenance.validate());
+    }
+
+    #[test]
+    fn protocol_error_nullable_fields_are_required() {
+        let valid = r#"{"protocol":"qsol-fed/1","error_code":"malformed","request_message_id":null,"invariant_id":null,"message":"bad input","retryable":false}"#;
+        let parsed: ProtocolErrorEnvelope = serde_json::from_str(valid).unwrap();
+        assert!(parsed.validate());
+
+        for field in ["request_message_id", "invariant_id"] {
+            let mut value: serde_json::Value = serde_json::from_str(valid).unwrap();
+            value.as_object_mut().unwrap().remove(field);
+            let omitted = serde_json::to_string(&value).unwrap();
+            assert!(
+                serde_json::from_str::<ProtocolErrorEnvelope>(&omitted).is_err(),
+                "omitted required nullable field unexpectedly accepted: {field}"
+            );
         }
     }
 }
