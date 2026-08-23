@@ -14,8 +14,12 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use unicode_normalization::UnicodeNormalization;
 
-use crate::canonical::{canonicalize, MAX_INPUT_BYTES};
-use crate::qsol_adapters::{OracleEvidenceObservation, OracleEvidenceState};
+use crate::canonical::canonicalize;
+#[cfg(test)]
+use crate::canonical::MAX_INPUT_BYTES;
+use crate::qsol_adapters::OracleEvidenceObservation;
+#[cfg(test)]
+use crate::qsol_adapters::OracleEvidenceState;
 
 pub const ORACLE_PINNED_REPOSITORY: &str = "QSOLKCB/QSOL-ORACLE";
 pub const ORACLE_PINNED_COMMIT: &str = "043e864b3c25dfeca3ce1752b3110479479071b1";
@@ -283,9 +287,8 @@ impl OracleLiveAdapter {
             return Err(OracleLiveError("oracle_transport_request_too_large".into()));
         }
 
-        let script = self.oracle_root.join("tools/fed_transport.py");
         let mut child = Command::new("python3")
-            .arg(&script)
+            .arg("tools/fed_transport.py")
             .arg("serve")
             .current_dir(&self.oracle_root)
             .env_remove("PYTHONPATH")
@@ -323,7 +326,11 @@ impl OracleLiveAdapter {
             return Err(OracleLiveError("oracle_transport_stdout_framing_invalid".into()));
         }
         let raw = &output.stdout[..output.stdout.len() - 1];
-        if raw.contains(&b'\n') || canonicalize(raw).map_err(|_| OracleLiveError("oracle_transport_noncanonical_response".into()))? != raw {
+        if raw.contains(&b'\n')
+            || canonicalize(raw)
+                .map_err(|_| OracleLiveError("oracle_transport_noncanonical_response".into()))?
+                != raw
+        {
             return Err(OracleLiveError("oracle_transport_noncanonical_response".into()));
         }
         let response: OracleTransportResponse = serde_json::from_slice(raw)
@@ -395,12 +402,28 @@ pub fn attest_oracle_release(root: &Path) -> Result<(), OracleLiveError> {
             .map_err(|_| OracleLiveError("oracle_membrane_contract_missing".into()))?,
     )
     .map_err(|_| OracleLiveError("oracle_membrane_contract_invalid".into()))?;
-    if contract.pointer("/protocol").and_then(|value| value.as_str()) != Some(ORACLE_TRANSPORT_PROTOCOL)
-        || contract.pointer("/consumer_pin/repository").and_then(|value| value.as_str()) != Some("QSOLKCB/QSOL-FED")
-        || contract.pointer("/consumer_pin/commit").and_then(|value| value.as_str()) != Some("407d0ed75c7d8a76bd49b3c30e74a0ae2c59f1e6")
-        || contract.pointer("/observation/synthetic_input").and_then(|value| value.as_bool()) != Some(false)
-        || contract.pointer("/observation/evidence_promotion").and_then(|value| value.as_bool()) != Some(false)
-        || contract.pointer("/observation/authority_effect").and_then(|value| value.as_str()) != Some("none")
+    if contract.pointer("/protocol").and_then(|value| value.as_str())
+        != Some(ORACLE_TRANSPORT_PROTOCOL)
+        || contract
+            .pointer("/consumer_pin/repository")
+            .and_then(|value| value.as_str())
+            != Some("QSOLKCB/QSOL-FED")
+        || contract
+            .pointer("/consumer_pin/commit")
+            .and_then(|value| value.as_str())
+            != Some("407d0ed75c7d8a76bd49b3c30e74a0ae2c59f1e6")
+        || contract
+            .pointer("/observation/synthetic_input")
+            .and_then(|value| value.as_bool())
+            != Some(false)
+        || contract
+            .pointer("/observation/evidence_promotion")
+            .and_then(|value| value.as_bool())
+            != Some(false)
+        || contract
+            .pointer("/observation/authority_effect")
+            .and_then(|value| value.as_str())
+            != Some("none")
     {
         return Err(OracleLiveError("oracle_membrane_contract_boundary_drift".into()));
     }
@@ -424,12 +447,17 @@ fn bounded_chars(value: &str, maximum: usize) -> bool {
 }
 
 fn is_lower_sha256(value: &str) -> bool {
-    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 fn safe_relative_path(path: &Path) -> bool {
     !path.as_os_str().is_empty()
-        && path.components().all(|component| matches!(component, Component::Normal(_)))
+        && path
+            .components()
+            .all(|component| matches!(component, Component::Normal(_)))
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
