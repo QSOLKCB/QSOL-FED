@@ -1,0 +1,113 @@
+{
+  "document_type": "qsol-fed-phase4-state-contract",
+  "schema_version": 1,
+  "wire_protocol": "qsol-fed/1",
+  "foreign_store": {
+    "content_identity": "sha256 over exact canonical qsol-fed-canonical-json/1 bytes",
+    "payload_directory": "objects/",
+    "provenance_directory": "provenance/",
+    "attribution_layout": "<namespace>/<object-hash>/<attribution-hash>.record.json",
+    "attribution_identity": "source_node plus provenance_id, independent of content identity",
+    "multiple_attributions_per_content": true,
+    "namespaces": [
+      "foreign",
+      "quarantine"
+    ],
+    "import_default_namespace": "quarantine for new material; existing local namespace is preserved",
+    "authority_from_presence": false,
+    "record_listing_validation": "fail_closed",
+    "namespace_move_recovery": "durable transaction marker completed on store open",
+    "duplicate_policy": "identical content is deduplicated by hash while independent source/provenance attributions are preserved"
+  },
+  "local_descendants": {
+    "namespace": "descendants/",
+    "relation": "derived",
+    "must_reference_foreign_parent": true,
+    "descendant_must_differ_from_parent_content_id": true,
+    "rewrites_parent_identity": false,
+    "authority_from_derivation": false
+  },
+  "peer_registry": {
+    "durable": true,
+    "states": [
+      "unknown",
+      "introduced",
+      "admitted",
+      "quarantined",
+      "revoked",
+      "disconnected"
+    ],
+    "unknown_is_query_only": true,
+    "initial_identity_immutable": true,
+    "identity_lifecycle_monotonic": true,
+    "existing_lifecycle_must_be_exact_prefix": true,
+    "same_sequence_divergence": "reject",
+    "rollback_after_restart": "reject",
+    "revoked_reintroduction": "reject",
+    "bundle_import_preserves_existing_local_state": true
+  },
+  "trust_registry": {
+    "separate_from_peer_registry": true,
+    "levels": [
+      "unknown",
+      "trusted",
+      "distrusted"
+    ],
+    "peer_admission_creates_trust": false,
+    "import_changes_trust": false,
+    "write_visibility": "persist staged snapshot successfully before replacing live in-memory state"
+  },
+  "capability_advertisement": {
+    "schema": "qsol-fed-capability-advertisement/1",
+    "proof": "Phase 2 qsol-fed-signed-envelope/1 with message_class=capabilities and a self-recipient proof binding the canonical advertisement payload hash",
+    "maximum_lifetime_seconds": 3600,
+    "sequence_monotonic": true,
+    "identifier_versioning": "existing capability-id /<positive-integer> grammar",
+    "advertisement_is_authorization": false
+  },
+  "local_capability_policy": {
+    "separate_from_advertisement": true,
+    "default": "deny",
+    "decisions": [
+      "allow",
+      "deny"
+    ],
+    "effective_allow_requires": [
+      "peer lifecycle state admitted",
+      "active authenticated advertisement",
+      "explicit local allow"
+    ],
+    "write_visibility": "persist staged snapshot successfully before replacing live in-memory state"
+  },
+  "partition_rejoin": {
+    "disconnect_records_snapshot": true,
+    "disconnect_snapshot_immutable_during_lifecycle_updates": true,
+    "same_snapshot_rejoin": "clean only after explicit confirm call",
+    "changed_snapshot_rejoin": "explicit_reconciliation_required",
+    "silent_reconciliation": false
+  },
+  "portable_bundle": {
+    "schema": "qsol-fed-bundle/1",
+    "exact_bytes_encoding": "lowercase hexadecimal within the frozen Phase 1 canonical JSON profile",
+    "preserves": [
+      "foreign object bytes",
+      "every independent foreign provenance attribution",
+      "peer identity bytes",
+      "peer lifecycle bytes",
+      "capability advertisement bytes"
+    ],
+    "maximum_bytes": 65536,
+    "maximum_embedded_hex_characters": 8192,
+    "maximum_peers": 256,
+    "maximum_object_attributions": 1024,
+    "offline_verification": true,
+    "network_required_for_verification": false,
+    "new_peer_state": "quarantined",
+    "existing_peer_state": "preserved",
+    "new_object_namespace": "quarantine",
+    "existing_object_namespace": "preserved",
+    "import_authority": "none",
+    "import_trust_change": false
+  },
+  "phase4_gate": "export/import round-trips preserve foreign identity, every object attribution, object bytes, and provenance bytes exactly; import creates neither local authority nor trust and does not overwrite pre-existing local lifecycle decisions"
+}

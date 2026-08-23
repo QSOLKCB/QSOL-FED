@@ -1,33 +1,16 @@
 # ROADMAP
 
-QSOL-FED is being built **protocol first, parliament later**. Each phase has an explicit claim boundary and security gate.
+QSOL-FED is built **protocol first, parliament later**. Every completed phase keeps its historical security gate while successor claim manifests advance the current implementation boundary.
 
 ## Phase 0 — Constitutional bootstrap
 
 **Status: complete; historical claim gate preserved in code and CI.**
 
-- [x] Define QSOL-FED as a sovereign federation protocol, not a NEXUS mode.
-- [x] Preserve QSOL-NEXUS as the Council of Minds.
-- [x] Write Federation Charter.
-- [x] Write Federation Prime Directive.
-- [x] Define architecture, protocol, API, governance, security and threat model.
-- [x] Add strict `README4AI.md` and `AGENTS.md` machine contracts.
-- [x] Add machine-readable v1 invariant registry.
-- [x] Hard-code Prime Directive admission invariants in Rust.
-- [x] Add deterministic constitutional admission tests.
-- [x] Add constitution drift validator and CI.
-- [x] Add bootstrap envelope/node-manifest schemas.
-- [x] Explicitly forbid arbitrary remote execution in v1.
-- [x] Add canonical Phase 0 release-claim manifest.
-- [x] Hard-code Phase 0 capability claims in Rust.
-- [x] Add release-claim drift validator and CI gate.
-- [x] Make production networking, cryptographic identity, remote execution and interoperable federation hard-false claims for Phase 0.
+Constitution, Prime Directive, machine-readable invariants, fail-closed Rust admission, claim boundary, schemas, tests, and CI are complete.
 
 ### Phase 0 gate
 
-At Phase 0 there was no production networking claim, cryptographic identity claim, remote execution claim, or interoperable federation claim. The repository could claim only that the constitutional model, machine contracts and executable fail-closed admission skeleton existed and were tested.
-
-That historical baseline remains executable and immutable in `claims/phase0.json`, `PHASE0_CLAIMS`, and `tools/validate_phase0_gate.py`. Later phases promote capabilities through successor claim manifests rather than rewriting Phase 0 history.
+Phase 0 claimed only the tested constitutional model, machine contracts, and fail-closed admission skeleton. Production networking, cryptographic identity, remote execution, and interoperable federation were false. `claims/phase0.json` remains immutable history.
 
 ---
 
@@ -35,29 +18,11 @@ That historical baseline remains executable and immutable in `claims/phase0.json
 
 **Status: complete; two-implementation conformance gate enforced.**
 
-- [x] Freeze canonical JSON serialization rules.
-- [x] Forbid duplicate keys and non-finite numbers.
-- [x] Define Unicode/string normalization policy.
-- [x] Freeze `sha256:` object identity rules.
-- [x] Freeze exact Federation envelope schema v1.
-- [x] Define message ID derivation.
-- [x] Define provenance object schema.
-- [x] Define protocol error envelope.
-- [x] Define capability identifier/version grammar.
-- [x] Add positive and adversarial canonicalization fixtures.
-- [x] Add language-neutral golden vectors.
-- [x] Add malformed, ambiguous and oversized fixture corpus.
-- [x] Prove unsupported major versions fail closed.
-- [x] Add independent Rust and Python canonicalizers.
-- [x] Add executable Phase 1 wire-contract validator and CI gate.
+Canonical JSON, NFC policy, duplicate/non-finite rejection, safe integers, exact `sha256:` identity, envelope/message-ID/provenance/error contracts, capability grammar, golden vectors, hostile fixtures, Rust/Python canonicalizers, and unsupported-major rejection are complete.
 
 ### Phase 1 gate
 
 Two independent implementations must produce byte-identical canonical bytes and hashes for the golden fixtures before signatures are layered on top.
-
-The two implementations are `src/canonical.rs` and `tools/qsol_canonical.py`. Both consume `fixtures/phase1/golden-vectors.json`; Rust verifies them in `cargo test`, Python verifies them in `tools/validate_phase1_gate.py`, and CI requires both. The gate also rejects the shared malformed/ambiguous corpus, generated oversized cases, unsupported wire protocol majors, and any attempt to make the Phase 1 embedded `signature` field non-null.
-
-Phase 1 freezes deterministic bytes only. Its exact envelope remains unchanged by later phases; signatures are carried by a detached wrapper.
 
 ---
 
@@ -65,30 +30,11 @@ Phase 1 freezes deterministic bytes only. Its exact envelope remains unchanged b
 
 **Status: complete; historical cryptographic identity gate preserved.**
 
-- [x] Select reviewed signing suite and key format.
-- [x] Define `fed:qsol:<node-id>` derivation.
-- [x] Define signed envelope bytes.
-- [x] Add signature verification vectors.
-- [x] Separate signature validity from trust and authority in API types.
-- [x] Implement key rotation.
-- [x] Implement revocation/compromise records.
-- [x] Define multi-key transition rules.
-- [x] Define clock/expiry/skew policy.
-- [x] Implement durable replay protection.
-- [x] Add downgrade and algorithm-confusion tests.
-- [x] Add compromised-peer tests showing Prime Directive still holds.
-- [x] Add successor current release-claim manifest without rewriting Phase 0 history.
-- [x] Add executable Phase 2 crypto validator and CI gate.
+Ed25519 identity, root/operational key separation, detached signatures, lifecycle rotation/revocation/recovery, frozen clock limits, durable replay, algorithm-confusion tests, and compromised-peer tests are complete.
 
 ### Phase 2 gate
 
 A valid signature must never bypass local admission. Tests must show that a correctly signed forbidden request is still rejected.
-
-The Phase 2 reference profile is defined by `crypto/phase2.json` and `CRYPTOGRAPHY.md`. It uses Ed25519 with an offline root identity key and rotatable operational envelope-signing keys. The root key derives the stable node ID and authorizes lifecycle records but cannot sign Federation envelopes.
-
-Signed messages require bounded lifetime and clock skew. Durable replay state is append-only, crash-durable, calendar-validating, and fails closed on corrupt or partial logs. Phase 3 builds the HTTP service around this already-enforced boundary rather than weakening it.
-
-`SignatureValidity`, `TrustDisposition`, and `AuthorityDisposition` remain separate API dimensions. Cryptographic verification always yields `authority = none`; ordinary Prime Directive admission still decides whether an effect is permitted.
 
 ---
 
@@ -96,160 +42,114 @@ Signed messages require bounded lifetime and clock skew. Durable replay state is
 
 **Status: complete; opt-in reference API gate enforced.**
 
-- [x] Implement Rust HTTP service.
-- [x] `GET /fed/v1/node`.
-- [x] `GET /fed/v1/capabilities`.
-- [x] `POST /fed/v1/peer/hello`.
-- [x] `POST /fed/v1/envelopes`.
-- [x] `GET /fed/v1/objects/{sha256}`.
-- [x] `GET /fed/v1/provenance/{sha256}`.
-- [x] Strict body, depth, string and rate limits.
-- [x] TLS deployment profile.
-- [x] No arbitrary redirect/fetch behavior.
-- [x] SSRF defenses.
-- [x] Structured secret-safe audit log.
-- [x] Conformance tests for rejected pseudo-admin fields (`force`, `trusted`, `override`, etc.).
-- [x] Fuzz protocol parser and admission boundary.
-- [x] Add canonical `qsol-fed-peer-hello/1` schema.
-- [x] Add opt-in listener binary with loopback default.
-- [x] Add Phase 3 successor current-claim manifest and CI validator.
+The six `/fed/v1` routes, canonical/body/rate limits, lifecycle-aware introduction, replay-safe envelope admission, local-recipient routing, local-only object lookup, SSRF/redirect isolation, secret-safe audit, TLS deployment profile, trusted-proxy rate attribution, and fuzz/adversarial suite are complete.
 
 ### Phase 3 gate
 
 Public network listening remains opt-in until replay protection, limits, identity verification and fuzz/adversarial suites are green.
 
-The reference binary binds `127.0.0.1:8787` by default. A non-loopback bind requires both `--allow-public-listen` and `--tls-terminated-upstream`. Public exposure follows `TLS_PROFILE.md`, which requires TLS 1.3 upstream. Native TLS termination and production-networking maturity are not claimed.
-
-POST bodies are canonical JSON only, bounded to 65,536 bytes, with compression and query parameters rejected. Phase 1 structural JSON limits remain in force. Fixed reference rate limits are 120 requests and 30 POSTs per IP per minute.
-
-`POST /fed/v1/peer/hello` introduces only a verified public identity and bounded capabilities into in-memory non-trust state. `POST /fed/v1/envelopes` requires the introduced identity, verifies the detached Ed25519 signature and frozen Phase 2 clock policy, records durable replay state, requires the local node as recipient, and then invokes the same Prime Directive admission boundary. Known message classes remain data-only.
-
-Object and provenance routes are exact local `sha256:` lookups. The reference crate has no outbound HTTP client, URL-fetch route, redirect-following path, or fallback peer retrieval. Missing content is `404`, not an excuse to go wandering around the network.
-
-The audit stream is structured JSON Lines with an allowlisted metadata surface and intentionally excludes request bodies, arbitrary headers, private keys, signatures, and payload contents.
-
-Phase 3 includes a libFuzzer target plus deterministic mutation/adversarial coverage in ordinary CI. Pseudo-admin fields, URL-like SSRF fields, compression, oversized bodies, query parameters, rate-limit overflow, replay, malformed identities, and forbidden constitutional effects fail closed.
-
-Phase 3 establishes the bounded reference HTTP service and opt-in listener posture. It does **not** establish production networking, remote execution, persistent Phase 4 peering, or deployed interoperable federation.
+The listener remains a reference service, not a production-networking claim.
 
 ---
 
 ## Phase 4 — Federation object store and peering
 
-- [ ] Content-addressed foreign object store.
-- [ ] Explicit quarantine namespace.
-- [ ] Provenance-preserving local descendants.
-- [ ] Peer registry separate from trust registry.
-- [ ] Explicit peer lifecycle: unknown, introduced, admitted, quarantined, revoked, disconnected.
-- [ ] Capability advertisements with expiry/versioning.
-- [ ] Local allow/deny policy independent of advertisement.
-- [ ] Partition/rejoin behavior.
-- [ ] Duplicate/replay handling across restart.
-- [ ] Export/import portable federation bundle.
-- [ ] Offline verification path.
-- [ ] No silent reconciliation after partitions.
+**Status: complete; durable federation-state gate enforced.**
+
+- [x] Content-addressed foreign object store.
+- [x] Explicit quarantine namespace.
+- [x] Provenance-preserving local descendants.
+- [x] Peer registry separate from trust registry.
+- [x] Explicit peer lifecycle: unknown, introduced, admitted, quarantined, revoked, disconnected.
+- [x] Capability advertisements with expiry/versioning.
+- [x] Local allow/deny policy independent of advertisement.
+- [x] Partition/rejoin behavior.
+- [x] Duplicate/replay handling across restart.
+- [x] Export/import portable federation bundle.
+- [x] Offline verification path.
+- [x] No silent reconciliation after partitions.
+- [x] Closed Phase 4 state, peer, capability, foreign-object, and bundle contracts.
+- [x] Successor Phase 4 claim manifest and CI gate.
 
 ### Phase 4 gate
 
 Import/export round-trips must preserve foreign identity and provenance exactly. Import must not create local authority.
+
+The reference implementation also preserves exact canonical foreign object bytes, lifecycle bytes, and capability-advertisement bytes in portable bundles. Bundle import always places peers and objects into quarantine, returns `authority = none`, and does not alter local trust. Bundle verification is offline and requires no network access.
+
+Peer lifecycle survives restart and rejects lifecycle rollback or divergent same-sequence state. Trust is a separate local registry. Capability advertisement is authenticated and expiring, while local policy defaults to deny and remains independent of advertisement.
+
+Partitions record a snapshot. If a returning peer presents a changed snapshot, rejoin requires explicit reconciliation; no silent merge path exists.
 
 ---
 
 ## Phase 5 — QSOL adapters
 
 ### QSOL-NEXUS
-
-- [ ] Export Council reports as attributed foreign artifacts.
-- [ ] Export minority reports.
-- [ ] Import foreign reports without vote injection.
-- [ ] Preserve local Council equality and evidence boundaries.
-- [ ] Add independent re-deliberation flow.
-- [ ] Build Council-of-Councils experiment as reports, not a giant shared ballot.
+- [ ] Export Council reports and minority reports as attributed foreign artifacts.
+- [ ] Import reports without vote injection or evidence promotion.
+- [ ] Preserve Council equality and support independent re-deliberation.
+- [ ] Council-of-Councils experiment uses reports, not a shared ballot.
 
 ### QSOL-ORACLE
-
-- [ ] Exchange evidence observations and references.
-- [ ] Preserve `known` / `conflict` / `unknown` semantics without copying authority.
-- [ ] Keep suggested searches non-evidence.
-- [ ] Reject remote evidence promotion.
+- [ ] Exchange evidence observations/references.
+- [ ] Preserve `known` / `conflict` / `unknown` without copying authority.
+- [ ] Keep suggested searches non-evidence and reject remote evidence promotion.
 
 ### QSOL-ARK
-
 - [ ] Exchange content-addressed preservation objects.
-- [ ] Offline federation recovery bundle.
+- [ ] Offline recovery bundle and provenance verification.
 - [ ] Preserve archival presence as non-authoritative.
-- [ ] Add recovery provenance and integrity verification.
 
 ### Phase 5 gate
 
-Every adapter must have conformance tests proving it cannot bypass the same Prime Directive invariant IDs enforced by the core node.
+Every adapter must prove it cannot bypass the same Prime Directive invariant IDs enforced by the core node.
 
 ---
 
 ## Phase 6 — Third-party federation SDKs
 
-- [ ] Publish minimal protocol SDK contract.
-- [ ] Rust client SDK.
-- [ ] Python client SDK.
-- [ ] JavaScript/TypeScript client SDK.
+- [ ] Minimal protocol SDK contract.
+- [ ] Rust, Python, and JavaScript/TypeScript SDKs.
 - [ ] Language-neutral conformance suite.
-- [ ] Reference minimal node that does not depend on any QSOL repository.
-- [ ] Document institutional/research-node integration.
-- [ ] Interop test between at least three independent implementations.
+- [ ] Minimal non-QSOL node.
+- [ ] Institutional/research integration docs.
+- [ ] Interop test across at least three independent implementations.
 
 ### Phase 6 gate
 
-QSOL-FED must demonstrate that a non-NEXUS, non-QSOL-specific node can participate without adopting QSOL internal governance.
+A non-NEXUS, non-QSOL-specific node must participate without adopting QSOL internal governance.
 
 ---
 
 ## Phase 7 — Federation Assembly
 
-Only after the protocol actually works:
+Only after protocol interoperability works:
 
-- [ ] Define Assembly membership separately from network membership.
-- [ ] Define proposal and amendment lifecycle.
-- [ ] Define representation and anti-Sybil assumptions.
-- [ ] Define constitutional vs ordinary protocol amendments.
-- [ ] Define deterministic Charter Gate interaction.
-- [ ] Preserve member-local sovereignty regardless of Assembly outcomes.
-- [ ] Preserve QSOL-NEXUS as advisory/deliberative Council, not sovereign chamber.
-- [ ] Define transparent fork/version path for incompatible constitutional changes.
-- [ ] Add machine-readable governance receipts.
+- [ ] Separate Assembly membership from network membership.
+- [ ] Proposal/amendment lifecycle, representation and anti-Sybil assumptions.
+- [ ] Deterministic Charter Gate.
+- [ ] Preserve member-local sovereignty and NEXUS advisory status.
+- [ ] Transparent fork/version path and governance receipts.
 
 ### Phase 7 gate
 
-No Assembly mechanism may introduce a Federation message that directly mutates member-local authority. Protocol governance and member governance remain distinct.
+No Assembly mechanism may directly mutate member-local authority.
 
 ---
 
 ## Phase 8 — Additional transports and resilience
 
-- [ ] WebSocket transport profile where useful.
-- [ ] QUIC transport profile where useful.
-- [ ] Unix-domain/local IPC profile.
-- [ ] Offline/sneakernet signed bundle profile.
-- [ ] Store-and-forward relay profile that cannot impersonate origin.
-- [ ] NAT traversal research without weakening identity/admission.
+- [ ] WebSocket, QUIC, Unix/local IPC, offline/sneakernet and store-forward profiles.
+- [ ] NAT traversal without identity weakening.
 - [ ] Multi-relay provenance.
-- [ ] Disaster recovery and key-compromise drills.
+- [ ] Disaster recovery/key compromise drills.
 - [ ] Long-lived archive compatibility policy.
 
----
+## Explicitly deferred / prohibited
 
-## Explicitly deferred / prohibited until separately designed
-
-- generic remote shell;
-- arbitrary peer-selected tools;
-- shared global truth score;
-- transitive trust by default;
-- global mutable state;
-- automatic local evidence promotion;
-- automatic vote federation;
-- secret-bearing semantic prompts;
-- peer-controlled constitutional override;
-- claims of legal sovereignty, personhood or consciousness from protocol membership.
+Generic remote shell, arbitrary peer-selected tools, shared global truth, transitive trust by default, global mutable state, automatic evidence promotion, automatic vote federation, secret-bearing semantic prompts, peer-controlled constitutional override, and protocol-derived personhood/legal sovereignty claims remain outside the current design.
 
 ## Long-term success condition
 
-QSOL-FED succeeds when two mutually distrustful systems can safely exchange useful, attributable knowledge while remaining free to disagree, disconnect and preserve their own local authority.
+QSOL-FED succeeds when mutually distrustful systems can exchange useful, attributable knowledge while remaining free to disagree, disconnect, preserve provenance, and retain their own local authority.

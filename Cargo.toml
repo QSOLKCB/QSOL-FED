@@ -1,8 +1,8 @@
 [package]
 name = "qsol-fed"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2024"
-description = "Reference constitutional, canonical wire, cryptographic identity, and opt-in HTTP API core for the QSOL-FED sovereign federation protocol"
+description = "Reference constitutional, wire, cryptographic identity, HTTP API, and durable federation-state core for QSOL-FED"
 license = "Apache-2.0"
 repository = "https://github.com/QSOLKCB/QSOL-FED"
 rust-version = "1.85"
