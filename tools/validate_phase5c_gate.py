@@ -83,10 +83,17 @@ def validate_contract_and_snapshots() -> None:
     donor = load("contracts/oracle-fed-membrane-v1.json")
     require(donor["protocol"] == "QSOL-ORACLE-FED/1", "local ORACLE donor contract protocol drift")
     require(donor["consumer_pin"]["commit"] == "407d0ed75c7d8a76bd49b3c30e74a0ae2c59f1e6", "ORACLE donor consumer pin drift")
-    require(donor["transport"]["bounded_input_read"] is True and donor["transport"]["maximum_line_bytes"] == 65536, "ORACLE donor transport bounds drift")
-    require(donor["observation"]["evidence_references_must_be_ledger_members"] is True, "ORACLE donor ledger-membership rule drift")
-    require(donor["observation"]["explicit_missing_evidence_forces_unknown"] is True, "ORACLE donor unknown-precedence drift")
-    require(donor["observation"]["conflict_requires_conflict_supporting_events"] is True, "ORACLE donor conflict provenance drift")
+    transport = donor["transport"]
+    require(transport["profile"] == "local-stdio-jsonl" and transport["maximum_line_bytes"] == 65536, "ORACLE donor transport profile/bounds drift")
+    require(transport["canonical_input_required"] is True and transport["deterministic_output"] is True, "ORACLE donor canonical/deterministic drift")
+    require(transport["response_budget_policy"] == "truncate-discovery-searches-before-response-limit", "ORACLE donor response-budget policy drift")
+    require(transport["request_kind"] == "evidence.export" and transport["response_kind"] == "evidence.export.result", "ORACLE donor message-kind drift")
+    observation_contract = donor["observation"]
+    require(observation_contract["ledger_membership_required_when_validating_live_response"] is True, "ORACLE donor ledger-membership rule drift")
+    require(observation_contract["research_missing_evidence_forces_unknown"] is True, "ORACLE donor unknown-precedence drift")
+    require(observation_contract["conflict_supporting_reference_policy"] == "evidence.state=conflict only", "ORACLE donor conflict provenance drift")
+    require(observation_contract["suggested_search_is_evidence"] is False, "ORACLE donor suggested-search evidence drift")
+    require(observation_contract["synthetic_input"] is False and observation_contract["truth_claim"] is False and observation_contract["evidence_promotion"] is False and observation_contract["authority_effect"] == "none", "ORACLE donor observation authority drift")
     require(all(value is False for value in donor["authority_firewall"].values()), "ORACLE donor authority firewall drift")
 
     request = load("schemas/oracle-transport-request-v1.schema.json")
@@ -108,10 +115,7 @@ def validate_rust_and_ci() -> None:
         "oracle_release_fingerprint_file_mismatch", "Command::new(\"python3\")",
         ".arg(\"serve\")", "env_remove(\"PYTHONPATH\")", "env_remove(\"PYTHONHOME\")",
         "oracle-event:", "response_sha256", "oracle_transport_noncanonical_response",
-        "oracle_holodeck_synthetic_admission",
     ):
-        if marker == "oracle_holodeck_synthetic_admission":
-            continue
         require(marker in source, f"Phase 5C Rust marker missing: {marker}")
     for forbidden in ("Command::new(request", "TcpStream", "reqwest", "hyper::client"):
         require(forbidden not in source, f"Phase 5C live adapter gained forbidden generic/network capability: {forbidden}")
@@ -141,7 +145,7 @@ def validate_surfaces() -> None:
 
     roadmap = (ROOT / "ROADMAP.md").read_text(encoding="utf-8")
     require("Phase 5C — QSOL-ORACLE live transport" in roadmap, "ROADMAP Phase 5C missing")
-    require("oracle_live_transport" in roadmap and "043e864b3c25dfeca3ce1752b3110479479071b1" in roadmap, "ROADMAP ORACLE promotion/pin missing")
+    require("oracle_live_transport" in roadmap and ORACLE_COMMIT in roadmap, "ROADMAP ORACLE promotion/pin missing")
     require("oracle_holodeck_synthetic_admission" in roadmap and "false" in roadmap.lower(), "ROADMAP Holodeck deferral missing")
     agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
     for marker in ("state/phase5c.json", "claims/phase5c.json", "src/oracle_live.rs", "python3 tools/validate_phase5c_gate.py"):
