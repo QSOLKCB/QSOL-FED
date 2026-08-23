@@ -1,24 +1,21 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "qsol-fed-assembly-proposal/1",
-  "title": "Federation Assembly proposal record",
+  "title": "Federation Assembly active proposal record",
+  "$comment": "Structural schema validation MUST be followed by validate_proposal_record_semantics, which recomputes qsol-fed-charter-gate/1 and the proposal identity from the declared effects and bounded electorate reference.",
+  "x-qsol-semanticValidator": "validate_proposal_record_semantics",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema", "proposal_id", "sequence", "draft", "charter_gate", "electorate_member_ids", "status", "votes", "advisory_reports"],
+  "required": ["schema", "proposal_id", "sequence", "draft", "charter_gate", "electorate_ref", "electorate_size", "status", "votes", "advisory_reports"],
   "properties": {
     "schema": {"const": "qsol-fed-assembly-proposal/1"},
     "proposal_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
     "sequence": {"type": "integer", "minimum": 1},
     "draft": {"$ref": "#/$defs/draft"},
     "charter_gate": {"$ref": "#/$defs/charterGate"},
-    "electorate_member_ids": {
-      "type": "array",
-      "minItems": 1,
-      "maxItems": 1024,
-      "uniqueItems": true,
-      "items": {"type": "string", "pattern": "^assembly:[a-z0-9][a-z0-9._-]{0,127}$"}
-    },
-    "status": {"enum": ["open", "fork_required", "withdrawn", "accepted", "rejected", "fork_endorsed"]},
+    "electorate_ref": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "electorate_size": {"type": "integer", "minimum": 1, "maximum": 1024},
+    "status": {"enum": ["open", "fork_required", "withdrawn"]},
     "votes": {
       "type": "object",
       "maxProperties": 1024,
@@ -31,6 +28,20 @@
       "items": {"$ref": "#/$defs/advisory"}
     }
   },
+  "allOf": [
+    {
+      "if": {"properties": {"draft": {"properties": {"kind": {"const": "advisory_resolution"}}}}},
+      "then": {"properties": {"draft": {"properties": {"compatibility": {"const": "not_applicable"}}}}}
+    },
+    {
+      "if": {"properties": {"draft": {"properties": {"kind": {"const": "fork_proposal"}}}}},
+      "then": {"properties": {"draft": {"properties": {"compatibility": {"const": "breaking"}}}}}
+    },
+    {
+      "if": {"properties": {"draft": {"properties": {"kind": {"enum": ["protocol_amendment", "charter_amendment"]}}}}},
+      "then": {"properties": {"draft": {"properties": {"compatibility": {"enum": ["backward_compatible", "breaking"]}}}}}
+    }
+  ],
   "$defs": {
     "effects": {
       "type": "object",
