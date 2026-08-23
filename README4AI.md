@@ -152,6 +152,10 @@
     "unknown_authority_action_rejected"
   ],
   "hardening": {
+    "runtime_override_of_constitution": false,
+    "environment_override_of_constitution": false,
+    "peer_override_of_constitution": false,
+    "model_override_of_constitution": false,
     "persistence_creates_authority": false,
     "peer_admission_creates_trust": false,
     "capability_advertisement_creates_permission": false,
