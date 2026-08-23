@@ -9,7 +9,7 @@ fn main() {
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let fixture = include_str!("../../fixtures/phase6/conformance.json");
-    let result = phase6_conformance_from_fixture(fixture, "language-neutral")?;
+    let result = phase6_conformance_from_fixture(fixture)?;
     println!("{}", sdk_canonicalize(&result)?);
     Ok(())
 }
