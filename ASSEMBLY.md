@@ -59,20 +59,30 @@ The reference model supports:
 - `advisory_resolution`;
 - `fork_proposal`.
 
-Proposal states are:
+Active proposal states are:
 
 ```text
 open
 fork_required
 withdrawn
-accepted
-rejected
-fork_endorsed
 ```
 
-When a proposal opens, the Assembly freezes the sorted active-member electorate. Later joins or withdrawals do not move quorum or voting eligibility for that already-open proposal.
+Final outcomes (`accepted`, `rejected`, `withdrawn`, `fork_required`, `fork_endorsed`) live in immutable governance receipts rather than being written back into an indefinitely mutable proposal record.
+
+When a proposal opens, the Assembly freezes the sorted active-member electorate. The member set remains Assembly-local for vote admission. The public proposal record carries only:
+
+```text
+electorate_ref  = sha256:<domain-separated snapshot digest>
+electorate_size = N
+```
+
+The digest is computed incrementally from the ordered member IDs, so the advertised 1,024-member electorate does not have to fit all member IDs inside one 65,536-byte canonical proposal-identity projection. Later joins or withdrawals do not move quorum or voting eligibility for that already-open proposal.
 
 Votes are append-only per member for the proposal. A second vote from the same member is rejected rather than silently replacing history.
+
+`ProtocolAmendment` and `CharterAmendment` require an explicit compatibility classification. `not_applicable` is reserved for advisory resolutions; fork proposals are explicitly breaking.
+
+Finalization is terminal. The deterministic receipt is derived first; only after that succeeds is the proposal removed from the active proposal/electorate set. This means a finalized `fork_required` proposal cannot accept another advisory, be withdrawn, or produce a second receipt, and finalized proposals reclaim the bounded active-proposal capacity.
 
 ### Quorum and approval
 
@@ -117,6 +127,18 @@ member_local_authority_effect = none
 ```
 
 That makes disagreement explicit and gives incompatible evolution a transparent fork path.
+
+### Structural schema vs semantic validation
+
+`schemas/assembly-proposal-v1.schema.json` is closed and validates the public shape, but schema validation alone is deliberately insufficient. Every proposal record MUST also pass `validate_proposal_record_semantics`, which:
+
+- derives the Charter Gate from `draft.effects`;
+- requires the stored assessment to match exactly;
+- validates the active status against the derived assessment;
+- validates proposal-kind compatibility rules; and
+- recomputes the proposal identity from the bounded immutable projection.
+
+This prevents a structurally valid record from declaring an authority-mutating effect while forging `disposition = compatible`.
 
 ## Fork and version path
 
@@ -164,7 +186,7 @@ Receipts deterministically bind:
 
 - proposal identity;
 - Charter Gate disposition and violated invariant IDs;
-- electorate size;
+- electorate digest and size;
 - yes/no/abstain tally;
 - quorum and approval result;
 - version/fork path;
@@ -182,7 +204,7 @@ authority_effect                = none
 
 ## Member-local sovereignty
 
-`src/assembly.rs` deliberately has no handle to:
+`src/assembly.rs` deliberately has an allowlisted dependency/import surface containing only deterministic collections/formatting, serialization, hashing, Unicode normalization, canonicalization, and wire grammar helpers. It has no handle to:
 
 - `PeerRegistry`;
 - `TrustRegistry`;
@@ -191,6 +213,7 @@ authority_effect                = none
 - ORACLE evidence promotion;
 - ARK authority;
 - Holodeck runtime state;
+- files or environment state;
 - credentials;
 - tools or process execution;
 - network clients.
