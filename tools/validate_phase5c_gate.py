@@ -64,12 +64,21 @@ def validate_contract_and_snapshots() -> None:
     require(oracle["release_fingerprint_sha256"] == ORACLE_RELEASE, "ORACLE release fingerprint pin drift")
     require(oracle["transport_protocol"] == "QSOL-ORACLE-FED/1", "ORACLE transport protocol drift")
     require(oracle["transport_profile"] == "local-stdio-jsonl", "ORACLE transport profile drift")
-    require(oracle["runtime_release_fingerprint_attestation"] is True, "runtime ORACLE release attestation missing")
-    require(oracle["ci_exact_commit_checkout"] is True, "CI exact ORACLE checkout missing")
-    require(oracle["fixed_python_entrypoint"] == "python3 tools/fed_transport.py serve", "ORACLE process entrypoint drift")
+    for key in (
+        "runtime_release_fingerprint_attestation", "release_fingerprint_digest_recomputed",
+        "release_files_digest_recomputed", "all_fingerprinted_files_verified",
+        "unfingerprinted_runtime_helper_explicitly_pinned", "private_runtime_staged_per_request",
+        "staged_runtime_reattested_before_launch", "ci_exact_commit_checkout", "python_isolated_mode",
+        "stdout_read_is_bounded_before_process_completion",
+    ):
+        require(oracle[key] is True, f"ORACLE hardened runtime requirement missing: {key}")
+    require(oracle["mutable_checkout_executed_directly"] is False, "mutable ORACLE checkout execution drift")
+    require(oracle["stderr_buffered_in_memory"] is False, "ORACLE stderr buffering drift")
+    require(oracle["fixed_python_entrypoint"] == "python3 -I tools/fed_transport.py serve", "ORACLE process entrypoint drift")
     for key in ("caller_supplied_command", "caller_supplied_url", "caller_supplied_socket", "pythonpath_inherited", "pythonhome_inherited"):
         require(oracle[key] is False, f"ORACLE live process boundary drift: {key}")
     require(oracle["maximum_line_bytes"] == 65536, "ORACLE line limit drift")
+    require(oracle["request_id_correlation"] == "NFC-normalized canonical request_id", "ORACLE request-id correlation drift")
     require(oracle["states"] == ["known", "conflict", "unknown"], "ORACLE state set drift")
     require(oracle["evidence_reference_prefix"] == "oracle-event:", "ORACLE provenance prefix drift")
     require(oracle["response_digest_verified"] is True and oracle["response_canonical_bytes_required"] is True, "ORACLE response validation drift")
@@ -111,16 +120,22 @@ def validate_contract_and_snapshots() -> None:
 def validate_rust_and_ci() -> None:
     source = (ROOT / "src/oracle_live.rs").read_text(encoding="utf-8")
     for marker in (
-        ORACLE_COMMIT, ORACLE_RELEASE, "attest_oracle_release", "release/fingerprint.json",
-        "oracle_release_fingerprint_file_mismatch", "Command::new(\"python3\")",
-        ".arg(\"serve\")", "env_remove(\"PYTHONPATH\")", "env_remove(\"PYTHONHOME\")",
+        ORACLE_COMMIT, ORACLE_RELEASE, "ORACLE_NEXUS_MEMBRANE_COMMON_SHA256",
+        "stage_attested_runtime", "staged_runtime", "oracle_release_files_digest_mismatch",
+        "oracle_release_fingerprint_digest_mismatch", "oracle_runtime_helper_mismatch",
+        "Command::new(\"python3\")", ".arg(\"-I\")", ".arg(\"serve\")",
+        "env_remove(\"PYTHONPATH\")", "env_remove(\"PYTHONHOME\")",
+        "oracle_transport_stdout_limit_exceeded", "canonical_request_id",
         "oracle-event:", "response_sha256", "oracle_transport_noncanonical_response",
     ):
         require(marker in source, f"Phase 5C Rust marker missing: {marker}")
-    for forbidden in ("Command::new(request", "TcpStream", "reqwest", "hyper::client"):
-        require(forbidden not in source, f"Phase 5C live adapter gained forbidden generic/network capability: {forbidden}")
+    for forbidden in ("Command::new(request", "TcpStream", "reqwest", "hyper::client", "wait_with_output"):
+        require(forbidden not in source, f"Phase 5C live adapter gained forbidden generic/network/unbounded process capability: {forbidden}")
     binary = (ROOT / "src/bin/qsol-fed-oracle.rs").read_text(encoding="utf-8")
-    for marker in ("OracleLiveAdapter::open", "phase5c-conformance", ORACLE_COMMIT, ORACLE_RELEASE):
+    for marker in (
+        "OracleLiveAdapter::open", "phase5c-conformance",
+        "ORACLE_PINNED_COMMIT", "ORACLE_RELEASE_FINGERPRINT_SHA256",
+    ):
         require(marker in binary, f"ORACLE live probe marker missing: {marker}")
 
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
@@ -157,7 +172,7 @@ def main() -> None:
     validate_contract_and_snapshots()
     validate_rust_and_ci()
     validate_surfaces()
-    print("phase5c ORACLE live gate OK: exact donor release attested, bounded local JSONL process verified, oracle-event provenance preserved, and transport promoted without synthetic/authority/network claims")
+    print("phase5c ORACLE live gate OK: donor fingerprint recomputed, staged runtime re-attested, bounded isolated local JSONL process verified, oracle-event provenance preserved, and transport promoted without synthetic/authority/network claims")
 
 
 if __name__ == "__main__":
