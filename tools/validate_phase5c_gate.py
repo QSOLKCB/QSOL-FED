@@ -121,7 +121,7 @@ def validate_rust_and_ci() -> None:
     source = (ROOT / "src/oracle_live.rs").read_text(encoding="utf-8")
     for marker in (
         ORACLE_COMMIT, ORACLE_RELEASE, "ORACLE_NEXUS_MEMBRANE_COMMON_SHA256",
-        "stage_attested_runtime", "staged_runtime", "oracle_release_files_digest_mismatch",
+        "stage_attested_runtime", "StagedOracleRuntime", "oracle_release_files_digest_mismatch",
         "oracle_release_fingerprint_digest_mismatch", "oracle_runtime_helper_mismatch",
         "Command::new(\"python3\")", ".arg(\"-I\")", ".arg(\"serve\")",
         "env_remove(\"PYTHONPATH\")", "env_remove(\"PYTHONHOME\")",
@@ -143,9 +143,9 @@ def validate_rust_and_ci() -> None:
         "QSOLKCB/QSOL-ORACLE", ORACLE_COMMIT, ".deps/QSOL-ORACLE",
         "oracle-fed-membrane-v1.json", "oracle-transport-request-v1.schema.json",
         "oracle-transport-response-v1.schema.json", "qsol-fed-oracle",
-        "validate_phase5c_gate.py",
+        "forged fingerprint self-claim", "validate_phase5c_gate.py",
     ):
-        require(marker in workflow, f"CI Phase 5C marker missing: {marker}")
+        require(marker.lower() in workflow.lower(), f"CI Phase 5C marker missing: {marker}")
 
 
 def validate_surfaces() -> None:
