@@ -8,6 +8,7 @@
     "schema",
     "protocol",
     "identity",
+    "lifecycle",
     "capabilities",
     "authority_claim"
   ],
@@ -20,6 +21,17 @@
     },
     "identity": {
       "$ref": "node-identity-v1.schema.json"
+    },
+    "lifecycle": {
+      "type": "array",
+      "maxItems": 128,
+      "description": "Ordered authenticated key-rotation and key-status records applied from the initial identity document. Re-introduction must not roll back locally retained lifecycle state.",
+      "items": {
+        "oneOf": [
+          {"$ref": "key-rotation-v1.schema.json"},
+          {"$ref": "key-status-v1.schema.json"}
+        ]
+      }
     },
     "capabilities": {
       "type": "array",
