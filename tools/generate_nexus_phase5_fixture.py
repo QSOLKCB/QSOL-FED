@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the deterministic Phase 5 fixture using native QSOL-NEXUS WorldStore code."""
+"""Generate deterministic Phase 5 fixtures using native QSOL-NEXUS WorldStore code."""
 
 from __future__ import annotations
 
@@ -8,6 +8,8 @@ import importlib
 import json
 from pathlib import Path
 import sys
+
+DEFAULT_MINORITY_RATIONALE = "Synthetic exploration may be useful, but usefulness does not create authority."
 
 
 def canonical(value):
@@ -26,7 +28,7 @@ def load_native(nexus_src: Path):
     return world_mod.WorldStore, persistent_mod.PersistentWorldService, persistent_mod.validate_world_export_bundle
 
 
-def build_fixture(nexus_src: Path):
+def build_fixture(nexus_src: Path, minority_rationale: str = DEFAULT_MINORITY_RATIONALE):
     WorldStore, PersistentWorldService, validate_world_export_bundle = load_native(nexus_src)
     world = WorldStore()
     question = world.create_object(
@@ -71,7 +73,7 @@ def build_fixture(nexus_src: Path):
                     {
                         "member_id": "beta",
                         "choice": "ABSTAIN",
-                        "rationale": "Synthetic exploration may be useful, but usefulness does not create authority.",
+                        "rationale": minority_rationale,
                     }
                 ],
             },
@@ -105,8 +107,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--nexus-src", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--minority-rationale", default=DEFAULT_MINORITY_RATIONALE)
     args = parser.parse_args()
-    args.output.write_text(canonical(build_fixture(args.nexus_src)) + "\n", encoding="utf-8")
+    args.output.write_text(
+        canonical(build_fixture(args.nexus_src, args.minority_rationale)) + "\n",
+        encoding="utf-8",
+    )
 
 
 if __name__ == "__main__":
