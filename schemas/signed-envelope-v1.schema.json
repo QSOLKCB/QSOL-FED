@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qsol.example/schemas/signed-envelope-v1.schema.json",
+  "title": "QSOL-FED Signed Envelope v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "algorithm", "node_id", "key_id", "envelope", "signature"],
+  "properties": {
+    "schema": {"const": "qsol-fed-signed-envelope/1"},
+    "algorithm": {"const": "ed25519"},
+    "node_id": {"type": "string", "pattern": "^fed:qsol:[0-9a-f]{64}$"},
+    "key_id": {"type": "string", "pattern": "^ed25519:[0-9a-f]{64}$"},
+    "envelope": {"$ref": "federation-envelope-v1.schema.json"},
+    "signature": {"type": "string", "pattern": "^[0-9a-f]{128}$"}
+  }
+}

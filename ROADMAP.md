@@ -4,7 +4,7 @@ QSOL-FED is being built **protocol first, parliament later**. Each phase has an 
 
 ## Phase 0 — Constitutional bootstrap
 
-**Status: complete; claim gate enforced in code and CI.**
+**Status: complete; historical claim gate preserved in code and CI.**
 
 - [x] Define QSOL-FED as a sovereign federation protocol, not a NEXUS mode.
 - [x] Preserve QSOL-NEXUS as the Council of Minds.
@@ -25,9 +25,9 @@ QSOL-FED is being built **protocol first, parliament later**. Each phase has an 
 
 ### Phase 0 gate
 
-No production networking claim. No cryptographic identity claim. No remote execution. No interoperable federation claim. The repository may claim only that the constitutional model, machine contracts and executable fail-closed admission skeleton exist and are tested.
+At Phase 0 there was no production networking claim, cryptographic identity claim, remote execution claim, or interoperable federation claim. The repository could claim only that the constitutional model, machine contracts and executable fail-closed admission skeleton existed and were tested.
 
-This gate remains executable. `claims/phase0.json`, `src/claims.rs`, Rust tests and `tools/validate_phase0_gate.py` must agree. Completing later wire phases does not silently promote Phase 0's hard-false networking, identity, execution or interoperability claims.
+That historical baseline remains executable and immutable in `claims/phase0.json`, `PHASE0_CLAIMS`, and `tools/validate_phase0_gate.py`. Later phases promote capabilities through successor claim manifests rather than rewriting Phase 0 history.
 
 ---
 
@@ -55,30 +55,42 @@ This gate remains executable. `claims/phase0.json`, `src/claims.rs`, Rust tests 
 
 Two independent implementations must produce byte-identical canonical bytes and hashes for the golden fixtures before signatures are layered on top.
 
-The two implementations are `src/canonical.rs` and `tools/qsol_canonical.py`. Both consume `fixtures/phase1/golden-vectors.json`; Rust verifies them in `cargo test`, Python verifies them in `tools/validate_phase1_gate.py`, and CI requires both. The gate also rejects the shared malformed/ambiguous corpus, generated oversized cases, unsupported wire protocol majors, and any attempt to make the Phase 1 `signature` field non-null before Phase 2.
+The two implementations are `src/canonical.rs` and `tools/qsol_canonical.py`. Both consume `fixtures/phase1/golden-vectors.json`; Rust verifies them in `cargo test`, Python verifies them in `tools/validate_phase1_gate.py`, and CI requires both. The gate also rejects the shared malformed/ambiguous corpus, generated oversized cases, unsupported wire protocol majors, and any attempt to make the Phase 1 embedded `signature` field non-null.
 
-Phase 1 freezes deterministic bytes only. It does **not** claim production networking, cryptographic node identity, remote execution, live peering, replay-safe transport, or interoperable federation deployment.
+Phase 1 freezes deterministic bytes only. Its exact envelope remains unchanged by Phase 2; signatures are carried by a detached wrapper.
 
 ---
 
 ## Phase 2 — Cryptographic node identity
 
-- [ ] Select reviewed signing suite and key format.
-- [ ] Define `fed:qsol:<node-id>` derivation.
-- [ ] Define signed envelope bytes.
-- [ ] Add signature verification vectors.
-- [ ] Separate signature validity from trust and authority in API types.
-- [ ] Implement key rotation.
-- [ ] Implement revocation/compromise records.
-- [ ] Define multi-key transition rules.
-- [ ] Define clock/expiry/skew policy.
-- [ ] Implement durable replay protection.
-- [ ] Add downgrade and algorithm-confusion tests.
-- [ ] Add compromised-peer tests showing Prime Directive still holds.
+**Status: complete; cryptographic identity gate enforced.**
+
+- [x] Select reviewed signing suite and key format.
+- [x] Define `fed:qsol:<node-id>` derivation.
+- [x] Define signed envelope bytes.
+- [x] Add signature verification vectors.
+- [x] Separate signature validity from trust and authority in API types.
+- [x] Implement key rotation.
+- [x] Implement revocation/compromise records.
+- [x] Define multi-key transition rules.
+- [x] Define clock/expiry/skew policy.
+- [x] Implement durable replay protection.
+- [x] Add downgrade and algorithm-confusion tests.
+- [x] Add compromised-peer tests showing Prime Directive still holds.
+- [x] Add successor current release-claim manifest without rewriting Phase 0 history.
+- [x] Add executable Phase 2 crypto validator and CI gate.
 
 ### Phase 2 gate
 
 A valid signature must never bypass local admission. Tests must show that a correctly signed forbidden request is still rejected.
+
+The Phase 2 reference profile is defined by `crypto/phase2.json` and `CRYPTOGRAPHY.md`. It uses Ed25519 with an offline root identity key and rotatable operational envelope-signing keys. The root key derives the stable node ID and authorizes lifecycle records but cannot sign Federation envelopes. Normal rotation requires root, outgoing-key, and incoming proof-of-possession signatures. Recovery after an operational-key compromise requires the root and replacement key; root compromise is terminal for that node ID.
+
+Signed messages require bounded lifetime and clock skew. Durable replay state is append-only, fsynced before a message is reported fresh, and fails closed on partial or corrupt logs. The replay store is single-process and makes no Phase 3 server-concurrency claim.
+
+`SignatureValidity`, `TrustDisposition`, and `AuthorityDisposition` remain separate API dimensions. Cryptographic verification always yields `authority = none`; ordinary Prime Directive admission still decides whether an effect is permitted.
+
+Phase 2 establishes local cryptographic identity, signed-envelope verification, key lifecycle, and durable replay protection. It does **not** establish production networking, remote execution, or deployed interoperable federation.
 
 ---
 

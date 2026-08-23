@@ -1,13 +1,15 @@
 [package]
 name = "qsol-fed"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
-description = "Reference constitutional and canonical wire core for the QSOL-FED sovereign federation protocol"
+description = "Reference constitutional, canonical wire, and cryptographic identity core for the QSOL-FED sovereign federation protocol"
 license = "Apache-2.0"
 repository = "https://github.com/QSOLKCB/QSOL-FED"
 rust-version = "1.85"
 
 [dependencies]
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+ed25519-dalek = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"

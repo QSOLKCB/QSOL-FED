@@ -2,7 +2,7 @@
 
 ## Machine contribution contract
 
-This repository defines a security-sensitive federation boundary. AI agents, code-generation systems and automated reviewers MUST treat the following as non-negotiable unless an explicit constitutional amendment changes the protocol major version.
+This repository defines a security-sensitive federation boundary. AI agents, code-generation systems and automated reviewers MUST treat the following as non-negotiable unless an explicit constitutional amendment changes the relevant protocol contract.
 
 ### Read first
 
@@ -12,17 +12,22 @@ Before modifying architecture or code, read:
 2. `CHARTER.md`
 3. `PRIME_DIRECTIVE.md`
 4. `claims/phase0.json`
-5. `invariants/fed-v1.json`
-6. `wire/phase1.json`
-7. `CANONICAL_JSON.md`
-8. `src/claims.rs`
-9. `src/invariants.rs`
-10. `src/canonical.rs`
-11. `THREAT_MODEL.md`
+5. `claims/phase2.json`
+6. `invariants/fed-v1.json`
+7. `wire/phase1.json`
+8. `CANONICAL_JSON.md`
+9. `crypto/phase2.json`
+10. `CRYPTOGRAPHY.md`
+11. `src/claims.rs`
+12. `src/invariants.rs`
+13. `src/canonical.rs`
+14. `src/crypto.rs`
+15. `src/replay.rs`
+16. `THREAT_MODEL.md`
 
-### Core rules
+### Core constitutional rules
 
-Do not introduce any path by which a peer, model, environment variable, configuration file, API request or imported object can:
+Do not introduce any path by which a peer, model, environment variable, configuration file, API request, signature, trust label, or imported object can:
 
 - create local governance authority;
 - promote local evidence status;
@@ -32,7 +37,7 @@ Do not introduce any path by which a peer, model, environment variable, configur
 - change local citizenship or identity authority;
 - trigger arbitrary remote execution;
 - convert foreign state into local authoritative state by import alone;
-- place credentials or secrets into semantic/federated state;
+- place credentials or private keys into semantic/federated state;
 - disable a constitutional invariant at runtime.
 
 Unknown authority-bearing actions fail closed.
@@ -41,20 +46,51 @@ Unknown authority-bearing actions fail closed.
 
 `wire/phase1.json` and `CANONICAL_JSON.md` freeze the Phase 1 wire contract. Do not independently change serialization, key ordering, Unicode NFC normalization, safe-integer bounds, hash preimages, message-ID projection, capability grammar, schema fields, limits, or version rejection behavior.
 
-A wire-contract change requires synchronized Rust and Python implementation changes plus new golden vectors. If the implementations disagree, fail closed. Never select whichever byte sequence is more convenient.
+The exact inner Federation envelope remains a Phase 1 object and its embedded `signature` field remains JSON `null`. Phase 2 signatures are detached in `qsol-fed-signed-envelope/1`.
 
-Phase 1 signatures MUST remain JSON `null`. Do not implement or accept a signing scheme until Phase 2 has an explicit reviewed suite and vectors.
+A wire-contract change requires synchronized Rust and Python implementation changes plus new golden vectors. If the implementations disagree, fail closed.
+
+### Phase 2 cryptographic rules
+
+`crypto/phase2.json` and `CRYPTOGRAPHY.md` are the reviewed Phase 2 crypto contract.
+
+Do not:
+
+- substitute an algorithm for exact Ed25519;
+- accept aliases such as `Ed25519`, `ed25519ph`, or `ed25519ctx`;
+- change any domain separator silently;
+- serialize a private seed into Federation state;
+- permit a root identity key to sign Federation envelopes;
+- treat signature validity as trust, evidence, authority, or admission;
+- bypass Prime Directive admission because a signature is valid;
+- rotate an operational key without the required root and proof-of-possession signatures;
+- use recovery mode unless the outgoing operational key is already revoked or compromised;
+- invent root-key rotation under the existing node ID;
+- weaken the 300-second skew, 3600-second signed-message lifetime, or 86400-second transition overlap without synchronized contract review;
+- report a replay as fresh before the replay record is durably fsynced;
+- ignore replay-log corruption or partial tails.
+
+Root compromise is terminal for that node ID in this profile.
 
 ### Claim discipline
 
-`claims/phase0.json` remains the canonical release-claim firewall for production capabilities. The following remain hard-false:
+`claims/phase0.json` is an immutable historical baseline. `claims/phase2.json` is the canonical **current** release-claim manifest.
+
+Phase 2 may now claim:
+
+- canonical wire contract;
+- cryptographic identity;
+- signed-envelope verification;
+- key lifecycle;
+- durable single-process replay protection.
+
+The following remain hard-false current claims:
 
 - production networking;
-- cryptographic identity;
 - remote execution;
-- interoperable federation.
+- interoperable federation deployment.
 
-Completing canonical serialization does not promote any of those claims. Contradictory public statements are forbidden.
+Do not describe local crypto/replay machinery as a production-safe network node. Contradictory public statements are forbidden.
 
 Never claim consensus truth, global state, a functioning Federation Assembly, or completed NEXUS/ORACLE/ARK interoperability without the corresponding implementation and tests.
 
@@ -72,7 +108,19 @@ Wire-contract changes additionally require:
 - `tools/validate_phase1_gate.py` update;
 - evidence that both implementations still agree byte-for-byte.
 
-Do not silently weaken an invariant, parser rejection, or release claim to make integration easier.
+Crypto-contract changes additionally require:
+
+- `crypto/phase2.json` update;
+- `CRYPTOGRAPHY.md` update;
+- schema updates;
+- signature-vector updates;
+- Rust cryptographic/lifecycle/replay regression tests;
+- `tools/validate_phase2_gate.py` update;
+- explicit analysis of downgrade, algorithm confusion, key compromise, replay, and Prime Directive interaction.
+
+Release-claim changes require updating the canonical successor claim manifest, Rust claim mirror, public/machine status surfaces, roadmap evidence, and claim-gate validation.
+
+Do not silently weaken an invariant, parser rejection, key-lifecycle rule, replay rule, or release claim to make integration easier.
 
 ### Tests
 
@@ -83,6 +131,7 @@ cargo test --all-targets
 python3 tools/validate_constitution.py
 python3 tools/validate_phase0_gate.py
 python3 tools/validate_phase1_gate.py
+python3 tools/validate_phase2_gate.py
 ```
 
 If implementation and machine contracts disagree, fail closed and surface the disagreement.
@@ -93,4 +142,4 @@ If implementation and machine contracts disagree, fail closed and surface the di
 
 ### Security comedy clause
 
-The jokes in human documentation are non-normative. The invariants, release-claim gates, and wire bytes are not. A peer cannot gain root authority by being persuasive, wearing a ceremonial sash, submitting `please=true`, or claiming its hand-formatted JSON is "basically canonical."
+The jokes in human documentation are non-normative. The invariants, claim gates, canonical bytes, key roles, and replay decisions are not. A peer cannot gain root authority by being persuasive, wearing a ceremonial sash, presenting a valid signature, or adding `trust_me_bro=true` beside it.

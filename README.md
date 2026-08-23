@@ -4,14 +4,14 @@
 
 > **Protocol is the law. API is the port. NEXUS is the Council.**
 
-QSOL-FED is being designed to let independent systems exchange attributable, provenance-preserving objects without surrendering local sovereignty. Cryptographic identity and production networking remain later roadmap phases.
+QSOL-FED is being designed to let independent systems exchange attributable, provenance-preserving objects without surrendering local sovereignty. Phase 2 now establishes local cryptographic node identity and signed-envelope verification, while production networking remains a later phase.
 
 It is intentionally **not** a global brain, blockchain, truth oracle, remote administration plane, or central government.
 
-## Phase 0 claim gate
+## Historical Phase 0 claim gate
 
 <!-- PHASE0_CLAIM_BOUNDARY:BEGIN -->
-The current repository is deliberately constrained to the bootstrap claim boundary:
+At Phase 0 the repository was deliberately constrained to the bootstrap claim boundary:
 
 - constitutional model: **established and tested**;
 - machine contracts: **established and tested**;
@@ -23,11 +23,32 @@ The current repository is deliberately constrained to the bootstrap claim bounda
 - interoperable federation: **not established**.
 <!-- PHASE0_CLAIM_BOUNDARY:END -->
 
-These claims are machine-enforced by [`claims/phase0.json`](claims/phase0.json), [`src/claims.rs`](src/claims.rs), tests, and [`tools/validate_phase0_gate.py`](tools/validate_phase0_gate.py). `claims/phase0.json` is canonical for the Phase 0 release-claim boundary; disagreement with a mirror or status surface fails closed. They are not runtime configuration.
+[`claims/phase0.json`](claims/phase0.json) remains the immutable historical Phase 0 release-claim baseline. Later phases promote capabilities with successor manifests instead of rewriting that record.
+
+## Current Phase 2 claim gate
+
+<!-- CURRENT_CLAIM_BOUNDARY:BEGIN -->
+The current repository may claim:
+
+- constitutional model: **established and tested**;
+- machine contracts: **established and tested**;
+- fail-closed admission skeleton: **established and tested**;
+- tested constitutional core: **established and tested**;
+- canonical wire contract: **established and tested**;
+- cryptographic identity: **established and tested**;
+- signed envelope verification: **established and tested**;
+- key lifecycle: **established and tested**;
+- durable replay protection: **established and tested**;
+- production networking: **not established**;
+- remote execution: **not established**;
+- interoperable federation: **not established**.
+<!-- CURRENT_CLAIM_BOUNDARY:END -->
+
+[`claims/phase2.json`](claims/phase2.json) is canonical for the current release-claim boundary. Cryptographic identity here means tested local identity, signature, lifecycle, clock, and replay machinery. It does **not** mean a production-safe network node exists.
 
 ## Phase 1 canonical wire contract
 
-Phase 1 is complete and adds the first frozen wire protocol, **`qsol-fed/1`**, without changing the Phase 0 production-capability boundary.
+Phase 1 is complete and provides the first frozen wire protocol, **`qsol-fed/1`**.
 
 The canonical profile [`qsol-fed-canonical-json/1`](CANONICAL_JSON.md) freezes:
 
@@ -40,13 +61,7 @@ The canonical profile [`qsol-fed-canonical-json/1`](CANONICAL_JSON.md) freezes:
 - `sha256:` object identity over canonical bytes;
 - domain-separated message IDs excluding `message_id` and `signature` from the preimage.
 
-The exact Phase 1 schemas are:
-
-- [`schemas/federation-envelope-v1.schema.json`](schemas/federation-envelope-v1.schema.json);
-- [`schemas/provenance-v1.schema.json`](schemas/provenance-v1.schema.json);
-- [`schemas/protocol-error-v1.schema.json`](schemas/protocol-error-v1.schema.json).
-
-`signature` is required to be JSON `null`. Phase 1 does not invent cryptography ahead of Phase 2.
+The exact Phase 1 envelope remains unchanged in Phase 2. Its embedded `signature` field is still JSON `null`.
 
 ### Two-implementation gate
 
@@ -57,9 +72,95 @@ Rust    src/canonical.rs
 Python  tools/qsol_canonical.py
 ```
 
-Both consume [`fixtures/phase1/golden-vectors.json`](fixtures/phase1/golden-vectors.json). The shared adversarial corpus rejects duplicate/NFC-colliding keys, decimal and exponent numbers, NaN/Infinity extensions, out-of-range integers, BOM input, lone surrogates, JSON extensions, malformed documents, and generated oversized cases.
+Both consume [`fixtures/phase1/golden-vectors.json`](fixtures/phase1/golden-vectors.json), and CI requires byte-identical canonical output and hashes.
 
-The gate is enforced by Rust tests plus [`tools/validate_phase1_gate.py`](tools/validate_phase1_gate.py). Signatures cannot be layered on until both implementations reproduce byte-identical canonical bytes and hashes.
+## Phase 2 cryptographic node identity
+
+Phase 2 is defined by [`crypto/phase2.json`](crypto/phase2.json) and [`CRYPTOGRAPHY.md`](CRYPTOGRAPHY.md).
+
+### Key architecture
+
+Each node has:
+
+```text
+offline root identity key
+        |
+        +--> stable fed:qsol:<node-id>
+        +--> identity/lifecycle records
+        |
+        X    cannot sign Federation envelopes
+
+rotatable operational Ed25519 key
+        |
+        +--> detached signed-envelope wrapper
+```
+
+The node ID is SHA-256 domain-separated from the root public key. Operational key IDs are separately domain-separated. Public keys and signatures use exact lowercase-hex encodings.
+
+The root identity key is intentionally not rotatable under the same node ID. Root compromise is terminal for that identity; a replacement root creates a new node ID.
+
+### Detached signatures preserve Phase 1
+
+Phase 2 adds `qsol-fed-signed-envelope/1` around the exact Phase 1 envelope rather than changing it.
+
+The operational key signs:
+
+```text
+UTF8("qsol-fed-envelope-signature/1") || 0x00 || canonical_phase1_envelope_bytes
+```
+
+Because signing is detached, the Phase 1 `message_id` does not change.
+
+### Signature validity is not authority
+
+The reference API represents three different dimensions:
+
+```text
+SignatureValidity
+TrustDisposition
+AuthorityDisposition
+```
+
+A valid signature proves only that an admitted operational key signed the exact domain-separated bytes. Cryptographic verification returns `AuthorityDisposition::None`.
+
+A valid signature does not create truth, evidence, a Council vote, trust, or permission to execute an effect. Prime Directive admission remains separate.
+
+### Rotation and compromise recovery
+
+Normal operational-key rotation requires:
+
+- root signature;
+- outgoing operational-key signature;
+- incoming operational-key proof-of-possession signature.
+
+The new key has an explicit activation time, with an overlap window bounded to 24 hours.
+
+Root-signed key-status records can mark an operational key revoked or compromised. Recovery after compromise requires the root plus proof of possession from the replacement key and does not allow the compromised key to remain in overlap.
+
+### Clock and replay
+
+Signed envelopes require expiry and use:
+
+```text
+maximum clock skew               300 seconds
+maximum signed-message lifetime 3600 seconds
+maximum rotation overlap       86400 seconds
+```
+
+`DurableReplayStore` records message IDs in an append-only local log and fsyncs a fresh record before reporting it accepted as fresh. Partial, duplicate, malformed, or corrupt replay logs fail closed on restart.
+
+The replay implementation is single-process. Multi-process server coordination remains Phase 3 work.
+
+### Verification vectors
+
+[`fixtures/phase2/signature-vectors.json`](fixtures/phase2/signature-vectors.json) contains:
+
+- RFC 8032 Ed25519 baseline vector;
+- QSOL node/key derivation vector;
+- signed-envelope vector;
+- three-signature operational-key transition vector.
+
+Tests also cover algorithm confusion, signature tampering, key compromise, recovery, clock rejection, and root-key envelope-signing rejection.
 
 ## Core constitutional shorthand
 
@@ -85,7 +186,7 @@ QSOL-NEXUS remains the **Council of Minds**. QSOL-FED defines the boundary aroun
 
 Remote arbitrary execution, remote authority claims, remote evidence promotion, remote governance mutation, remote history rewrite, remote capability installation, and remote citizenship mutation remain forbidden. Foreign state does not become local authority merely by import. Unknown authority-bearing actions reject.
 
-The frozen wire contract is deterministic data machinery, not a network-safe node claim.
+Cryptographic authentication strengthens attribution. It does not weaken any of those rules.
 
 ## Planned reference API
 
@@ -98,7 +199,7 @@ GET  /fed/v1/objects/{sha256}
 GET  /fed/v1/provenance/{sha256}
 ```
 
-These remain planned transport surfaces. There is no current `remote-exec` endpoint.
+These remain planned transport surfaces. There is no production network listener and no current `remote-exec` endpoint.
 
 ## Build and test
 
@@ -107,6 +208,7 @@ cargo test --all-targets
 python3 tools/validate_constitution.py
 python3 tools/validate_phase0_gate.py
 python3 tools/validate_phase1_gate.py
+python3 tools/validate_phase2_gate.py
 ```
 
 ## Documentation map
@@ -115,14 +217,19 @@ python3 tools/validate_phase1_gate.py
 - [`AGENTS.md`](AGENTS.md) — mandatory instructions for AI/agent contributors.
 - [`CHARTER.md`](CHARTER.md) — Federation constitution.
 - [`PRIME_DIRECTIVE.md`](PRIME_DIRECTIVE.md) — non-interference rules.
-- [`PROTOCOL.md`](PROTOCOL.md) — frozen Phase 1 wire semantics.
+- [`PROTOCOL.md`](PROTOCOL.md) — protocol semantics.
 - [`CANONICAL_JSON.md`](CANONICAL_JSON.md) — exact canonical-byte profile.
+- [`CRYPTOGRAPHY.md`](CRYPTOGRAPHY.md) — Phase 2 identity/signature/lifecycle profile.
 - [`ROADMAP.md`](ROADMAP.md) — staged implementation plan.
-- [`claims/phase0.json`](claims/phase0.json) — production-capability claim firewall.
+- [`claims/phase0.json`](claims/phase0.json) — immutable historical Phase 0 claims.
+- [`claims/phase2.json`](claims/phase2.json) — canonical current claims.
 - [`wire/phase1.json`](wire/phase1.json) — machine-readable Phase 1 wire contract.
+- [`crypto/phase2.json`](crypto/phase2.json) — machine-readable Phase 2 crypto contract.
 
 ## Status
 
-Constitutional bootstrap lineage `qsol-fed/0`; frozen wire protocol **`qsol-fed/1`**. Phase 0 and Phase 1 gates are enforced. Deterministic wire bytes and hashes are established and tested. Production networking, cryptographic identity, remote execution, deployed interoperable federation, durable peering, and production adapters remain intentionally unclaimed.
+Constitutional bootstrap lineage `qsol-fed/0`; frozen wire protocol **`qsol-fed/1`**. Phase 0, Phase 1, and Phase 2 gates are enforced. Deterministic wire bytes, cryptographic node identity, detached Ed25519 verification, operational-key lifecycle, bounded clock policy, and durable single-process replay protection are established and tested.
+
+Production networking, remote execution, deployed interoperable federation, durable peer registries, and production adapters remain intentionally unclaimed.
 
 Licensed under Apache-2.0. QSOL-FED is an original technical project inspired by the general idea of federated cooperation; it is not affiliated with or endorsed by any entertainment franchise or rights holder.

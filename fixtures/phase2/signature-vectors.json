@@ -1,0 +1,46 @@
+{
+  "suite": "ed25519-rfc8032",
+  "encoding": "lowercase-hex",
+  "vectors": [
+    {
+      "id": "rfc8032-empty-message",
+      "seed_hex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+      "public_key_hex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "message_hex": "",
+      "signature_hex": "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"
+    },
+    {
+      "id": "qsol-node-identity",
+      "root_seed_hex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+      "root_public_key_hex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "root_key_id": "ed25519:bf8c7661e1c89dad9cc90c6d831f39cc86828af665c8181b19b15cd21d8c6a97",
+      "operational_seed_hex": "4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb",
+      "operational_public_key_hex": "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
+      "operational_key_id": "ed25519:a69898edb88628faa92ffbd47b4b5eec1ffb4a8855540c55037d28c4ba6dfaf3",
+      "node_id": "fed:qsol:8fbf311d9bd830509a22b40926970621fd31ee14ef238c552517f6a567fbc69d",
+      "unsigned_canonical": "{\"algorithm\":\"ed25519\",\"created_at\":\"2026-08-23T00:00:00Z\",\"node_id\":\"fed:qsol:8fbf311d9bd830509a22b40926970621fd31ee14ef238c552517f6a567fbc69d\",\"operational_key_id\":\"ed25519:a69898edb88628faa92ffbd47b4b5eec1ffb4a8855540c55037d28c4ba6dfaf3\",\"operational_public_key\":\"3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c\",\"root_key_id\":\"ed25519:bf8c7661e1c89dad9cc90c6d831f39cc86828af665c8181b19b15cd21d8c6a97\",\"root_public_key\":\"d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a\",\"schema\":\"qsol-fed-node-identity/1\"}",
+      "root_signature_hex": "bc5729f44ff65dcfa036e47732ce4e5be600204e340658605b75b449cde2fc96a0bfd49eed06f0644b800da9359e4addb2ad481d0c2dfc94496a74584d665302"
+    },
+    {
+      "id": "qsol-signed-envelope",
+      "operational_seed_hex": "4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb",
+      "operational_public_key_hex": "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
+      "node_id": "fed:qsol:8fbf311d9bd830509a22b40926970621fd31ee14ef238c552517f6a567fbc69d",
+      "key_id": "ed25519:a69898edb88628faa92ffbd47b4b5eec1ffb4a8855540c55037d28c4ba6dfaf3",
+      "message_id": "sha256:180b4d750d683daed2c56f226b277ac8e5eb96b0b85d60c726a27a205ffc998e",
+      "canonical_envelope": "{\"authority_claim\":\"none\",\"expires_at\":\"2026-08-23T00:05:00Z\",\"issued_at\":\"2026-08-23T00:00:00Z\",\"message_class\":\"challenge\",\"message_id\":\"sha256:180b4d750d683daed2c56f226b277ac8e5eb96b0b85d60c726a27a205ffc998e\",\"payload_ref\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"protocol\":\"qsol-fed/1\",\"provenance_ref\":null,\"recipient\":\"fed:qsol:8fbf311d9bd830509a22b40926970621fd31ee14ef238c552517f6a567fbc69d\",\"sender\":\"fed:qsol:8fbf311d9bd830509a22b40926970621fd31ee14ef238c552517f6a567fbc69d\",\"signature\":null}",
+      "signature_domain": "qsol-fed-envelope-signature/1\\x00",
+      "signature_hex": "8f2df33a560b3911ea903255e8c7501901fb9af4655afcd2671d17d0d919ef52b97deddda0160bd3e3800897410bb2f8b2a8b0fa71d1afa43fd6037dd319450e"
+    },
+    {
+      "id": "qsol-transition-rotation",
+      "next_seed_hex": "c5aa8df43f9f837bedb7442f31dcb7b166d38535076f094b85ce3a2e0b4458f7",
+      "next_public_key_hex": "fc51cd8e6218a1a38da47ed00230f0580816ed13ba3303ac5deb911548908025",
+      "next_key_id": "ed25519:522528787f8e9af6351225138eca0281396a2dc1b68011a4434457dec5427c28",
+      "unsigned_canonical": "{\"algorithm\":\"ed25519\",\"mode\":\"transition\",\"next_key_id\":\"ed25519:522528787f8e9af6351225138eca0281396a2dc1b68011a4434457dec5427c28\",\"next_public_key\":\"fc51cd8e6218a1a38da47ed00230f0580816ed13ba3303ac5deb911548908025\",\"node_id\":\"fed:qsol:8fbf311d9bd830509a22b40926970621fd31ee14ef238c552517f6a567fbc69d\",\"not_before\":\"2026-08-23T01:00:00Z\",\"overlap_until\":\"2026-08-23T02:00:00Z\",\"previous_key_id\":\"ed25519:a69898edb88628faa92ffbd47b4b5eec1ffb4a8855540c55037d28c4ba6dfaf3\",\"schema\":\"qsol-fed-key-rotation/1\",\"sequence\":1}",
+      "root_signature_hex": "228a0a3dcac9de50474a835894068731df71eda8edac1aa7847294b4d6b5c942f98151320889cb8adda470a3cbc7cb3c933687b887cd015914c4210f92f09904",
+      "previous_signature_hex": "2ae1deadc46c113f6eda69401be3bc2fe22b46619c1a43a8965049754fd0fb2872c94a2e3e4c7ba23f3708438e067c294011d827c7df20761b083087281f2406",
+      "next_signature_hex": "9732b9478962d3a38346b9290efc05223ad0c3f846ff84f600395ad2bc2d2e10c870aa22e565107ed73e810f14e46c79152191cdaaa3d147ecbe3bb2d669860a"
+    }
+  ]
+}

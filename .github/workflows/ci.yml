@@ -18,11 +18,13 @@ jobs:
           rustc --version
           cargo --version
           python3 --version
-      - name: Rust tests and canonical wire vectors
+      - name: Rust tests and cryptographic vectors
         run: cargo test --all-targets
       - name: Constitution drift check
         run: python3 tools/validate_constitution.py
-      - name: Phase 0 claim gate
+      - name: Historical Phase 0 claim gate
         run: python3 tools/validate_phase0_gate.py
       - name: Phase 1 independent Python wire gate
         run: python3 tools/validate_phase1_gate.py
+      - name: Phase 2 cryptographic identity gate
+        run: python3 tools/validate_phase2_gate.py

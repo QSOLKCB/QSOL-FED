@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Enforce the Phase 0 release-claim boundary.
+"""Enforce the immutable historical Phase 0 release-claim baseline.
 
-Phase 0 may claim only the constitutional model, machine contracts,
-fail-closed admission skeleton, and their tests. Networking, cryptographic
-identity, remote execution, and interoperable federation remain unestablished.
+Later phases may promote capabilities through successor claim manifests, but
+must not rewrite what Phase 0 actually established.
 """
 
 from __future__ import annotations
@@ -71,9 +70,10 @@ EXPECTED_README_CLAIMS = [
     "- interoperable federation: **not established**.",
 ]
 
-FORBIDDEN_PUBLIC_CAPABILITIES = {
+# These remain false even after Phase 2. Cryptographic identity is intentionally
+# absent from this list because a successor Phase 2 claim manifest now promotes it.
+FORBIDDEN_CURRENT_PUBLIC_CAPABILITIES = {
     "production_networking": "production networking",
-    "cryptographic_identity": "cryptographic identity",
     "remote_execution": "remote execution",
     "interoperable_federation": "interoperable federation",
 }
@@ -153,7 +153,7 @@ def contradicted_by_positive_public_claim(text: str) -> list[str]:
         line = normalized_public_line(raw_line)
         if not line:
             continue
-        for claim_id, phrase in FORBIDDEN_PUBLIC_CAPABILITIES.items():
+        for claim_id, phrase in FORBIDDEN_CURRENT_PUBLIC_CAPABILITIES.items():
             if phrase not in line:
                 continue
             for pattern in positive_claim_patterns(phrase):
@@ -174,13 +174,12 @@ def contradicted_by_positive_public_claim(text: str) -> list[str]:
 def self_test_public_claim_detector() -> None:
     hostile = [
         "Production networking is established.",
-        "Cryptographic identity: operational.",
         "This node supports remote execution.",
         "Interoperable federation is ready.",
     ]
     safe = [
         "Production networking is not established.",
-        "Cryptographic identity is a later roadmap phase.",
+        "Cryptographic identity is established and tested.",
         "Remote execution is forbidden.",
         "Interoperable federation is not claimed.",
     ]
@@ -202,70 +201,58 @@ def main() -> None:
 
     require(
         claims == EXPECTED_MANIFEST,
-        "canonical Phase 0 manifest shape/policy drift; schema version, claim rule, promotion requirements, "
-        "capabilities, gate metadata, and top-level field set must match the reviewed Phase 0 contract",
+        "historical Phase 0 manifest drift; later phases must use successor manifests rather than rewrite Phase 0",
     )
 
     capabilities = claims["capabilities"]
-    for name in FORBIDDEN_PUBLIC_CAPABILITIES:
-        require(capabilities[name] is False, f"premature capability claim enabled: {name}")
+    require(capabilities == EXPECTED_CAPABILITIES, "historical Phase 0 capability set drift")
 
     ai_claims = ai_manifest.get("phase0_claims")
-    require(ai_claims == EXPECTED_CAPABILITIES, "README4AI Phase 0 claim set drift")
-    require(ai_manifest.get("status") == "phase0_gate_enforced", "README4AI status must declare Phase 0 gate")
+    require(ai_claims == EXPECTED_CAPABILITIES, "README4AI historical Phase 0 claim set drift")
+    require(ai_manifest.get("phase0_status") == "historical_gate_preserved", "README4AI must preserve historical Phase 0 status")
     require(
         ai_manifest.get("claim_precedence") == EXPECTED_CLAIM_PRECEDENCE,
-        "README4AI claim precedence drift; canonical claims/phase0.json must precede mirrors",
+        "README4AI historical Phase 0 claim precedence drift",
     )
-    require(
-        ai_manifest.get("claim_disagreement_policy") == "fail_closed",
-        "README4AI claim disagreement policy must remain fail_closed",
-    )
+    require(ai_manifest.get("claim_disagreement_policy") == "fail_closed", "claim disagreement policy must remain fail_closed")
+
     normative_precedence = ai_manifest.get("normative_precedence")
     require(isinstance(normative_precedence, list), "README4AI normative_precedence missing")
-    require("claims/phase0.json" in normative_precedence, "canonical claim manifest missing from normative precedence")
-    require("src/claims.rs" in normative_precedence, "Rust claim mirror missing from normative precedence")
+    require("claims/phase0.json" in normative_precedence, "historical Phase 0 claim manifest missing from precedence")
+    require("src/claims.rs" in normative_precedence, "Rust claim mirror missing from precedence")
     require(
         normative_precedence.index("claims/phase0.json") < normative_precedence.index("src/claims.rs"),
-        "canonical claim manifest must precede Rust claim mirror",
+        "historical Phase 0 manifest must precede Rust mirror",
     )
 
     rust_source = (ROOT / "src/claims.rs").read_text(encoding="utf-8")
     rust_claims = rust_phase0_claims(rust_source)
-    require(rust_claims == EXPECTED_CAPABILITIES, f"Rust Phase 0 claim registry drift: {rust_claims!r}")
+    require(rust_claims == EXPECTED_CAPABILITIES, f"Rust historical Phase 0 claim registry drift: {rust_claims!r}")
 
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     claim_block, readme_outside_claim_block = extract_readme_claim_block(readme)
     claim_lines = [line.strip() for line in claim_block.splitlines() if line.strip().startswith("-")]
-    require(
-        claim_lines == EXPECTED_README_CLAIMS,
-        f"README authoritative Phase 0 claim block drift: {claim_lines!r}",
-    )
-    require(
-        "claims/phase0.json` is canonical" in readme,
-        "README must state that claims/phase0.json is canonical",
-    )
+    require(claim_lines == EXPECTED_README_CLAIMS, f"README historical Phase 0 claim block drift: {claim_lines!r}")
+    require("immutable historical Phase 0 release-claim baseline" in readme, "README must describe Phase 0 as immutable historical baseline")
 
     self_test_public_claim_detector()
     contradictions = contradicted_by_positive_public_claim(readme_outside_claim_block)
     require(
         not contradictions,
-        "contradictory public Phase 0 capability claim outside authoritative README block: "
-        + " | ".join(contradictions),
+        "contradictory current hard-false capability claim outside historical Phase 0 block: " + " | ".join(contradictions),
     )
 
     roadmap = (ROOT / "ROADMAP.md").read_text(encoding="utf-8")
-    require("**Status: complete; claim gate enforced in code and CI.**" in roadmap, "ROADMAP Phase 0 gate status drift")
+    require("**Status: complete; historical claim gate preserved in code and CI.**" in roadmap, "ROADMAP Phase 0 historical status drift")
 
     agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
-    require("claims/phase0.json" in agents, "AGENTS.md must require the Phase 0 claim manifest")
-    require("Contradictory public statements are forbidden" in agents, "AGENTS.md contradictory-claim rule missing")
+    require("claims/phase0.json" in agents, "AGENTS.md must preserve the Phase 0 claim manifest")
     require("python3 tools/validate_phase0_gate.py" in agents, "AGENTS.md must require the Phase 0 gate validator")
 
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-    require("python3 tools/validate_phase0_gate.py" in workflow, "CI does not enforce the Phase 0 claim gate")
+    require("python3 tools/validate_phase0_gate.py" in workflow, "CI does not preserve the Phase 0 gate")
 
-    print("phase0 claim gate OK: exact manifest policy, 4 established claims, 4 hard-false capability claims")
+    print("phase0 historical claim gate OK: immutable baseline preserved; successor phases may promote only through new manifests")
 
 
 if __name__ == "__main__":

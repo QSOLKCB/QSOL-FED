@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qsol.example/schemas/key-status-v1.schema.json",
+  "title": "QSOL-FED Operational Key Status v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "node_id", "algorithm", "sequence", "key_id", "status", "effective_at", "reason", "root_signature"],
+  "properties": {
+    "schema": {"const": "qsol-fed-key-status/1"},
+    "node_id": {"type": "string", "pattern": "^fed:qsol:[0-9a-f]{64}$"},
+    "algorithm": {"const": "ed25519"},
+    "sequence": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+    "key_id": {"type": "string", "pattern": "^ed25519:[0-9a-f]{64}$"},
+    "status": {"enum": ["revoked", "compromised"]},
+    "effective_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+    "reason": {"enum": ["operator_revocation", "suspected_compromise", "confirmed_compromise"]},
+    "root_signature": {"type": "string", "pattern": "^[0-9a-f]{128}$"}
+  }
+}
