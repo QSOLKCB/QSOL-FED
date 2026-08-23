@@ -265,6 +265,9 @@
   ],
   "hardening": {
     "runtime_override_of_constitution": false,
+    "environment_override_of_constitution": false,
+    "peer_override_of_constitution": false,
+    "model_override_of_constitution": false,
     "assembly_network_membership_is_assembly_membership": false,
     "assembly_consensus_is_truth": false,
     "assembly_consensus_is_member_local_authority": false,
