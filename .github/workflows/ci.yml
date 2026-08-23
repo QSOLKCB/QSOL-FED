@@ -45,6 +45,31 @@ jobs:
             --output /tmp/nexus-council-reports.json \
             council-reports
           cmp fixtures/phase5/nexus-council-reports.json /tmp/nexus-council-reports.json
+      - name: Native NEXUS adapter adversarial source and secret checks
+        run: |
+          cp -a .deps/QSOL-NEXUS /tmp/QSOL-NEXUS-tampered
+          printf '\n# intentional Phase 5 source-identity tamper\n' >> /tmp/QSOL-NEXUS-tampered/src/nexus_runtime/persistent_world.py
+          if python3 tools/nexus_live_adapter.py \
+            --nexus-src /tmp/QSOL-NEXUS-tampered/src \
+            --bundle fixtures/phase5/nexus-world-export.json \
+            --output /tmp/tampered-projection.json \
+            projection; then
+            echo "tampered NEXUS checkout was accepted"
+            exit 1
+          fi
+
+          python3 tools/generate_nexus_phase5_fixture.py \
+            --nexus-src .deps/QSOL-NEXUS/src \
+            --minority-rationale "sk-aaaaaaaaaaaaaaaaaaaaaaaa" \
+            --output /tmp/nexus-secret-world-export.json
+          if python3 tools/nexus_live_adapter.py \
+            --nexus-src .deps/QSOL-NEXUS/src \
+            --bundle /tmp/nexus-secret-world-export.json \
+            --output /tmp/secret-projection.json \
+            council-reports; then
+            echo "secret-bearing NEXUS Council text crossed into FED projection"
+            exit 1
+          fi
       - name: Constitution drift check
         run: python3 tools/validate_constitution.py
       - name: Historical Phase 0 claim gate
