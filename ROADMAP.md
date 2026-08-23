@@ -68,7 +68,7 @@ New imported material defaults to quarantine. Existing local lifecycle/namespace
 
 ## Phase 5 — QSOL adapters and synthetic worlds
 
-**Status: current implementation phase; Phase 5 adapter gate enforced by `claims/phase5.json`.**
+**Status: complete; historical Phase 5 adapter gate preserved by `claims/phase5.json`. Phase 5C is current.**
 
 ### Phase 5A — QSOL-NEXUS AI Holodeck sandbox
 
@@ -112,16 +112,16 @@ credentials_exposed  = false
 
 No QSOL-NEXUS follow-up PR is required for this slice because the native WorldStore/export/verifier primitives already exist. Add a NEXUS-side PR only if later integration identifies an actual missing donor primitive.
 
-### QSOL-ORACLE
+### QSOL-ORACLE historical Phase 5 membrane
 
 - [x] Implement FED-side typed evidence observations/references.
 - [x] Preserve `known` / `conflict` / `unknown` without copying authority.
 - [x] Keep suggested searches `discovery-only`, non-evidence, and inadmissible without observation.
 - [x] Reject evidence promotion through the FED adapter.
 - [x] Reject Holodeck/simulation admission until a separately reviewed synthetic non-evidence contract exists.
-- [ ] **Deferred: live ORACLE transport/export.** QSOL-ORACLE currently documents its transport/audit membrane as unfinished.
+- [x] Preserve the historical Phase 5 non-claim `oracle_live_transport = false` in `claims/phase5.json`.
 
-**Follow-up:** implement and gate the donor-side transport/export contract in `QSOLKCB/QSOL-ORACLE`, then return to QSOL-FED to promote `oracle_live_transport` only after cross-repository conformance is green.
+The donor-side follow-up was implemented and hardened in `QSOLKCB/QSOL-ORACLE` PR #5. Phase 5C below is the successor that earns the live-local transport claim without rewriting Phase 5 history.
 
 ### QSOL-ARK
 
@@ -136,7 +136,46 @@ No QSOL-ARK PR is required for the current offline FED-side preservation contrac
 
 Every adapter must prove it cannot bypass the same Prime Directive invariant IDs enforced by the core node. NEXUS integration must additionally prove that `SIMULATION != AUTHORITY` survives the adapter boundary.
 
-The current gate additionally pins the NEXUS donor commit, reproduces native WorldStore export fixtures, requires report-only Council federation, keeps ORACLE live transport explicitly false, and verifies ARK preservation offline.
+The historical Phase 5 gate pins the NEXUS donor commit, reproduces native WorldStore export fixtures, requires report-only Council federation, preserves the then-false ORACLE live-transport claim, and verifies ARK preservation offline.
+
+### Phase 5C — QSOL-ORACLE live transport
+
+**Status: current; attested live-local ORACLE gate enforced by `claims/phase5c.json`.**
+
+- [x] Pin merged QSOL-ORACLE donor commit `043e864b3c25dfeca3ce1752b3110479479071b1`.
+- [x] Pin donor release fingerprint `7b0eff4dfa9b0caa84f14920d21f6a5446114535d82706cb62e34773c39818d2`.
+- [x] Byte-compare donor membrane, request schema, response schema, and FED observation schema in cross-repository CI.
+- [x] Verify every donor release-fingerprint file byte length and SHA-256 before local process launch.
+- [x] Use the fixed donor entrypoint `python3 tools/fed_transport.py serve`; do not expose a generic command runner.
+- [x] Remove `PYTHONPATH` and `PYTHONHOME` from the donor process environment.
+- [x] Send bounded canonical JSONL requests and accept exactly one bounded canonical response.
+- [x] Verify donor response canonical bytes and `response_sha256` in FED.
+- [x] Preserve `oracle-event:<sha256>` evidence-reference grammar.
+- [x] Run a real live process probe against the historical ORACLE timelock witness.
+- [x] Tamper the donor transport file in CI and prove runtime release attestation rejects it.
+- [x] Promote `oracle_live_transport = true`.
+- [x] Keep `oracle_holodeck_synthetic_admission = false`.
+- [x] Keep production networking and remote execution false.
+
+### Phase 5C gate
+
+The exact reviewed QSOL-ORACLE donor release must attest locally before process launch. FED must produce bounded canonical requests, accept one bounded canonical response, verify donor response identity/provenance semantics, and preserve `known` / `conflict` / `unknown` without truth or authority promotion.
+
+The Phase 5C capability delta is exactly:
+
+```text
+oracle_live_transport: false -> true
+```
+
+No other Phase 5 capability bit may change. In particular:
+
+```text
+oracle_holodeck_synthetic_admission = false
+host_level_sandbox                  = false
+production_networking               = false
+remote_execution                    = false
+interoperable_federation            = false
+```
 
 ---
 
@@ -243,7 +282,7 @@ ARCHIVAL IMMUTABILITY != IMPLEMENTATION PERFECTION
 
 ## Explicitly deferred / prohibited
 
-Generic remote shell, arbitrary peer-selected tools, shared global truth, transitive trust by default, global mutable state, automatic evidence promotion, automatic vote federation, secret-bearing semantic prompts, peer-controlled constitutional override, Holodeck-to-real authority promotion, simulated credential access, and protocol-derived personhood/legal sovereignty claims remain outside the current design.
+Generic remote shell, arbitrary peer-selected tools, shared global truth, transitive trust by default, global mutable state, automatic evidence promotion, automatic vote federation, secret-bearing semantic prompts, peer-controlled constitutional override, Holodeck-to-real authority promotion, Holodeck-to-ORACLE synthetic admission without a separately reviewed non-evidence contract, simulated credential access, and protocol-derived personhood/legal sovereignty claims remain outside the current design.
 
 ## Long-term success condition
 

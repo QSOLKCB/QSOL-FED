@@ -1,8 +1,8 @@
 [package]
 name = "qsol-fed"
-version = "0.7.0"
+version = "0.8.0"
 edition = "2024"
-description = "Reference constitutional federation core with durable state, sandboxed NEXUS worlds, and QSOL adapter membranes"
+description = "Reference constitutional federation core with durable state, sandboxed NEXUS worlds, and attested QSOL adapter transports"
 license = "Apache-2.0"
 repository = "https://github.com/QSOLKCB/QSOL-FED"
 rust-version = "1.85"

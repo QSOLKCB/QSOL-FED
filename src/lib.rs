@@ -1,11 +1,11 @@
 #![forbid(unsafe_code)]
 
 //! QSOL-FED constitutional, canonical wire, cryptographic identity, opt-in HTTP,
-//! durable federation-state, sandboxed synthetic-world, and Phase 5 QSOL adapter core.
+//! durable federation-state, sandboxed synthetic-world, and QSOL adapter core.
 //!
 //! Persistence, import, peering, trust, capability policy, simulation, evidence
-//! observation, Council reports, and archival presence remain separate from truth,
-//! authority, constitutional admission, and real execution effects.
+//! observation, Council reports, archival presence, and live-local adapter transport
+//! remain separate from truth, authority, constitutional admission, and real execution effects.
 
 pub mod api;
 pub mod bundle;
@@ -15,6 +15,7 @@ mod crypto;
 pub mod envelope;
 pub mod holodeck;
 pub mod invariants;
+pub mod oracle_live;
 pub mod peering;
 pub mod qsol_adapters;
 pub mod replay;
@@ -39,7 +40,7 @@ pub use canonical::{
 pub use claims::{
     is_established, CurrentClaims, Phase0Claims, ReleaseClaim, CURRENT_CLAIMS, PHASE0_CLAIMS,
     PHASE0_GATE_ID, PHASE2_GATE_ID, PHASE3_GATE_ID, PHASE4_GATE_ID, PHASE5A_GATE_ID,
-    PHASE5_GATE_ID,
+    PHASE5C_GATE_ID, PHASE5_GATE_ID,
 };
 pub use crypto::{
     create_identity_document, derive_key_id, derive_node_id, sign_envelope,
@@ -65,6 +66,13 @@ pub use holodeck::{
 pub use invariants::{
     admit_effect, AdmissionDecision, FederationEffect, HardInvariant, CHARTER_ID,
     HARD_INVARIANTS, PRIME_DIRECTIVE_ID, PROTOCOL_ID,
+};
+pub use oracle_live::{
+    attest_oracle_release, OracleLiveAdapter, OracleLiveError, OracleResearchRequest,
+    OracleResearchRequirement, OracleResearchRequirementKind, OracleTransportQuery,
+    OracleTransportRequest, OracleTransportResponse, ORACLE_PINNED_COMMIT,
+    ORACLE_PINNED_REPOSITORY, ORACLE_RELEASE_FINGERPRINT_SHA256, ORACLE_REQUEST_KIND,
+    ORACLE_RESPONSE_KIND, ORACLE_TRANSPORT_MAX_LINE_BYTES, ORACLE_TRANSPORT_PROTOCOL,
 };
 pub use peering::{
     create_capability_advertisement, rebuild_peer_identity, verify_capability_advertisement,

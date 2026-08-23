@@ -20,12 +20,19 @@ jobs:
           ref: 24cb0ce246d12ac99e7d190a8890ef2ddd598321
           path: .deps/QSOL-NEXUS
           persist-credentials: false
+      - name: Checkout pinned QSOL-ORACLE live transport
+        uses: actions/checkout@v4
+        with:
+          repository: QSOLKCB/QSOL-ORACLE
+          ref: 043e864b3c25dfeca3ce1752b3110479479071b1
+          path: .deps/QSOL-ORACLE
+          persist-credentials: false
       - name: Toolchain versions
         run: |
           rustc --version
           cargo --version
           python3 --version
-      - name: Rust tests, API adversarial suite, federation-state round trips, Holodeck safeguards, QSOL adapters, and deterministic fuzz smoke
+      - name: Rust tests, API adversarial suite, federation-state round trips, Holodeck safeguards, QSOL adapters, ORACLE transport, and deterministic fuzz smoke
         run: cargo test --all-targets
       - name: Native NEXUS Phase 5 fixture conformance
         run: |
@@ -70,6 +77,63 @@ jobs:
             echo "secret-bearing NEXUS Council text crossed into FED projection"
             exit 1
           fi
+      - name: Phase 5C ORACLE donor contract and schema conformance
+        run: |
+          cmp contracts/oracle-fed-membrane-v1.json .deps/QSOL-ORACLE/contracts/fed-membrane.json
+          cmp schemas/oracle-transport-request-v1.schema.json .deps/QSOL-ORACLE/schema/fed-transport-request.schema.json
+          cmp schemas/oracle-transport-response-v1.schema.json .deps/QSOL-ORACLE/schema/fed-transport-response.schema.json
+          cmp schemas/oracle-observation-v1.schema.json .deps/QSOL-ORACLE/schema/fed-oracle-observation.schema.json
+          test "$(sha256sum .deps/QSOL-ORACLE/tools/nexus_membrane_common.py | cut -d' ' -f1)" = "4e4c749b67688678f03692d9533adb64760a3b448b3b804acb9f7f95e986c381"
+      - name: Phase 5C live ORACLE process conformance
+        run: |
+          cargo run --quiet --bin qsol-fed-oracle -- .deps/QSOL-ORACLE > /tmp/oracle-live-probe.json
+          python3 - <<'PY'
+          import json
+          probe=json.load(open('/tmp/oracle-live-probe.json', encoding='utf-8'))
+          assert probe['status'] == 'verified'
+          assert probe['oracle_commit'] == '043e864b3c25dfeca3ce1752b3110479479071b1'
+          assert probe['oracle_release_fingerprint'] == '7b0eff4dfa9b0caa84f14920d21f6a5446114535d82706cb62e34773c39818d2'
+          assert probe['state'] == 'known'
+          assert probe['evidence_refs'] == 1
+          assert probe['authority_effect'] == 'none'
+          assert probe['ledger_mutated'] is False
+          assert probe['transport_authority'] == 'none'
+          PY
+      - name: Phase 5C ORACLE attestation rejects donor tampering
+        run: |
+          cp -a .deps/QSOL-ORACLE /tmp/QSOL-ORACLE-tampered
+          printf '\n# intentional Phase 5C transport tamper\n' >> /tmp/QSOL-ORACLE-tampered/tools/fed_transport.py
+          if cargo run --quiet --bin qsol-fed-oracle -- /tmp/QSOL-ORACLE-tampered; then
+            echo "tampered ORACLE donor release was accepted"
+            exit 1
+          fi
+      - name: Phase 5C rejects forged fingerprint self-claim
+        run: |
+          cp -a .deps/QSOL-ORACLE /tmp/QSOL-ORACLE-forged-fingerprint
+          printf '\n<!-- intentional non-critical fingerprinted-file tamper -->\n' >> /tmp/QSOL-ORACLE-forged-fingerprint/docs/FED.md
+          python3 - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          root = Path('/tmp/QSOL-ORACLE-forged-fingerprint')
+          path = root / 'release/fingerprint.json'
+          fp = json.loads(path.read_text(encoding='utf-8'))
+          raw = (root / 'docs/FED.md').read_bytes()
+          for record in fp['files']:
+              if record['path'] == 'docs/FED.md':
+                  record['bytes'] = len(raw)
+                  record['sha256'] = hashlib.sha256(raw).hexdigest()
+                  break
+          else:
+              raise SystemExit('docs/FED.md missing from release fingerprint')
+          canonical = lambda value: json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
+          fp['files_sha256'] = hashlib.sha256(canonical(fp['files'])).hexdigest()
+          # Deliberately retain the old self-claimed release_fingerprint_sha256.
+          path.write_text(json.dumps(fp, indent=2) + '\n', encoding='utf-8')
+          PY
+          if cargo run --quiet --bin qsol-fed-oracle -- /tmp/QSOL-ORACLE-forged-fingerprint; then
+            echo "forged ORACLE release fingerprint self-claim was accepted"
+            exit 1
+          fi
       - name: Constitution drift check
         run: python3 tools/validate_constitution.py
       - name: Historical Phase 0 claim gate
@@ -84,5 +148,7 @@ jobs:
         run: python3 tools/validate_phase4_gate.py
       - name: Historical Phase 5A sandboxed AI Holodeck gate
         run: python3 tools/validate_phase5a_gate.py
-      - name: Phase 5 QSOL adapter gate
+      - name: Historical Phase 5 QSOL adapter gate
         run: python3 tools/validate_phase5_gate.py
+      - name: Phase 5C live QSOL-ORACLE gate
+        run: python3 tools/validate_phase5c_gate.py
