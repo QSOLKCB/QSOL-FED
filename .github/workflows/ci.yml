@@ -18,7 +18,7 @@ jobs:
           rustc --version
           cargo --version
           python3 --version
-      - name: Rust tests, API adversarial suite, federation-state round trips, and deterministic fuzz smoke
+      - name: Rust tests, API adversarial suite, federation-state round trips, Holodeck safeguards, and deterministic fuzz smoke
         run: cargo test --all-targets
       - name: Constitution drift check
         run: python3 tools/validate_constitution.py
@@ -30,5 +30,7 @@ jobs:
         run: python3 tools/validate_phase2_gate.py
       - name: Historical Phase 3 reference API gate
         run: python3 tools/validate_phase3_gate.py
-      - name: Phase 4 federation state gate
+      - name: Historical Phase 4 federation state gate
         run: python3 tools/validate_phase4_gate.py
+      - name: Phase 5A sandboxed AI Holodeck gate
+        run: python3 tools/validate_phase5a_gate.py
