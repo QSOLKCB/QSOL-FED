@@ -1,114 +1,134 @@
-# Reference API
+# Reference Federation API
 
-The QSOL-FED API is a **reference transport surface** for the Federation protocol. The protocol remains authoritative; endpoints are replaceable.
+The QSOL-FED API is the **reference transport surface** for the Federation protocol. The protocol, cryptographic profile, and Prime Directive remain authoritative; HTTP does not create trust or authority.
 
-## Planned v1 base
+**Base path:** `/fed/v1`  
+**Implementation:** Rust / Axum  
+**Machine contract:** `api/phase3.json`  
+**TLS deployment profile:** `TLS_PROFILE.md`
+
+## Listener posture
+
+Default bind:
 
 ```text
-/fed/v1
+127.0.0.1:8787
 ```
+
+A non-loopback bind requires all three:
+
+```text
+--allow-public-listen
+--tls-terminated-upstream
+--trusted-proxy <IP>
+```
+
+The trusted proxy IP is used only to authorize the dedicated `x-qsol-client-ip` rate-attribution header. That header selects a per-client rate bucket and may appear in audit metadata. It is never Federation identity, trust, authority, evidence, or admission.
+
+## Request boundary
+
+POST endpoints require canonical `application/json`, at most `65536` bytes, no `Content-Encoding`, no query parameters, and all frozen Phase 1 JSON limits.
+
+Rate limits are:
+
+```text
+120 total requests / client / minute
+30 POST requests / client / minute
+```
+
+Direct connections use the socket peer IP. In configured proxy mode, the direct socket peer must equal `--trusted-proxy`, and the proxy must supply exactly one parseable `x-qsol-client-ip`. Forwarded client IP supplied by any other socket peer is rejected.
 
 ## Discovery
 
-### `GET /fed/v1/node`
+`GET /fed/v1/node` returns the local non-secret node manifest. `GET /fed/v1/capabilities` returns advertised capability identifiers and explicitly states that advertisement is not authorization.
 
-Returns a non-secret node manifest suitable for protocol discovery.
+## `POST /fed/v1/peer/hello`
 
-Planned fields include:
+`qsol-fed-peer-hello/1` contains:
 
-```json
-{
-  "protocol": "qsol-fed/1",
-  "node_id": "fed:qsol:<id>",
-  "capabilities": ["evidence.exchange/1", "council.report/1"],
-  "authority_claim": "none"
-}
-```
+- the root-signed Phase 2 identity document;
+- up to 128 ordered authenticated lifecycle records (`qsol-fed-key-rotation/1` or `qsol-fed-key-status/1`);
+- up to 64 unique capabilities;
+- `authority_claim = none`.
 
-### `GET /fed/v1/capabilities`
+The service rebuilds the peer from sequence zero and applies every lifecycle record through the existing Phase 2 signature/sequence rules. If that node is already introduced in the current process, a later hello may advance the locally retained lifecycle state but may not roll it back or replace the same sequence with a different state.
 
-Returns versioned capabilities the node is willing to advertise. Advertisement is not authorization.
-
-## Peering
-
-### `POST /fed/v1/peer/hello`
-
-Performs bounded protocol/capability introduction. It must not create broad trust, install capabilities, grant voting rights or modify local governance.
-
-## Envelope exchange
-
-### `POST /fed/v1/envelopes`
-
-Accepts one bounded Federation envelope for validation and local admission.
-
-Conceptual response classes:
+A successful hello still means only:
 
 ```text
-accepted_as_data
-quarantined
-rejected
+trust = unknown
+authority = none
 ```
 
-An HTTP success code must not be interpreted as semantic truth or local authority.
+The registry remains in-memory. Persistent peer state is Phase 4 work.
 
-## Content retrieval
+## `POST /fed/v1/envelopes`
 
-### `GET /fed/v1/objects/{sha256}`
-
-Retrieves a locally exportable object by exact content identity, subject to local disclosure policy.
-
-### `GET /fed/v1/provenance/{sha256}`
-
-Retrieves exportable provenance for an object or receipt.
-
-## Explicitly absent from v1
-
-There is no generic endpoint equivalent to:
+Processing order is:
 
 ```text
-POST /remote-exec
-POST /shell
-POST /tools/{arbitrary}
-POST /governance/override
-POST /evidence/promote
-POST /council/inject-vote
-POST /capabilities/install
+HTTP limits
+→ canonical signed wrapper
+→ lifecycle-aware introduced peer lookup
+→ Ed25519 verification under frozen clock limits
+→ recipient == local node check
+→ durable replay check/record
+→ Prime Directive admission
+→ data-only / reject response
 ```
 
-Adding an endpoint with equivalent semantics under a cute new name does not make it constitutional.
+A correctly signed envelope addressed to another node is rejected **before** replay recording. The service does not become an accidental relay and foreign traffic cannot consume local replay state.
 
-## Authentication and authorization
+The endpoint never executes payloads, invokes tools, mutates governance, promotes evidence, installs capabilities, injects votes, or rewrites history.
 
-The production design will distinguish:
+## Replay retention and compaction
 
-1. transport security;
-2. envelope authentication;
-3. peer identity;
-4. capability advertisement;
-5. local authorization;
-6. Prime Directive admission.
+Replay IDs are retained for `4200` seconds:
 
-Passing one layer does not imply passing the next.
+```text
+3600 second maximum signed-message lifetime
++ 300 second future skew margin
++ 300 second expiry skew margin
+= 4200 seconds
+```
 
-## Limits
+That is the complete interval in which a previously accepted message could still pass the Phase 2 clock gate. Older records may therefore be pruned safely.
 
-Production endpoints must define and test limits for:
+At 1 MiB the append log is compacted: expired records are removed, the retained set is written to a same-directory temporary file, fsynced, atomically renamed, and the parent directory is fsynced. The 64 MiB bound remains a hard fail-closed ceiling for an unexpectedly enormous **active** replay window, rather than a permanent exhaustion point caused by historical entries.
 
-- body size;
-- nesting depth;
-- object count;
-- string length;
-- request rate;
-- clock skew/expiry;
-- replay cache size;
-- decompression behavior, if compression is admitted.
+## Local object and provenance retrieval
 
-Unbounded JSON is not a federation protocol. It is an invitation written in curly braces.
+`GET /fed/v1/objects/{sha256}` and `GET /fed/v1/provenance/{sha256}` serve only explicitly registered local canonical bytes. Missing IDs return `404` and never trigger peer retrieval, redirects, URL resolution, cloud metadata access, or any other outbound request.
 
-## Errors
+The reference crate has no outbound HTTP client dependency.
 
-Structured errors should expose stable machine codes and optional violated invariant IDs without leaking credentials, local private policy or unnecessary internal state.
+## SSRF and pseudo-admin boundary
 
-## Implementation status
+Unknown fields such as these fail closed:
 
-PR #1 documents this surface and supplies schemas/data structures. It does not expose a network listener and therefore does not claim operational API interoperability yet.
+```text
+force
+trusted
+override
+admin
+fetch_url
+redirect
+```
+
+There is no `/fetch-url`, redirect-following client, generic proxy endpoint, or remote-execution route.
+
+## Audit log
+
+Production audit logging is JSON Lines to the configured audit file with a narrow metadata allowlist. The service does **not** keep a production in-memory clone of every audit record. The in-memory mirror exists only under `cfg(test)`.
+
+Replay and audit paths are canonicalized before opening and must resolve to distinct files, preventing audit JSON from corrupting the replay log.
+
+The audit record intentionally excludes request bodies, arbitrary headers, bearer material, private seeds, signatures, and payload contents.
+
+## TLS
+
+See `TLS_PROFILE.md`. Public exposure requires TLS 1.3 upstream termination and the explicit trusted-proxy configuration described above. This remains a reference listener, not a production-networking claim.
+
+## Fuzz and adversarial coverage
+
+Phase 3 includes the libFuzzer target `fuzz/fuzz_targets/wire_and_admission.rs` plus deterministic parser/admission mutation smoke tests in ordinary CI. Regression tests cover lifecycle rollback, wrong-recipient envelopes, replay compaction, trusted-proxy rate separation, shared log paths, pseudo-admin fields, SSRF-like inputs, body limits, compression rejection, and local-only retrieval.

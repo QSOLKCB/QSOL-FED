@@ -57,13 +57,13 @@ Two independent implementations must produce byte-identical canonical bytes and 
 
 The two implementations are `src/canonical.rs` and `tools/qsol_canonical.py`. Both consume `fixtures/phase1/golden-vectors.json`; Rust verifies them in `cargo test`, Python verifies them in `tools/validate_phase1_gate.py`, and CI requires both. The gate also rejects the shared malformed/ambiguous corpus, generated oversized cases, unsupported wire protocol majors, and any attempt to make the Phase 1 embedded `signature` field non-null.
 
-Phase 1 freezes deterministic bytes only. Its exact envelope remains unchanged by Phase 2; signatures are carried by a detached wrapper.
+Phase 1 freezes deterministic bytes only. Its exact envelope remains unchanged by later phases; signatures are carried by a detached wrapper.
 
 ---
 
 ## Phase 2 — Cryptographic node identity
 
-**Status: complete; cryptographic identity gate enforced.**
+**Status: complete; historical cryptographic identity gate preserved.**
 
 - [x] Select reviewed signing suite and key format.
 - [x] Define `fed:qsol:<node-id>` derivation.
@@ -84,36 +84,53 @@ Phase 1 freezes deterministic bytes only. Its exact envelope remains unchanged b
 
 A valid signature must never bypass local admission. Tests must show that a correctly signed forbidden request is still rejected.
 
-The Phase 2 reference profile is defined by `crypto/phase2.json` and `CRYPTOGRAPHY.md`. It uses Ed25519 with an offline root identity key and rotatable operational envelope-signing keys. The root key derives the stable node ID and authorizes lifecycle records but cannot sign Federation envelopes. Normal rotation requires root, outgoing-key, and incoming proof-of-possession signatures. Recovery after an operational-key compromise requires the root and replacement key; root compromise is terminal for that node ID.
+The Phase 2 reference profile is defined by `crypto/phase2.json` and `CRYPTOGRAPHY.md`. It uses Ed25519 with an offline root identity key and rotatable operational envelope-signing keys. The root key derives the stable node ID and authorizes lifecycle records but cannot sign Federation envelopes.
 
-Signed messages require bounded lifetime and clock skew. Durable replay state is append-only, fsynced before a message is reported fresh, and fails closed on partial or corrupt logs. The replay store is single-process and makes no Phase 3 server-concurrency claim.
+Signed messages require bounded lifetime and clock skew. Durable replay state is append-only, crash-durable, calendar-validating, and fails closed on corrupt or partial logs. Phase 3 builds the HTTP service around this already-enforced boundary rather than weakening it.
 
 `SignatureValidity`, `TrustDisposition`, and `AuthorityDisposition` remain separate API dimensions. Cryptographic verification always yields `authority = none`; ordinary Prime Directive admission still decides whether an effect is permitted.
-
-Phase 2 establishes local cryptographic identity, signed-envelope verification, key lifecycle, and durable replay protection. It does **not** establish production networking, remote execution, or deployed interoperable federation.
 
 ---
 
 ## Phase 3 — Reference federation API
 
-- [ ] Implement Rust HTTP service.
-- [ ] `GET /fed/v1/node`.
-- [ ] `GET /fed/v1/capabilities`.
-- [ ] `POST /fed/v1/peer/hello`.
-- [ ] `POST /fed/v1/envelopes`.
-- [ ] `GET /fed/v1/objects/{sha256}`.
-- [ ] `GET /fed/v1/provenance/{sha256}`.
-- [ ] Strict body, depth, string and rate limits.
-- [ ] TLS deployment profile.
-- [ ] No arbitrary redirect/fetch behavior.
-- [ ] SSRF defenses.
-- [ ] Structured secret-safe audit log.
-- [ ] Conformance tests for rejected pseudo-admin fields (`force`, `trusted`, `override`, etc.).
-- [ ] Fuzz protocol parser and admission boundary.
+**Status: complete; opt-in reference API gate enforced.**
+
+- [x] Implement Rust HTTP service.
+- [x] `GET /fed/v1/node`.
+- [x] `GET /fed/v1/capabilities`.
+- [x] `POST /fed/v1/peer/hello`.
+- [x] `POST /fed/v1/envelopes`.
+- [x] `GET /fed/v1/objects/{sha256}`.
+- [x] `GET /fed/v1/provenance/{sha256}`.
+- [x] Strict body, depth, string and rate limits.
+- [x] TLS deployment profile.
+- [x] No arbitrary redirect/fetch behavior.
+- [x] SSRF defenses.
+- [x] Structured secret-safe audit log.
+- [x] Conformance tests for rejected pseudo-admin fields (`force`, `trusted`, `override`, etc.).
+- [x] Fuzz protocol parser and admission boundary.
+- [x] Add canonical `qsol-fed-peer-hello/1` schema.
+- [x] Add opt-in listener binary with loopback default.
+- [x] Add Phase 3 successor current-claim manifest and CI validator.
 
 ### Phase 3 gate
 
 Public network listening remains opt-in until replay protection, limits, identity verification and fuzz/adversarial suites are green.
+
+The reference binary binds `127.0.0.1:8787` by default. A non-loopback bind requires both `--allow-public-listen` and `--tls-terminated-upstream`. Public exposure follows `TLS_PROFILE.md`, which requires TLS 1.3 upstream. Native TLS termination and production-networking maturity are not claimed.
+
+POST bodies are canonical JSON only, bounded to 65,536 bytes, with compression and query parameters rejected. Phase 1 structural JSON limits remain in force. Fixed reference rate limits are 120 requests and 30 POSTs per IP per minute.
+
+`POST /fed/v1/peer/hello` introduces only a verified public identity and bounded capabilities into in-memory non-trust state. `POST /fed/v1/envelopes` requires the introduced identity, verifies the detached Ed25519 signature and frozen Phase 2 clock policy, records durable replay state, requires the local node as recipient, and then invokes the same Prime Directive admission boundary. Known message classes remain data-only.
+
+Object and provenance routes are exact local `sha256:` lookups. The reference crate has no outbound HTTP client, URL-fetch route, redirect-following path, or fallback peer retrieval. Missing content is `404`, not an excuse to go wandering around the network.
+
+The audit stream is structured JSON Lines with an allowlisted metadata surface and intentionally excludes request bodies, arbitrary headers, private keys, signatures, and payload contents.
+
+Phase 3 includes a libFuzzer target plus deterministic mutation/adversarial coverage in ordinary CI. Pseudo-admin fields, URL-like SSRF fields, compression, oversized bodies, query parameters, rate-limit overflow, replay, malformed identities, and forbidden constitutional effects fail closed.
+
+Phase 3 establishes the bounded reference HTTP service and opt-in listener posture. It does **not** establish production networking, remote execution, persistent Phase 4 peering, or deployed interoperable federation.
 
 ---
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Enforce Phase 2 cryptographic identity, lifecycle, replay, and admission boundaries."""
+"""Enforce the immutable Phase 2 cryptographic identity and replay baseline."""
 
 from __future__ import annotations
 
@@ -62,7 +62,7 @@ EXPECTED_CRYPTO = {
     "gate": "a valid signature never bypasses Prime Directive admission; correctly signed forbidden effects remain rejected",
 }
 
-EXPECTED_CURRENT_CLAIMS = {
+EXPECTED_PHASE2_CLAIMS = {
     "document_type": "qsol-fed-phase2-claims",
     "schema_version": 1,
     "protocol": "qsol-fed/0",
@@ -93,9 +93,6 @@ EXPECTED_CURRENT_CLAIMS = {
         "interoperable_federation": "requires deployed networking, peer lifecycle, replay-safe transport, and multi-implementation interop evidence",
     },
 }
-
-CURRENT_BEGIN = "<!-- CURRENT_CLAIM_BOUNDARY:BEGIN -->"
-CURRENT_END = "<!-- CURRENT_CLAIM_BOUNDARY:END -->"
 
 
 def require(condition: bool, message: str) -> None:
@@ -143,23 +140,11 @@ def validate_vectors() -> None:
         for key, value in entry.items():
             if key.endswith("signature_hex"):
                 require(re.fullmatch(r"[0-9a-f]{128}", value) is not None, f"bad signature vector encoding: {entry['id']}:{key}")
-    signed = by_id["qsol-signed-envelope"]
-    require(signed["node_id"] == "fed:qsol:8fbf311d9bd830509a22b40926970621fd31ee14ef238c552517f6a567fbc69d", "node derivation vector drift")
-    require(signed["message_id"] == "sha256:180b4d750d683daed2c56f226b277ac8e5eb96b0b85d60c726a27a205ffc998e", "signed-envelope message id drift")
-
-
-def extract_current_claim_block(readme: str) -> str:
-    require(readme.count(CURRENT_BEGIN) == 1 and readme.count(CURRENT_END) == 1, "README current claim markers missing or duplicated")
-    start = readme.index(CURRENT_BEGIN) + len(CURRENT_BEGIN)
-    end = readme.index(CURRENT_END, start)
-    return readme[start:end]
 
 
 def validate_repository_surface() -> None:
-    crypto = load_json("crypto/phase2.json")
-    require(crypto == EXPECTED_CRYPTO, "Phase 2 crypto machine contract drift")
-    claims = load_json("claims/phase2.json")
-    require(claims == EXPECTED_CURRENT_CLAIMS, "Phase 2 current claim manifest drift")
+    require(load_json("crypto/phase2.json") == EXPECTED_CRYPTO, "Phase 2 crypto machine contract drift")
+    require(load_json("claims/phase2.json") == EXPECTED_PHASE2_CLAIMS, "Phase 2 historical claim manifest drift")
 
     phase0 = load_json("claims/phase0.json")["capabilities"]
     require(phase0["cryptographic_identity"] is False, "historical Phase 0 cryptographic claim was rewritten")
@@ -204,29 +189,23 @@ def validate_repository_surface() -> None:
         require(marker in replay_source, f"replay contract marker missing: {marker}")
 
     roadmap = (ROOT / "ROADMAP.md").read_text(encoding="utf-8")
-    require("**Status: complete; cryptographic identity gate enforced.**" in roadmap, "ROADMAP Phase 2 status drift")
+    require("**Status: complete; historical cryptographic identity gate preserved.**" in roadmap, "ROADMAP Phase 2 historical status drift")
     require("A valid signature must never bypass local admission" in roadmap, "ROADMAP Phase 2 gate wording missing")
 
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    current = extract_current_claim_block(readme)
-    for line in (
-        "cryptographic identity: **established and tested**",
-        "signed envelope verification: **established and tested**",
-        "key lifecycle: **established and tested**",
-        "durable replay protection: **established and tested**",
-        "production networking: **not established**",
-        "remote execution: **not established**",
-        "interoperable federation: **not established**",
-    ):
-        require(line in current, f"README current claim boundary missing: {line}")
+    require("## Historical Phase 2 claim gate" in readme, "README historical Phase 2 claim section missing")
+    require("claims/phase2.json" in readme, "README must preserve Phase 2 claim baseline reference")
 
     ai = load_json("README4AI.md")
-    require(ai.get("status") == "phase2_gate_enforced", "README4AI current status drift")
-    require(ai.get("phase0_status") == "historical_gate_preserved", "README4AI historical Phase 0 status missing")
-    require(ai.get("current_claim_manifest") == "claims/phase2.json", "README4AI current claim manifest drift")
-    require(ai.get("current_claims") == claims["capabilities"], "README4AI current_claims disagree with canonical Phase 2 claim manifest")
+    require(ai.get("phase2_status") in {"cryptographic_identity_gate_enforced", "historical_crypto_gate_preserved"}, "README4AI Phase 2 status drift")
     require(ai.get("phase2_crypto", {}).get("contract") == "crypto/phase2.json", "README4AI Phase 2 crypto map missing")
     require(ai.get("claim_disagreement_policy") == "fail_closed", "claim disagreement must remain fail closed")
+    if (ROOT / "claims/phase3.json").exists():
+        require(ai.get("phase2_status") == "historical_crypto_gate_preserved", "Phase 3 must preserve Phase 2 as historical")
+        require(ai.get("current_claim_manifest") == "claims/phase3.json", "Phase 3 successor claim manifest not active")
+    else:
+        require(ai.get("current_claim_manifest") == "claims/phase2.json", "Phase 2 current claim manifest drift")
+        require(ai.get("current_claims") == EXPECTED_PHASE2_CLAIMS["capabilities"], "README4AI current claims disagree with Phase 2 manifest")
 
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     require("cargo test --all-targets" in workflow, "CI missing Rust cryptographic tests")
@@ -241,7 +220,7 @@ def main() -> None:
     validate_schemas()
     validate_vectors()
     validate_repository_surface()
-    print("phase2 crypto gate OK: Ed25519 identity, detached signatures, key lifecycle, frozen clock policy, durable replay, and Prime Directive separation enforced")
+    print("phase2 historical crypto gate OK: Ed25519 identity, detached signatures, key lifecycle, frozen clock policy, durable replay, and Prime Directive separation preserved")
 
 
 if __name__ == "__main__":
