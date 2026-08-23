@@ -33,7 +33,7 @@ jobs:
           cargo --version
           python3 --version
           node --version
-      - name: Rust tests, API adversarial suite, federation-state round trips, Holodeck safeguards, adapters, SDKs, and deterministic fuzz smoke
+      - name: Rust tests, state, Holodeck, adapters, SDKs, Assembly, and fuzz smoke
         run: cargo test --all-targets
       - name: Phase 6 three-implementation SDK conformance
         run: |
@@ -44,7 +44,7 @@ jobs:
           cmp /tmp/phase6-rust.json /tmp/phase6-js.json
       - name: Phase 6 hostile SDK parser and wire regressions
         run: |
-          PYTHONPATH=sdk/python python3 -m unittest sdk/python/test_sdk.py -v
+          python3 sdk/python/test_sdk.py
           node sdk/typescript/adversarial.mjs
       - name: Phase 6 neutral third-party node participation
         run: |
@@ -98,7 +98,6 @@ jobs:
             echo "tampered NEXUS checkout was accepted"
             exit 1
           fi
-
           python3 tools/generate_nexus_phase5_fixture.py \
             --nexus-src .deps/QSOL-NEXUS/src \
             --minority-rationale "sk-aaaaaaaaaaaaaaaaaaaaaaaa" \
@@ -185,5 +184,7 @@ jobs:
         run: python3 tools/validate_phase5_gate.py
       - name: Historical Phase 5C live QSOL-ORACLE gate
         run: python3 tools/validate_phase5c_gate.py
-      - name: Phase 6 third-party SDK gate
+      - name: Historical Phase 6 third-party SDK gate
         run: python3 tools/validate_phase6_gate.py
+      - name: Phase 7 Federation Assembly gate
+        run: python3 tools/validate_phase7_gate.py
