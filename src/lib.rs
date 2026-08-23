@@ -27,7 +27,7 @@ pub use api::{
 pub use bundle::{
     export_bundle, import_bundle, verify_bundle, BundleError, BundleImportReceipt, BundleObject,
     BundlePeer, BundleVerificationReport, PortableFederationBundle, FEDERATION_BUNDLE_SCHEMA_V1,
-    MAX_BUNDLE_BYTES, MAX_BUNDLE_OBJECTS, MAX_BUNDLE_PEERS,
+    MAX_BUNDLE_BYTES, MAX_BUNDLE_EMBEDDED_HEX_CHARS, MAX_BUNDLE_OBJECTS, MAX_BUNDLE_PEERS,
 };
 pub use canonical::{
     canonicalize, derive_message_id, object_id, parse_canonical_value, serialize_canonical,
