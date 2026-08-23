@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "qsol-fed-holodeck-event/1",
+  "title": "QSOL-FED Holodeck Synthetic Event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "program_id", "world_id", "sequence", "event_id", "kind", "synthetic_actor", "text", "source_refs", "authority_effect", "federation_effect", "evidence_effect"],
+  "properties": {
+    "schema": {"const": "qsol-fed-holodeck-event/1"},
+    "program_id": {"type": "string", "pattern": "^holodeck-program:[0-9a-f]{64}$"},
+    "world_id": {"type": "string", "pattern": "^holodeck-world:[0-9a-f]{64}$"},
+    "sequence": {"type": "integer", "minimum": 1, "maximum": 4096},
+    "event_id": {"type": "string", "pattern": "^holodeck-event:[0-9a-f]{64}$"},
+    "kind": {"enum": ["program_start", "synthetic_narrative", "synthetic_transition", "safety_trip", "operator_freeze", "operator_resume", "program_end"]},
+    "synthetic_actor": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "string", "pattern": "^holo-entity:[0-9a-f]{24}:[0-9]+$"}
+      ]
+    },
+    "text": {"type": "string", "minLength": 1, "maxLength": 4096},
+    "source_refs": {
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^object:[0-9a-f]{64}$"}
+    },
+    "authority_effect": {"const": "none"},
+    "federation_effect": {"const": "none"},
+    "evidence_effect": {"const": "none"}
+  }
+}
