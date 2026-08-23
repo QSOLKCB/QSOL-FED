@@ -1,10 +1,11 @@
 #![forbid(unsafe_code)]
 
 //! QSOL-FED constitutional, canonical wire, cryptographic identity, opt-in HTTP,
-//! and durable Phase 4 federation-state core.
+//! durable federation-state, and sandboxed synthetic-world core.
 //!
-//! Persistence, import, peering, trust, and capability policy remain separate
-//! from truth, evidence, authority, and constitutional admission.
+//! Persistence, import, peering, trust, capability policy, and simulation remain
+//! separate from truth, evidence, authority, constitutional admission, and real
+//! execution effects.
 
 pub mod api;
 pub mod bundle;
@@ -12,6 +13,7 @@ pub mod canonical;
 pub mod claims;
 mod crypto;
 pub mod envelope;
+pub mod holodeck;
 pub mod invariants;
 pub mod peering;
 pub mod replay;
@@ -48,6 +50,16 @@ pub use crypto::{
     SIGNED_ENVELOPE_SCHEMA_V1,
 };
 pub use envelope::{AuthorityClaim, FederationEnvelope, MessageClass, NodeManifest};
+pub use holodeck::{
+    compile_world_plan, HolodeckBoundaryEffect, HolodeckDecision, HolodeckError, HolodeckEvent,
+    HolodeckEventKind, HolodeckProgram, HolodeckProgramMode, HolodeckReceipt, HolodeckSafetyProfile,
+    HolodeckSandbox, HolodeckState, HolodeckWorldPlan, NexusOrderBasis, NexusWorldSourceManifest,
+    HOLODECK_EVENT_SCHEMA_V1, HOLODECK_PROGRAM_SCHEMA_V1, HOLODECK_RECEIPT_SCHEMA_V1,
+    HOLODECK_SAFETY_PROFILE, HOLODECK_SAFETY_PROFILE_V1, HOLODECK_WORLD_PLAN_SCHEMA_V1,
+    MAX_HOLODECK_ANCHORS, MAX_HOLODECK_ENTITIES, MAX_HOLODECK_EVENTS,
+    MAX_HOLODECK_SOURCE_OBJECTS, MAX_HOLODECK_TEXT_BYTES, NEXUS_EXPORT_SCHEMA_V1,
+    NEXUS_SOURCE_SCHEMA_V1, NEXUS_WORLD_POLICY_V1,
+};
 pub use invariants::{
     admit_effect, AdmissionDecision, FederationEffect, HardInvariant, CHARTER_ID,
     HARD_INVARIANTS, PRIME_DIRECTIVE_ID, PROTOCOL_ID,
