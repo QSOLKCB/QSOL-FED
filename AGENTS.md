@@ -22,7 +22,7 @@ Unknown authority-bearing effects fail closed.
 
 `api/phase3.json`, `API.md`, `TLS_PROFILE.md`, and `claims/phase3.json` preserve the six routes, canonical/body/rate limits, trusted proxy, local-recipient-before-replay rule, replay compaction, SSRF/redirect isolation, secret-safe audit, and opt-in listener. Run `python3 tools/validate_phase3_gate.py` after API changes.
 
-`state/phase4.json`, `FEDERATION_STATE.md`, and `claims/phase4.json` preserve foreign/quarantine attribution, lifecycle prefix immutability, separate trust/policy, persist-before-live local changes, explicit reconciliation, crash-recoverable namespace move, bounded offline bundles, and import `authority = none`. Run `python3 tools/validate_phase4_gate.py` after state changes.
+`state/phase4.json`, `FEDERATION_STATE.md`, and `claims/phase4.json` preserve foreign/quarantine attribution, lifecycle prefix immutability, separate trust/policy, persist-before-live local changes, explicit reconciliation, crash-recoverable namespace move, bounded offline bundles, and import `authority = none`. **Silent reconciliation remains forbidden; partition rejoin requires explicit reconciliation.** Run `python3 tools/validate_phase4_gate.py` after state changes.
 
 ### Historical Phase 5A Holodeck rules
 
