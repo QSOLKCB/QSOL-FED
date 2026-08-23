@@ -360,13 +360,16 @@ impl HolodeckSandbox {
         }
         validate_synthetic_actor(actor, &self.plan)?;
         let text = format!("blocked_boundary_effect:{}", effect.code());
+
+        // Security state changes first. Even if the audit ledger is already full,
+        // resource exhaustion cannot leave a boundary-violating simulation running.
+        self.state = HolodeckState::Frozen;
         let event = self.push_event(
             HolodeckEventKind::SafetyTrip,
             actor.map(ToOwned::to_owned),
             &text,
             Vec::new(),
         )?;
-        self.state = HolodeckState::Frozen;
         Ok(HolodeckDecision::Blocked(event))
     }
 
@@ -812,5 +815,19 @@ mod tests {
         assert!(sandbox
             .record_synthetic_transition(None, "too many", Vec::new())
             .is_err());
+    }
+
+    #[test]
+    fn boundary_effect_freezes_even_when_event_ledger_is_full() {
+        let mut limited = program(1701);
+        limited.max_events = 1;
+        let mut sandbox = HolodeckSandbox::start(limited).unwrap();
+        let actor = sandbox.plan().synthetic_entity_ids[0].clone();
+        assert_eq!(sandbox.events().len(), 1);
+        assert!(sandbox
+            .attempt_boundary_effect(Some(&actor), HolodeckBoundaryEffect::NetworkAccess)
+            .is_err());
+        assert_eq!(sandbox.state(), HolodeckState::Frozen);
+        assert_eq!(sandbox.events().len(), 1);
     }
 }
