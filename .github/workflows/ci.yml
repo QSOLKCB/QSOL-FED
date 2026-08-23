@@ -83,6 +83,7 @@ jobs:
           cmp schemas/oracle-transport-request-v1.schema.json .deps/QSOL-ORACLE/schema/fed-transport-request.schema.json
           cmp schemas/oracle-transport-response-v1.schema.json .deps/QSOL-ORACLE/schema/fed-transport-response.schema.json
           cmp schemas/oracle-observation-v1.schema.json .deps/QSOL-ORACLE/schema/fed-oracle-observation.schema.json
+          test "$(sha256sum .deps/QSOL-ORACLE/tools/nexus_membrane_common.py | cut -d' ' -f1)" = "4e4c749b67688678f03692d9533adb64760a3b448b3b804acb9f7f95e986c381"
       - name: Phase 5C live ORACLE process conformance
         run: |
           cargo run --quiet --bin qsol-fed-oracle -- .deps/QSOL-ORACLE > /tmp/oracle-live-probe.json
@@ -104,6 +105,33 @@ jobs:
           printf '\n# intentional Phase 5C transport tamper\n' >> /tmp/QSOL-ORACLE-tampered/tools/fed_transport.py
           if cargo run --quiet --bin qsol-fed-oracle -- /tmp/QSOL-ORACLE-tampered; then
             echo "tampered ORACLE donor release was accepted"
+            exit 1
+          fi
+      - name: Phase 5C rejects forged fingerprint self-claim
+        run: |
+          cp -a .deps/QSOL-ORACLE /tmp/QSOL-ORACLE-forged-fingerprint
+          printf '\n<!-- intentional non-critical fingerprinted-file tamper -->\n' >> /tmp/QSOL-ORACLE-forged-fingerprint/docs/FED.md
+          python3 - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          root = Path('/tmp/QSOL-ORACLE-forged-fingerprint')
+          path = root / 'release/fingerprint.json'
+          fp = json.loads(path.read_text(encoding='utf-8'))
+          raw = (root / 'docs/FED.md').read_bytes()
+          for record in fp['files']:
+              if record['path'] == 'docs/FED.md':
+                  record['bytes'] = len(raw)
+                  record['sha256'] = hashlib.sha256(raw).hexdigest()
+                  break
+          else:
+              raise SystemExit('docs/FED.md missing from release fingerprint')
+          canonical = lambda value: json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
+          fp['files_sha256'] = hashlib.sha256(canonical(fp['files'])).hexdigest()
+          # Deliberately retain the old self-claimed release_fingerprint_sha256.
+          path.write_text(json.dumps(fp, indent=2) + '\n', encoding='utf-8')
+          PY
+          if cargo run --quiet --bin qsol-fed-oracle -- /tmp/QSOL-ORACLE-forged-fingerprint; then
+            echo "forged ORACLE release fingerprint self-claim was accepted"
             exit 1
           fi
       - name: Constitution drift check
