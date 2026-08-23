@@ -1,4 +1,4 @@
-use qsol_fed::phase6_conformance_from_fixture;
+use qsol_fed::{phase6_conformance_from_fixture, sdk_canonicalize};
 
 fn main() {
     if let Err(error) = run() {
@@ -10,6 +10,6 @@ fn main() {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let fixture = include_str!("../../fixtures/phase6/conformance.json");
     let result = phase6_conformance_from_fixture(fixture, "language-neutral")?;
-    println!("{}", serde_json::to_string(&result)?);
+    println!("{}", sdk_canonicalize(&result)?);
     Ok(())
 }
