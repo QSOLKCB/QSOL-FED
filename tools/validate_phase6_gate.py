@@ -2,6 +2,7 @@
 """Enforce Phase 6 governance-neutral SDK and third-party interoperability claims."""
 from __future__ import annotations
 
+import ast
 import json
 import re
 from pathlib import Path
@@ -56,7 +57,10 @@ def validate_claims() -> None:
         require(caps[key] == value, f"Phase 6 changed historical capability: {key}")
     require(set(caps) - set(old) == NEW_CAPABILITIES, "Phase 6 capability delta drift")
     require(all(caps[key] is True for key in NEW_CAPABILITIES), "Phase 6 SDK capability not established")
-    for key in ("oracle_holodeck_synthetic_admission", "host_level_sandbox", "production_networking", "remote_execution", "interoperable_federation"):
+    for key in (
+        "oracle_holodeck_synthetic_admission", "host_level_sandbox", "production_networking",
+        "remote_execution", "interoperable_federation",
+    ):
         require(caps[key] is False, f"Phase 6 deployment/authority overclaim: {key}")
     require(rust_claims() == caps, "Rust current claims disagree with Phase 6")
 
@@ -79,7 +83,10 @@ def validate_contract_and_fixture() -> None:
     require(state["conformance"]["required_implementations"] == 3, "three-implementation conformance requirement drift")
     require(state["conformance"]["byte_identical_results"] is True, "byte-identical interop requirement drift")
     third = state["third_party_node"]
-    for key in ("qsol_governance_adopted", "nexus_required", "council_required", "oracle_required", "ark_required", "holodeck_required", "wire_namespace_implies_governance"):
+    for key in (
+        "qsol_governance_adopted", "nexus_required", "council_required", "oracle_required",
+        "ark_required", "holodeck_required", "wire_namespace_implies_governance",
+    ):
         require(third[key] is False, f"third-party independence drift: {key}")
     authority = state["authority_boundary"]
     require(all(value is False for value in authority.values()), "minimal SDK gained authority/application dependency")
@@ -106,13 +113,29 @@ def validate_contract_and_fixture() -> None:
     require(expected["evidence_message_id"] == "sha256:b3d2de3605bf001f945ff1fc9b14127fca321cbb5cac2edde6c79f659390d7f1", "evidence vector drift")
 
 
+def _python_imports(source: str) -> tuple[set[str], set[str]]:
+    modules: set[str] = set()
+    names: set[str] = set()
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            modules.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            if node.module:
+                modules.add(node.module)
+            names.update(alias.name for alias in node.names)
+    return modules, names
+
+
 def validate_schemas_and_implementations() -> None:
     profile = load("schemas/third-party-node-profile-v1.schema.json")
     result = load("schemas/sdk-conformance-result-v1.schema.json")
     require(profile.get("additionalProperties") is False, "third-party profile schema must be closed")
+    require(profile["properties"]["implementation"].get("maxLength") == 128, "third-party profile length contract drift")
     require(profile["properties"]["qsol_governance_adopted"].get("const") is False, "profile governance adoption drift")
     require(profile["properties"]["nexus_required"].get("const") is False and profile["properties"]["council_required"].get("const") is False, "profile QSOL dependency drift")
     require(result.get("additionalProperties") is False, "conformance result schema must be closed")
+    require(result["properties"]["implementation"].get("const") == "language-neutral", "conformance result discriminator drift")
     require(result["properties"]["authority_effect"].get("const") == "none", "conformance result authority drift")
 
     rust = (ROOT / "src/sdk.rs").read_text(encoding="utf-8")
@@ -120,19 +143,30 @@ def validate_schemas_and_implementations() -> None:
     javascript = (ROOT / "sdk/typescript/qsol_fed_sdk.mjs").read_text(encoding="utf-8")
     typescript = (ROOT / "sdk/typescript/qsol_fed_sdk.ts").read_text(encoding="utf-8")
     for name, text, markers in (
-        ("Rust", rust, ("SDK_CONTRACT_V1", "sdk_build_unsigned_envelope", "phase6_conformance_from_fixture")),
-        ("Python", python, ("SDK_CONTRACT", "build_unsigned_envelope", "conformance_result")),
-        ("JavaScript", javascript, ("SDK_CONTRACT", "buildUnsignedEnvelope", "conformanceResult", "normalized_duplicate_key")),
-        ("TypeScript", typescript, ("ThirdPartyNodeProfile", "buildUnsignedEnvelope", "conformanceResult")),
+        ("Rust", rust, ("SDK_CONTRACT_V1", "sdk_build_provenance", "sdk_validate_unsigned_envelope", "phase6_conformance_from_fixture", "chars().count()")),
+        ("Python", python, ("SDK_CONTRACT", "build_provenance", "validate_unsigned_envelope", "output_too_large", "[0-9]{4}")),
+        ("JavaScript", javascript, ("SDK_CONTRACT", "buildProvenance", "validateUnsignedEnvelope", "TextDecoder", "compareUnicodeScalars", "invalid_utf8")),
+        ("TypeScript", typescript, ("ThirdPartyNodeProfile", "ProvenanceObject", "buildProvenance", "validateUnsignedEnvelope", "conformanceResult")),
     ):
         for marker in markers:
             require(marker in text, f"{name} SDK marker missing: {marker}")
 
-    for forbidden in ("qsol_adapters", "holodeck", "oracle_live", "PeerRegistry", "TrustRegistry", "CouncilOfCouncils"):
+    for forbidden in (
+        "crate::qsol_adapters", "crate::holodeck", "crate::oracle_live",
+        "PeerRegistry", "TrustRegistry", "CouncilOfCouncils",
+    ):
         require(forbidden not in rust, f"Rust minimal SDK imported application subsystem: {forbidden}")
+
     third_party = (ROOT / "examples/neutral_research_node.py").read_text(encoding="utf-8")
-    for forbidden in ("nexus_runtime", "qsol_adapters", "oracle_live", "holodeck", "PeerRegistry", "TrustRegistry"):
-        require(forbidden not in third_party, f"third-party node imported QSOL subsystem: {forbidden}")
+    modules, names = _python_imports(third_party)
+    forbidden_modules = {"nexus_runtime", "qsol_adapters", "oracle_live", "holodeck"}
+    for module in modules:
+        require(not any(module == item or module.startswith(item + ".") for item in forbidden_modules), f"third-party node imported QSOL subsystem: {module}")
+    for forbidden_name in ("PeerRegistry", "TrustRegistry", "CouncilOfCouncils"):
+        require(forbidden_name not in names, f"third-party node imported QSOL authority type: {forbidden_name}")
+
+    require((ROOT / "sdk/python/test_sdk.py").is_file(), "Python Phase 6 adversarial regression suite missing")
+    require((ROOT / "sdk/typescript/adversarial.mjs").is_file(), "JavaScript Phase 6 adversarial regression suite missing")
 
 
 def validate_surfaces_and_ci() -> None:
@@ -146,7 +180,8 @@ def validate_surfaces_and_ci() -> None:
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     for marker in (
         "qsol-fed-sdk-conformance", "sdk/python/conformance.py", "sdk/typescript/conformance.mjs",
-        "neutral_research_node.py", "validate_phase6_gate.py", "cmp /tmp/phase6-rust.json /tmp/phase6-python.json",
+        "sdk/python/test_sdk.py", "sdk/typescript/adversarial.mjs", "neutral_research_node.py",
+        "validate_phase6_gate.py", "cmp /tmp/phase6-rust.json /tmp/phase6-python.json",
         "cmp /tmp/phase6-rust.json /tmp/phase6-js.json",
     ):
         require(marker in workflow, f"CI Phase 6 marker missing: {marker}")
@@ -169,7 +204,7 @@ def main() -> None:
     validate_contract_and_fixture()
     validate_schemas_and_implementations()
     validate_surfaces_and_ci()
-    print("phase6 SDK gate OK: Rust/Python/TypeScript references, byte-identical three-implementation conformance, neutral third-party participation, and governance independence preserved without deployment overclaim")
+    print("phase6 SDK gate OK: Rust/Python/TypeScript references, byte-identical three-implementation conformance, hostile parser parity, neutral third-party participation, and governance independence preserved without deployment overclaim")
 
 
 if __name__ == "__main__":
