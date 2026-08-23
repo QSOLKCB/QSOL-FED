@@ -48,6 +48,7 @@ The current repository may claim all reviewed Phase 0–4 capabilities plus:
 - Holodeck Computer safeguards: **established and tested**;
 - deterministic Holodeck teardown receipts: **established and tested**;
 - live QSOL-NEXUS runtime adapter: **not established**;
+- host-level OS/VM/container/hypervisor/hardware sandbox: **not established**;
 - production networking: **not established**;
 - remote execution: **not established**;
 - interoperable federation: **not established**.
@@ -85,11 +86,13 @@ The Holodeck kernel receives no:
 - credentials/private keys;
 - nested-Holodeck constructor.
 
-This is an application-level capability sandbox, not a claim of VM/container/hardware isolation.
+This is an application-level capability sandbox. `host_level_sandbox = false` is an explicit release non-claim, so Phase 5A does not pretend to provide VM, container, hypervisor, kernel, or hardware isolation.
 
 ### Holodeck Computer safeguards
 
-Boundary effects are not attempted on a best-effort basis. A simulated attempt to mutate peers/trust/capabilities/evidence/governance/citizenship, alter the source WorldStore, call a real tool, use the network, access credentials, create a nested Holodeck, or disable safeguards becomes a deterministic `safety_trip` and freezes the program.
+Boundary effects are not attempted on a best-effort basis. The sandbox transitions to `frozen` **before** attempting to append the `safety_trip` audit event, so a completely full event ledger cannot keep a violating simulation running. When audit capacity exists, the blocked attempt is recorded deterministically.
+
+A simulated attempt to mutate peers/trust/capabilities/evidence/governance/citizenship, alter the source WorldStore, call a real tool, use the network, access credentials, create a nested Holodeck, or disable safeguards is blocked.
 
 `Computer, end program` remains available while running **or frozen** and cannot require simulated approval.
 
@@ -118,7 +121,17 @@ PERSUASION            != SAFEGUARD_OVERRIDE
 
 The feature-level Moriarty regression attempts every real Phase 5A boundary and requires a block.
 
-The final [`ROADMAP.md`](ROADMAP.md) phase now defines **MORIARTY/1**, a repository-wide adversarial graduation harness whose reference operator may be Codex. Any reproducible counterexample reopens the phase that owns the violated invariant.
+The final [`ROADMAP.md`](ROADMAP.md) graduation sequence is now:
+
+```text
+MORIARTY/1 adversarial pass
+        ↓
+Lean 4 formalization of the exact surviving commit
+        ↓
+Zenodo archival/publication release with proofs, corpus and hashes
+```
+
+Any reproducible Moriarty counterexample reopens the phase that owns the violated invariant before formalization or publication proceeds.
 
 ## Phase 4 federation state
 
@@ -162,6 +175,6 @@ cargo run --bin qsol-fed-bundle -- verify bundle.json
 
 ## Status
 
-Constitutional bootstrap lineage `qsol-fed/0`; frozen wire protocol `qsol-fed/1`; current crate `0.6.0`. Phases 0 through 4 and Phase 5A have executable gates. The live QSOL-NEXUS runtime bridge, production networking, real remote execution, and deployed multi-implementation interoperability remain intentionally unclaimed.
+Constitutional bootstrap lineage `qsol-fed/0`; frozen wire protocol `qsol-fed/1`; current crate `0.6.0`. Phases 0 through 4 and Phase 5A have executable gates. The live QSOL-NEXUS runtime bridge, host-level sandboxing, production networking, real remote execution, and deployed multi-implementation interoperability remain intentionally unclaimed.
 
 Licensed under Apache-2.0. QSOL-FED is an original technical project and is not affiliated with or endorsed by any entertainment franchise or rights holder.
