@@ -13,7 +13,7 @@ const MAX_ARRAY_ITEMS = 1024;
 const MAX_OBJECT_MEMBERS = 1024;
 const NODE_ID = /^fed:qsol:[a-z0-9][a-z0-9._-]{0,127}$/;
 const SHA256_REF = /^sha256:[0-9a-f]{64}$/;
-const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+const TIMESTAMP = /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$/;
 const CAPABILITY = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*\/[1-9][0-9]*$/;
 const MESSAGE_CLASSES = new Set([
   'hello', 'capabilities', 'evidence.offer', 'evidence.request', 'hypothesis',
@@ -23,15 +23,53 @@ const MESSAGE_CLASSES = new Set([
 
 export class SdkError extends Error {}
 
+function hasLoneSurrogate(value) {
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(i + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return true;
+      i++;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function nfc(value) {
+  if (typeof value !== 'string' || hasLoneSurrogate(value)) throw new SdkError('lone_surrogate');
   const normalized = value.normalize('NFC');
   if (Buffer.byteLength(normalized, 'utf8') > MAX_STRING_UTF8) throw new SdkError('string_too_large');
   return normalized;
 }
 
+function scalarLength(value) { return Array.from(value).length; }
+function isNodeId(value) { return typeof value === 'string' && NODE_ID.test(value); }
+function isSha256Ref(value) { return typeof value === 'string' && SHA256_REF.test(value); }
+function isTimestamp(value) { return typeof value === 'string' && TIMESTAMP.test(value); }
+
+function compareUnicodeScalars(left, right) {
+  const a = Array.from(left);
+  const b = Array.from(right);
+  const length = Math.min(a.length, b.length);
+  for (let i = 0; i < length; i++) {
+    const ac = a[i].codePointAt(0);
+    const bc = b[i].codePointAt(0);
+    if (ac !== bc) return ac - bc;
+  }
+  return a.length - b.length;
+}
+
 class Parser {
   constructor(text) { this.text = text; this.i = 0; }
-  skip() { while (this.i < this.text.length && /\s/.test(this.text[this.i])) this.i++; }
+  skip() {
+    while (this.i < this.text.length) {
+      const ch = this.text[this.i];
+      if (ch !== ' ' && ch !== '\t' && ch !== '\n' && ch !== '\r') break;
+      this.i++;
+    }
+  }
   value(depth = 1) {
     if (depth > MAX_DEPTH) throw new SdkError('max_depth_exceeded');
     this.skip();
@@ -110,10 +148,23 @@ class Parser {
 }
 
 export function parse(raw) {
-  const text = Buffer.isBuffer(raw) ? raw.toString('utf8') : String(raw);
-  const bytes = Buffer.from(text, 'utf8');
-  if (bytes.length > MAX_INPUT_BYTES) throw new SdkError('input_too_large');
-  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) throw new SdkError('utf8_bom_forbidden');
+  let text;
+  let bytes;
+  if (Buffer.isBuffer(raw)) {
+    bytes = raw;
+    if (bytes.length > MAX_INPUT_BYTES) throw new SdkError('input_too_large');
+    if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) throw new SdkError('utf8_bom_forbidden');
+    try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
+    catch { throw new SdkError('invalid_utf8'); }
+  } else if (typeof raw === 'string') {
+    if (hasLoneSurrogate(raw)) throw new SdkError('lone_surrogate');
+    text = raw;
+    bytes = Buffer.from(text, 'utf8');
+    if (bytes.length > MAX_INPUT_BYTES) throw new SdkError('input_too_large');
+    if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) throw new SdkError('utf8_bom_forbidden');
+  } else {
+    throw new SdkError('malformed_json');
+  }
   const parser = new Parser(text);
   const value = parser.value(); parser.skip();
   if (parser.i !== text.length) throw new SdkError('malformed_json');
@@ -172,7 +223,7 @@ export function serialize(value) {
   if (typeof value === 'number') return String(value);
   if (typeof value === 'string') return escapeString(value);
   if (Array.isArray(value)) return '[' + value.map(serialize).join(',') + ']';
-  const keys = Object.keys(value).sort();
+  const keys = Object.keys(value).sort(compareUnicodeScalars);
   return '{' + keys.map(key => escapeString(key) + ':' + serialize(value[key])).join(',') + '}';
 }
 
@@ -186,7 +237,7 @@ export function canonicalize(value) {
 function sha256(bytes) { return createHash('sha256').update(bytes).digest('hex'); }
 export function objectId(value) { return 'sha256:' + sha256(canonicalize(value)); }
 export function deriveMessageId(envelope) {
-  if (!Object.hasOwn(envelope, 'message_id') || !Object.hasOwn(envelope, 'signature')) throw new SdkError('envelope_projection_fields_missing');
+  if (!envelope || typeof envelope !== 'object' || !Object.hasOwn(envelope, 'message_id') || !Object.hasOwn(envelope, 'signature')) throw new SdkError('envelope_projection_fields_missing');
   const projection = { ...envelope }; delete projection.message_id; delete projection.signature;
   return 'sha256:' + sha256(Buffer.concat([MESSAGE_ID_DOMAIN, canonicalize(projection)]));
 }
@@ -194,37 +245,62 @@ export function classifyProtocol(protocol) { return protocol === WIRE_PROTOCOL ?
 export function validateCapabilityId(value) { return typeof value === 'string' && CAPABILITY.test(value); }
 
 export function validateNodeManifest(manifest) {
+  if (!manifest || typeof manifest !== 'object') throw new SdkError('sdk_node_manifest_invalid');
   const keys = Object.keys(manifest).sort().join(',');
-  if (keys !== 'authority_claim,capabilities,node_id,protocol' || manifest.protocol !== BOOTSTRAP_PROTOCOL || manifest.authority_claim !== 'none' || !NODE_ID.test(manifest.node_id)) throw new SdkError('sdk_node_manifest_invalid');
+  if (keys !== 'authority_claim,capabilities,node_id,protocol' || manifest.protocol !== BOOTSTRAP_PROTOCOL || manifest.authority_claim !== 'none' || !isNodeId(manifest.node_id)) throw new SdkError('sdk_node_manifest_invalid');
   if (!Array.isArray(manifest.capabilities) || manifest.capabilities.length > 64 || new Set(manifest.capabilities).size !== manifest.capabilities.length || !manifest.capabilities.every(validateCapabilityId)) throw new SdkError('sdk_node_manifest_invalid');
 }
-export function buildNodeManifest(nodeId, capabilities) { const value = { protocol: BOOTSTRAP_PROTOCOL, node_id: nodeId, capabilities: [...capabilities], authority_claim: 'none' }; validateNodeManifest(value); return value; }
+export function buildNodeManifest(nodeId, capabilities) {
+  if (!Array.isArray(capabilities)) throw new SdkError('sdk_node_manifest_invalid');
+  const value = { protocol: BOOTSTRAP_PROTOCOL, node_id: nodeId, capabilities: [...capabilities], authority_claim: 'none' };
+  validateNodeManifest(value); return value;
+}
 export function validateThirdPartyProfile(profile) {
+  if (!profile || typeof profile !== 'object') throw new SdkError('third_party_profile_invalid');
   const keys = Object.keys(profile).sort().join(',');
-  if (keys !== 'council_required,governance_model,implementation,nexus_required,qsol_governance_adopted,schema' || profile.schema !== THIRD_PARTY_PROFILE || profile.governance_model !== 'local' || typeof profile.implementation !== 'string' || profile.implementation.length < 1 || profile.implementation.length > 128 || profile.qsol_governance_adopted !== false || profile.nexus_required !== false || profile.council_required !== false) throw new SdkError('third_party_profile_invalid');
+  if (keys !== 'council_required,governance_model,implementation,nexus_required,qsol_governance_adopted,schema' || profile.schema !== THIRD_PARTY_PROFILE || profile.governance_model !== 'local' || typeof profile.implementation !== 'string' || scalarLength(profile.implementation) < 1 || scalarLength(profile.implementation) > 128 || profile.qsol_governance_adopted !== false || profile.nexus_required !== false || profile.council_required !== false) throw new SdkError('third_party_profile_invalid');
+}
+export function buildProvenance(sourceNode, sourceObject, relation, parents, createdAt) {
+  if (!Array.isArray(parents)) throw new SdkError('sdk_provenance_invalid');
+  const value = { schema: PROVENANCE_SCHEMA, source_node: sourceNode, source_object: sourceObject, relation, parents: [...parents], created_at: createdAt };
+  validateProvenance(value); return value;
 }
 export function validateProvenance(value) {
+  if (!value || typeof value !== 'object') throw new SdkError('sdk_provenance_invalid');
   const keys = Object.keys(value).sort().join(',');
-  if (keys !== 'created_at,parents,relation,schema,source_node,source_object' || value.schema !== PROVENANCE_SCHEMA || !NODE_ID.test(value.source_node) || !SHA256_REF.test(value.source_object) || !['observed','derived','quoted','transported'].includes(value.relation) || !TIMESTAMP.test(value.created_at)) throw new SdkError('sdk_provenance_invalid');
-  if (!Array.isArray(value.parents) || value.parents.length > 64 || new Set(value.parents).size !== value.parents.length || !value.parents.every(item => SHA256_REF.test(item))) throw new SdkError('sdk_provenance_invalid');
+  if (keys !== 'created_at,parents,relation,schema,source_node,source_object' || value.schema !== PROVENANCE_SCHEMA || !isNodeId(value.source_node) || !isSha256Ref(value.source_object) || typeof value.relation !== 'string' || !['observed','derived','quoted','transported'].includes(value.relation) || !isTimestamp(value.created_at)) throw new SdkError('sdk_provenance_invalid');
+  if (!Array.isArray(value.parents) || value.parents.length > 64 || new Set(value.parents).size !== value.parents.length || !value.parents.every(isSha256Ref)) throw new SdkError('sdk_provenance_invalid');
+}
+function validateEnvelopeSpec(spec, error) {
+  if (!spec || typeof spec !== 'object') throw new SdkError(error);
+  const required = ['expires_at','issued_at','message_class','payload_ref','provenance_ref','recipient','sender'].sort().join(',');
+  if (Object.keys(spec).sort().join(',') !== required || !isNodeId(spec.sender) || !isNodeId(spec.recipient) || typeof spec.message_class !== 'string' || !MESSAGE_CLASSES.has(spec.message_class) || !isSha256Ref(spec.payload_ref) || (spec.provenance_ref !== null && !isSha256Ref(spec.provenance_ref)) || !isTimestamp(spec.issued_at) || (spec.expires_at !== null && !isTimestamp(spec.expires_at))) throw new SdkError(error);
 }
 export function buildUnsignedEnvelope(spec) {
-  const required = ['expires_at','issued_at','message_class','payload_ref','provenance_ref','recipient','sender'].sort().join(',');
-  if (Object.keys(spec).sort().join(',') !== required || !NODE_ID.test(spec.sender) || !NODE_ID.test(spec.recipient) || !MESSAGE_CLASSES.has(spec.message_class) || !SHA256_REF.test(spec.payload_ref) || (spec.provenance_ref !== null && !SHA256_REF.test(spec.provenance_ref)) || !TIMESTAMP.test(spec.issued_at) || (spec.expires_at !== null && !TIMESTAMP.test(spec.expires_at))) throw new SdkError('sdk_envelope_input_invalid');
+  validateEnvelopeSpec(spec, 'sdk_envelope_input_invalid');
   const envelope = { protocol: WIRE_PROTOCOL, message_id: 'sha256:' + '0'.repeat(64), sender: spec.sender, recipient: spec.recipient, message_class: spec.message_class, payload_ref: spec.payload_ref, provenance_ref: spec.provenance_ref, issued_at: spec.issued_at, expires_at: spec.expires_at, authority_claim: 'none', signature: null };
-  envelope.message_id = deriveMessageId(envelope); return envelope;
+  envelope.message_id = deriveMessageId(envelope); validateUnsignedEnvelope(envelope); return envelope;
+}
+export function validateUnsignedEnvelope(envelope) {
+  if (!envelope || typeof envelope !== 'object') throw new SdkError('sdk_envelope_invalid');
+  const required = ['authority_claim','expires_at','issued_at','message_class','message_id','payload_ref','protocol','provenance_ref','recipient','sender','signature'].sort().join(',');
+  if (Object.keys(envelope).sort().join(',') !== required || envelope.protocol !== WIRE_PROTOCOL || envelope.authority_claim !== 'none' || envelope.signature !== null || !isSha256Ref(envelope.message_id)) throw new SdkError('sdk_envelope_invalid');
+  validateEnvelopeSpec({ sender: envelope.sender, recipient: envelope.recipient, message_class: envelope.message_class, payload_ref: envelope.payload_ref, provenance_ref: envelope.provenance_ref, issued_at: envelope.issued_at, expires_at: envelope.expires_at }, 'sdk_envelope_invalid');
+  if (deriveMessageId(envelope) !== envelope.message_id) throw new SdkError('sdk_envelope_invalid');
 }
 
 export function conformanceResult(fixture) {
   if (fixture.schema !== 'qsol-fed-sdk-conformance/1' || fixture.wire_protocol !== WIRE_PROTOCOL) throw new SdkError('phase6_fixture_contract_invalid');
-  validateNodeManifest(fixture.node_manifest); validateThirdPartyProfile(fixture.third_party_profile); validateProvenance(fixture.provenance);
+  validateNodeManifest(fixture.node_manifest); validateThirdPartyProfile(fixture.third_party_profile);
+  const source = fixture.provenance;
+  const provenance = buildProvenance(source.source_node, source.source_object, source.relation, source.parents, source.created_at);
   const hello = buildUnsignedEnvelope(fixture.hello); const evidence = buildUnsignedEnvelope(fixture.evidence_offer);
   const result = {
     schema: 'qsol-fed-sdk-conformance-result/1', implementation: 'language-neutral',
     node_manifest_canonical: canonicalize(fixture.node_manifest).toString(), node_manifest_object_id: objectId(fixture.node_manifest),
     profile_canonical: canonicalize(fixture.third_party_profile).toString(), profile_object_id: objectId(fixture.third_party_profile),
     payload_canonical: canonicalize(fixture.payload).toString(), payload_object_id: objectId(fixture.payload),
-    provenance_canonical: canonicalize(fixture.provenance).toString(), provenance_object_id: objectId(fixture.provenance),
+    provenance_canonical: canonicalize(provenance).toString(), provenance_object_id: objectId(provenance),
     hello_canonical: canonicalize(hello).toString(), hello_message_id: hello.message_id,
     evidence_canonical: canonicalize(evidence).toString(), evidence_message_id: evidence.message_id,
     qsol_governance_adopted: fixture.third_party_profile.qsol_governance_adopted,
