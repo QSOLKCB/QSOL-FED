@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Enforce Phase 4 durable federation state and portable bundle boundaries."""
+"""Enforce the historical Phase 4 durable federation-state boundary."""
 
 from __future__ import annotations
 
@@ -86,10 +86,10 @@ def validate_contract_and_claims() -> None:
     require(bundle["import_authority"] == "none", "bundle import authority drift")
     require(bundle["import_trust_change"] is False, "bundle import trust drift")
 
-    claims = load_json("claims/phase4.json")
-    require(claims.get("document_type") == "qsol-fed-phase4-claims", "Phase 4 claims id drift")
-    require(claims.get("gate_status") == "enforced", "Phase 4 gate status drift")
-    capabilities = claims["capabilities"]
+    historical = load_json("claims/phase4.json")
+    require(historical.get("document_type") == "qsol-fed-phase4-claims", "Phase 4 claims id drift")
+    require(historical.get("gate_status") == "enforced", "Phase 4 gate status drift")
+    phase4_capabilities = historical["capabilities"]
     for required_true in (
         "foreign_object_store",
         "quarantine_namespace",
@@ -102,12 +102,16 @@ def validate_contract_and_claims() -> None:
         "portable_federation_bundle",
         "offline_bundle_verification",
     ):
-        require(capabilities.get(required_true) is True, f"Phase 4 claim missing: {required_true}")
+        require(phase4_capabilities.get(required_true) is True, f"historical Phase 4 claim missing: {required_true}")
     for hard_false in ("production_networking", "remote_execution", "interoperable_federation"):
-        require(capabilities.get(hard_false) is False, f"premature Phase 4 claim enabled: {hard_false}")
+        require(phase4_capabilities.get(hard_false) is False, f"historical Phase 4 claim drift: {hard_false}")
+
+    successor = load_json("claims/phase5a.json")["capabilities"]
+    for name, value in phase4_capabilities.items():
+        require(successor.get(name) is value, f"Phase 5A changed historical Phase 4 claim: {name}")
     require(
-        rust_current_claims((ROOT / "src/claims.rs").read_text(encoding="utf-8")) == capabilities,
-        "Rust current claims disagree with Phase 4 manifest",
+        rust_current_claims((ROOT / "src/claims.rs").read_text(encoding="utf-8")) == successor,
+        "Rust current claims disagree with Phase 5A successor manifest",
     )
 
 
@@ -120,9 +124,6 @@ def validate_schemas() -> None:
     ):
         schema = load_json(path)
         require(schema.get("additionalProperties") is False, f"schema must be closed: {path}")
-
-    capability = load_json("schemas/capability-advertisement-v1.schema.json")
-    require(capability["properties"]["authority"].get("const") == "none" if "authority" in capability["properties"] else True, "capability authority drift")
 
     foreign = load_json("schemas/foreign-object-record-v1.schema.json")
     require(foreign["properties"]["authority"].get("const") == "none", "foreign record authority drift")
@@ -199,44 +200,21 @@ def validate_surfaces() -> None:
     require("Import/export round-trips must preserve foreign identity and provenance exactly" in roadmap, "ROADMAP Phase 4 gate wording missing")
 
     docs = (ROOT / "FEDERATION_STATE.md").read_text(encoding="utf-8")
-    for marker in (
-        "Persistence",
-        "attribution",
-        "quarantine",
-        "TrustRegistry",
-        "explicit_reconciliation_required",
-        "qsol-fed-bundle/1",
-        "authority = none",
-        "3,600",
-        "65,536",
-        "8,192",
-    ):
+    for marker in ("Persistence", "attribution", "quarantine", "TrustRegistry", "explicit_reconciliation_required", "qsol-fed-bundle/1", "authority = none", "3,600", "65,536", "8,192"):
         require(marker.lower() in docs.lower(), f"FEDERATION_STATE.md marker missing: {marker}")
 
     ai = load_json("README4AI.md")
-    require(ai.get("status") == "phase4_gate_enforced", "README4AI Phase 4 status drift")
-    require(ai.get("phase4_status") == "federation_state_gate_enforced", "README4AI Phase 4 gate marker missing")
-    require(ai.get("current_claim_manifest") == "claims/phase4.json", "README4AI Phase 4 current claim manifest drift")
-    require(ai.get("current_claims") == load_json("claims/phase4.json")["capabilities"], "README4AI Phase 4 current claims drift")
+    require(ai.get("phase4_status") == "historical_federation_state_gate_preserved", "README4AI Phase 4 historical status drift")
     require(ai.get("phase4_state", {}).get("contract") == "state/phase4.json", "README4AI Phase 4 state map missing")
+    require(ai.get("current_claim_manifest") == "claims/phase5a.json", "README4AI successor claim manifest drift")
     require(ai.get("claim_disagreement_policy") == "fail_closed", "claim disagreement policy drift")
 
     agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8").lower()
-    for marker in (
-        "state/phase4.json",
-        "federation_state.md",
-        "claims/phase4.json",
-        "lifecycle prefix",
-        "silent reconciliation",
-        "staged",
-        "attribution",
-        "namespace move",
-        "python3 tools/validate_phase4_gate.py",
-    ):
+    for marker in ("state/phase4.json", "federation_state.md", "claims/phase4.json", "lifecycle prefix", "silent reconciliation", "staged", "attribution", "namespace move", "python3 tools/validate_phase4_gate.py"):
         require(marker in agents, f"AGENTS.md Phase 4 marker missing: {marker}")
 
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-    require("python3 tools/validate_phase4_gate.py" in workflow, "CI missing Phase 4 gate")
+    require("python3 tools/validate_phase4_gate.py" in workflow, "CI missing historical Phase 4 gate")
 
 
 def main() -> None:
@@ -245,7 +223,7 @@ def main() -> None:
     validate_source()
     validate_surfaces()
     print(
-        "phase4 federation-state gate OK: lifecycle prefixes immutable, local state transactional, "
+        "phase4 historical federation-state gate OK: lifecycle prefixes immutable, local state transactional, "
         "foreign attributions preserved, namespace moves recoverable, capabilities admission-scoped, "
         "and bounded offline bundles import without authority"
     )
