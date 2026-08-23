@@ -13,7 +13,7 @@ use crate::canonical::{canonicalize, derive_message_id, object_id, CanonicalErro
 use crate::envelope::FederationEnvelope;
 use crate::wire::{
     classify_protocol, is_capability_id, is_node_id, is_sha256_ref, is_wire_timestamp,
-    ProtocolDisposition, ProvenanceObject,
+    ProtocolDisposition, ProvenanceObject, ProvenanceRelation,
 };
 
 pub const SDK_CONTRACT_V1: &str = "qsol-fed-sdk/1";
@@ -78,9 +78,10 @@ pub struct ThirdPartyNodeProfile {
 
 impl ThirdPartyNodeProfile {
     pub fn validate(&self) -> Result<(), SdkError> {
+        let implementation_chars = self.implementation.chars().count();
         if self.schema != THIRD_PARTY_PROFILE_V1
-            || self.implementation.is_empty()
-            || self.implementation.len() > 128
+            || implementation_chars == 0
+            || implementation_chars > 128
             || self.governance_model != "local"
             || self.qsol_governance_adopted
             || self.nexus_required
@@ -124,9 +125,15 @@ impl SdkEnvelopeInput {
             || !is_node_id(&self.recipient)
             || !CLASSES.contains(&self.message_class.as_str())
             || !is_sha256_ref(&self.payload_ref)
-            || self.provenance_ref.as_deref().is_some_and(|value| !is_sha256_ref(value))
+            || self
+                .provenance_ref
+                .as_deref()
+                .is_some_and(|value| !is_sha256_ref(value))
             || !is_wire_timestamp(&self.issued_at)
-            || self.expires_at.as_deref().is_some_and(|value| !is_wire_timestamp(value))
+            || self
+                .expires_at
+                .as_deref()
+                .is_some_and(|value| !is_wire_timestamp(value))
         {
             return Err(SdkError("sdk_envelope_input_invalid".into()));
         }
@@ -163,15 +170,38 @@ pub fn sdk_build_node_manifest(
         capabilities,
         authority_claim: "none".into(),
     };
-    manifest.validate()?;
+    sdk_validate_node_manifest(&manifest)?;
     Ok(manifest)
 }
 
-pub fn sdk_build_provenance(provenance: ProvenanceObject) -> Result<ProvenanceObject, SdkError> {
+pub fn sdk_validate_node_manifest(manifest: &SdkNodeManifest) -> Result<(), SdkError> {
+    manifest.validate()
+}
+
+pub fn sdk_build_provenance(
+    source_node: impl Into<String>,
+    source_object: impl Into<String>,
+    relation: ProvenanceRelation,
+    parents: Vec<String>,
+    created_at: impl Into<String>,
+) -> Result<ProvenanceObject, SdkError> {
+    let provenance = ProvenanceObject {
+        schema: crate::wire::PROVENANCE_SCHEMA_V1.into(),
+        source_node: source_node.into(),
+        source_object: source_object.into(),
+        relation,
+        parents,
+        created_at: created_at.into(),
+    };
+    sdk_validate_provenance(&provenance)?;
+    Ok(provenance)
+}
+
+pub fn sdk_validate_provenance(provenance: &ProvenanceObject) -> Result<(), SdkError> {
     if !provenance.validate() {
         return Err(SdkError("sdk_provenance_invalid".into()));
     }
-    Ok(provenance)
+    Ok(())
 }
 
 pub fn sdk_build_unsigned_envelope(input: &SdkEnvelopeInput) -> Result<Vec<u8>, SdkError> {
@@ -197,8 +227,12 @@ pub fn sdk_build_unsigned_envelope(input: &SdkEnvelopeInput) -> Result<Vec<u8>, 
     let canonical = canonicalize(
         &serde_json::to_vec(&value).map_err(|_| SdkError("sdk_serialize_failed".into()))?,
     )?;
-    FederationEnvelope::from_wire(&canonical)?;
+    sdk_validate_unsigned_envelope(&canonical)?;
     Ok(canonical)
+}
+
+pub fn sdk_validate_unsigned_envelope(raw: &[u8]) -> Result<FederationEnvelope, SdkError> {
+    FederationEnvelope::from_wire(raw).map_err(SdkError::from)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -239,14 +273,13 @@ pub struct Phase6ConformanceResult {
 
 pub fn phase6_conformance_from_fixture(
     fixture_json: &str,
-    implementation: &str,
 ) -> Result<Phase6ConformanceResult, SdkError> {
     let fixture: Phase6Fixture = serde_json::from_str(fixture_json)
         .map_err(|_| SdkError("phase6_fixture_invalid".into()))?;
     if fixture.schema != "qsol-fed-sdk-conformance/1" || fixture.wire_protocol != WIRE_PROTOCOL {
         return Err(SdkError("phase6_fixture_contract_invalid".into()));
     }
-    fixture.node_manifest.validate()?;
+    sdk_validate_node_manifest(&fixture.node_manifest)?;
     fixture.third_party_profile.validate()?;
     if sdk_classify_protocol(&fixture.wire_protocol) != ProtocolDisposition::Supported {
         return Err(SdkError("phase6_protocol_not_supported".into()));
@@ -257,17 +290,24 @@ pub fn phase6_conformance_from_fixture(
     let profile_object_id = sdk_object_id(&fixture.third_party_profile)?;
     let payload_canonical = sdk_canonicalize(&fixture.payload)?;
     let payload_object_id = sdk_object_id(&fixture.payload)?;
-    let provenance = sdk_build_provenance(fixture.provenance)?;
+    let source = fixture.provenance;
+    let provenance = sdk_build_provenance(
+        source.source_node,
+        source.source_object,
+        source.relation,
+        source.parents,
+        source.created_at,
+    )?;
     let provenance_canonical = sdk_canonicalize(&provenance)?;
     let provenance_object_id = sdk_object_id(&provenance)?;
     let hello = sdk_build_unsigned_envelope(&fixture.hello)?;
     let evidence = sdk_build_unsigned_envelope(&fixture.evidence_offer)?;
-    let hello_envelope = FederationEnvelope::from_wire(&hello)?;
-    let evidence_envelope = FederationEnvelope::from_wire(&evidence)?;
+    let hello_envelope = sdk_validate_unsigned_envelope(&hello)?;
+    let evidence_envelope = sdk_validate_unsigned_envelope(&evidence)?;
 
     let result = Phase6ConformanceResult {
         schema: "qsol-fed-sdk-conformance-result/1".into(),
-        implementation: implementation.into(),
+        implementation: "language-neutral".into(),
         node_manifest_canonical,
         node_manifest_object_id,
         profile_canonical,
@@ -318,11 +358,11 @@ mod tests {
 
     #[test]
     fn neutral_node_fixture_matches_frozen_phase6_vectors() {
-        let result = phase6_conformance_from_fixture(
-            include_str!("../fixtures/phase6/conformance.json"),
-            "rust",
-        )
+        let result = phase6_conformance_from_fixture(include_str!(
+            "../fixtures/phase6/conformance.json"
+        ))
         .unwrap();
+        assert_eq!(result.implementation, "language-neutral");
         assert_eq!(result.authority_effect, "none");
         assert!(!result.qsol_governance_adopted);
         assert!(!result.nexus_required);
@@ -343,9 +383,33 @@ mod tests {
     }
 
     #[test]
+    fn third_party_profile_length_uses_unicode_scalar_values() {
+        let accepted = ThirdPartyNodeProfile {
+            schema: THIRD_PARTY_PROFILE_V1.into(),
+            implementation: "🛰".repeat(128),
+            governance_model: "local".into(),
+            qsol_governance_adopted: false,
+            nexus_required: false,
+            council_required: false,
+        };
+        assert!(accepted.validate().is_ok());
+        let rejected = ThirdPartyNodeProfile {
+            implementation: "🛰".repeat(129),
+            ..accepted
+        };
+        assert!(rejected.validate().is_err());
+    }
+
+    #[test]
     fn sdk_does_not_reclassify_protocol_conformance_as_deployment() {
-        assert_eq!(sdk_classify_protocol("qsol-fed/1"), ProtocolDisposition::Supported);
-        assert_eq!(sdk_classify_protocol("qsol-fed/2"), ProtocolDisposition::UnsupportedMajor);
+        assert_eq!(
+            sdk_classify_protocol("qsol-fed/1"),
+            ProtocolDisposition::Supported
+        );
+        assert_eq!(
+            sdk_classify_protocol("qsol-fed/2"),
+            ProtocolDisposition::UnsupportedMajor
+        );
         assert!(sdk_validate_capability_id("federation.sdk/1"));
         assert!(!sdk_validate_capability_id("Council/Admin/1"));
     }
