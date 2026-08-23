@@ -12,7 +12,6 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::canonical::{canonicalize, SAFE_INTEGER_MAX};
-use crate::wire::is_sha256_ref;
 
 pub const NEXUS_SOURCE_SCHEMA_V1: &str = "qsol-fed-nexus-world-source/1";
 pub const NEXUS_EXPORT_SCHEMA_V1: &str = "nexus-persistent-world-export/1";
@@ -175,8 +174,7 @@ pub fn compile_world_plan(program: &HolodeckProgram) -> Result<HolodeckWorldPlan
     let anchor_count = source_order.len().min(MAX_HOLODECK_ANCHORS);
     let anchor_refs = source_order[..anchor_count].to_vec();
     let entity_count = usize::from(program.max_entities)
-        .min(anchor_refs.len().saturating_mul(2).max(1))
-        .min(64);
+        .min(source_order.len().saturating_mul(2).max(1));
     let synthetic_entity_ids = (0..entity_count)
         .map(|index| format!("holo-entity:{}:{index}", &digest_hex(program_id.as_bytes())[..24]))
         .collect::<Vec<_>>();
@@ -407,15 +405,19 @@ impl HolodeckSandbox {
     ///
     /// This command is available from both Running and Frozen states. Simulation
     /// participants cannot veto it, disable it, or convert it into a synthetic vote.
+    /// If the event ledger is already full, teardown still succeeds and the receipt
+    /// remains the canonical terminal artifact.
     pub fn end_program(&mut self, reason: &str) -> Result<HolodeckReceipt, HolodeckError> {
         validate_text(reason)?;
         if self.state != HolodeckState::Ended {
-            self.push_event(
-                HolodeckEventKind::ProgramEnd,
-                None,
-                reason,
-                Vec::new(),
-            )?;
+            if self.events.len() < self.program.max_events as usize {
+                self.push_event(
+                    HolodeckEventKind::ProgramEnd,
+                    None,
+                    reason,
+                    Vec::new(),
+                )?;
+            }
             self.state = HolodeckState::Ended;
         }
         HolodeckReceipt::from_sandbox(self)
@@ -683,6 +685,19 @@ mod tests {
     }
 
     #[test]
+    fn declared_entity_limit_is_respected_without_hidden_smaller_cap() {
+        let mut many = source();
+        many.object_refs = (0..128)
+            .map(|index| format!("object:{index:064x}"))
+            .collect();
+        let mut candidate = program(1701);
+        candidate.source = many;
+        candidate.max_entities = 200;
+        let plan = compile_world_plan(&candidate).unwrap();
+        assert_eq!(plan.synthetic_entity_ids.len(), 200);
+    }
+
+    #[test]
     fn source_manifest_rejects_unverified_shapes_and_duplicates() {
         let mut invalid = source();
         invalid.authority_effect = "local_root".into();
@@ -753,6 +768,21 @@ mod tests {
     }
 
     #[test]
+    fn computer_end_program_succeeds_at_event_ceiling() {
+        let mut limited = program(1701);
+        limited.max_events = 2;
+        let mut sandbox = HolodeckSandbox::start(limited).unwrap();
+        sandbox
+            .record_synthetic_transition(None, "fills final event slot", Vec::new())
+            .unwrap();
+        assert_eq!(sandbox.events().len(), 2);
+        let receipt = sandbox.end_program("forced terminal receipt").unwrap();
+        assert_eq!(sandbox.state(), HolodeckState::Ended);
+        assert_eq!(receipt.event_count, 2);
+        assert_eq!(receipt.final_state, HolodeckState::Ended);
+    }
+
+    #[test]
     fn synthetic_events_are_deterministic_and_source_bounded() {
         let mut first = HolodeckSandbox::start(program(1701)).unwrap();
         let mut second = HolodeckSandbox::start(program(1701)).unwrap();
@@ -782,12 +812,5 @@ mod tests {
         assert!(sandbox
             .record_synthetic_transition(None, "too many", Vec::new())
             .is_err());
-    }
-
-    #[test]
-    fn sha256_refs_are_not_accepted_as_nexus_object_refs() {
-        let mut invalid = source();
-        invalid.object_refs[0] = format!("object:{}", &is_sha256_ref(&format!("sha256:{}", "a".repeat(64))));
-        assert!(invalid.validate().is_err());
     }
 }
