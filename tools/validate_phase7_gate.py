@@ -91,9 +91,12 @@ def rust_claims() -> dict[str, bool]:
 
 
 def rust_use_statements(source: str) -> set[str]:
+    # Runtime capability analysis stops before the test module. Test-only imports such
+    # as `use super::*` are not part of the Assembly production capability surface.
+    production = source.split("#[cfg(test)]", 1)[0]
     return {
         re.sub(r"\s+", "", match)
-        for match in re.findall(r"(?ms)^\s*use\s+(.+?);", source)
+        for match in re.findall(r"(?ms)^\s*use\s+(.+?);", production)
     }
 
 
@@ -242,8 +245,9 @@ def validate_schemas_and_source() -> None:
 
     uses = rust_use_statements(assembly)
     require(uses == EXPECTED_ASSEMBLY_USES, f"Assembly Rust import allowlist drift: {sorted(uses)}")
+    production = assembly.split("#[cfg(test)]", 1)[0]
     for forbidden in FORBIDDEN_CAPABILITY_PATHS:
-        require(forbidden not in assembly, f"Assembly kernel gained forbidden capability path: {forbidden}")
+        require(forbidden not in production, f"Assembly kernel gained forbidden capability path: {forbidden}")
 
 
 def validate_surfaces_and_ci() -> None:
