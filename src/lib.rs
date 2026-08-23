@@ -1,11 +1,11 @@
 #![forbid(unsafe_code)]
 
 //! QSOL-FED constitutional, canonical wire, cryptographic identity, opt-in HTTP,
-//! durable federation-state, and sandboxed synthetic-world core.
+//! durable federation-state, sandboxed synthetic-world, and Phase 5 QSOL adapter core.
 //!
-//! Persistence, import, peering, trust, capability policy, and simulation remain
-//! separate from truth, evidence, authority, constitutional admission, and real
-//! execution effects.
+//! Persistence, import, peering, trust, capability policy, simulation, evidence
+//! observation, Council reports, and archival presence remain separate from truth,
+//! authority, constitutional admission, and real execution effects.
 
 pub mod api;
 pub mod bundle;
@@ -16,6 +16,7 @@ pub mod envelope;
 pub mod holodeck;
 pub mod invariants;
 pub mod peering;
+pub mod qsol_adapters;
 pub mod replay;
 pub mod store;
 pub mod wire;
@@ -38,6 +39,7 @@ pub use canonical::{
 pub use claims::{
     is_established, CurrentClaims, Phase0Claims, ReleaseClaim, CURRENT_CLAIMS, PHASE0_CLAIMS,
     PHASE0_GATE_ID, PHASE2_GATE_ID, PHASE3_GATE_ID, PHASE4_GATE_ID, PHASE5A_GATE_ID,
+    PHASE5_GATE_ID,
 };
 pub use crypto::{
     create_identity_document, derive_key_id, derive_node_id, sign_envelope,
@@ -72,6 +74,17 @@ pub use peering::{
     CAPABILITY_ADVERTISEMENT_SCHEMA_V1, CAPABILITY_POLICY_SCHEMA_V1,
     MAX_CAPABILITY_ADVERTISEMENT_LIFETIME_SECONDS, MAX_PEER_LIFECYCLE_RECORDS,
     PEER_RECORD_SCHEMA_V1, TRUST_REGISTRY_SCHEMA_V1,
+};
+pub use qsol_adapters::{
+    admit_holodeck_to_oracle_deferred, ark_preserve, council_of_councils,
+    elaborate_holodeck_as_nexus_projection, import_nexus_report, project_nexus_council_actors,
+    verify_ark_preservation_offline, AdapterError, ArkArtifactClass, ArkPreservationObject,
+    CouncilOfCouncilsExperiment, NexusCouncilMemberObservation, NexusCouncilReportArtifact,
+    NexusHolodeckActorProjection, NexusMinorityReportArtifact, NexusReportImportAssessment,
+    OracleEvidenceObservation, OracleEvidenceReference, OracleEvidenceState, OracleSearchSuggestion,
+    ARK_PRESERVATION_SCHEMA_V1, NEXUS_ACTOR_PROJECTION_SCHEMA_V1,
+    NEXUS_COUNCIL_OF_COUNCILS_SCHEMA_V1, NEXUS_COUNCIL_REPORT_SCHEMA_V1,
+    NEXUS_IMPORT_ASSESSMENT_SCHEMA_V1, ORACLE_OBSERVATION_SCHEMA_V1,
 };
 pub use replay::{
     DurableReplayStore, ReplayDecision, ReplayError, MAX_REPLAY_LOG_BYTES,

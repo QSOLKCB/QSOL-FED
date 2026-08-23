@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "qsol-fed-nexus-report-import/1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "report_id", "vote_injection", "evidence_promotion", "authority_effect", "independent_re_deliberation_allowed"],
+  "properties": {
+    "schema": {"const": "qsol-fed-nexus-report-import/1"},
+    "report_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "vote_injection": {"const": false},
+    "evidence_promotion": {"const": false},
+    "authority_effect": {"const": "none"},
+    "independent_re_deliberation_allowed": {"const": true}
+  }
+}

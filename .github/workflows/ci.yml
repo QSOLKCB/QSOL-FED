@@ -13,13 +13,63 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Checkout pinned QSOL-NEXUS adapter source
+        uses: actions/checkout@v4
+        with:
+          repository: QSOLKCB/QSOL-NEXUS
+          ref: 24cb0ce246d12ac99e7d190a8890ef2ddd598321
+          path: .deps/QSOL-NEXUS
+          persist-credentials: false
       - name: Toolchain versions
         run: |
           rustc --version
           cargo --version
           python3 --version
-      - name: Rust tests, API adversarial suite, federation-state round trips, Holodeck safeguards, and deterministic fuzz smoke
+      - name: Rust tests, API adversarial suite, federation-state round trips, Holodeck safeguards, QSOL adapters, and deterministic fuzz smoke
         run: cargo test --all-targets
+      - name: Native NEXUS Phase 5 fixture conformance
+        run: |
+          python3 tools/generate_nexus_phase5_fixture.py \
+            --nexus-src .deps/QSOL-NEXUS/src \
+            --output /tmp/nexus-world-export.json
+          cmp fixtures/phase5/nexus-world-export.json /tmp/nexus-world-export.json
+          python3 tools/nexus_live_adapter.py \
+            --nexus-src .deps/QSOL-NEXUS/src \
+            --bundle fixtures/phase5/nexus-world-export.json \
+            --output /tmp/nexus-source-manifest.json \
+            source-manifest
+          cmp fixtures/phase5/nexus-source-manifest.json /tmp/nexus-source-manifest.json
+          python3 tools/nexus_live_adapter.py \
+            --nexus-src .deps/QSOL-NEXUS/src \
+            --bundle fixtures/phase5/nexus-world-export.json \
+            --output /tmp/nexus-council-reports.json \
+            council-reports
+          cmp fixtures/phase5/nexus-council-reports.json /tmp/nexus-council-reports.json
+      - name: Native NEXUS adapter adversarial source and secret checks
+        run: |
+          cp -a .deps/QSOL-NEXUS /tmp/QSOL-NEXUS-tampered
+          printf '\n# intentional Phase 5 source-identity tamper\n' >> /tmp/QSOL-NEXUS-tampered/src/nexus_runtime/persistent_world.py
+          if python3 tools/nexus_live_adapter.py \
+            --nexus-src /tmp/QSOL-NEXUS-tampered/src \
+            --bundle fixtures/phase5/nexus-world-export.json \
+            --output /tmp/tampered-projection.json \
+            projection; then
+            echo "tampered NEXUS checkout was accepted"
+            exit 1
+          fi
+
+          python3 tools/generate_nexus_phase5_fixture.py \
+            --nexus-src .deps/QSOL-NEXUS/src \
+            --minority-rationale "sk-aaaaaaaaaaaaaaaaaaaaaaaa" \
+            --output /tmp/nexus-secret-world-export.json
+          if python3 tools/nexus_live_adapter.py \
+            --nexus-src .deps/QSOL-NEXUS/src \
+            --bundle /tmp/nexus-secret-world-export.json \
+            --output /tmp/secret-projection.json \
+            council-reports; then
+            echo "secret-bearing NEXUS Council text crossed into FED projection"
+            exit 1
+          fi
       - name: Constitution drift check
         run: python3 tools/validate_constitution.py
       - name: Historical Phase 0 claim gate
@@ -32,5 +82,7 @@ jobs:
         run: python3 tools/validate_phase3_gate.py
       - name: Historical Phase 4 federation state gate
         run: python3 tools/validate_phase4_gate.py
-      - name: Phase 5A sandboxed AI Holodeck gate
+      - name: Historical Phase 5A sandboxed AI Holodeck gate
         run: python3 tools/validate_phase5a_gate.py
+      - name: Phase 5 QSOL adapter gate
+        run: python3 tools/validate_phase5_gate.py

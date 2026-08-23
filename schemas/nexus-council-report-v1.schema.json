@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "qsol-fed-nexus-council-report/1",
+  "title": "QSOL-FED NEXUS Council Report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "source_repository", "source_commit", "source_bundle_ref", "source_session_ref", "session_id", "question_ref", "evidence_state_observed", "members", "minority_reports", "secret_scrubbed", "shared_ballot", "vote_injection", "evidence_promotion", "authority_effect"],
+  "properties": {
+    "schema": {"const": "qsol-fed-nexus-council-report/1"},
+    "source_repository": {"const": "QSOLKCB/QSOL-NEXUS"},
+    "source_commit": {"const": "24cb0ce246d12ac99e7d190a8890ef2ddd598321"},
+    "source_bundle_ref": {"type": "string", "pattern": "^world-export:[0-9a-f]{64}$"},
+    "source_session_ref": {"type": "string", "pattern": "^object:[0-9a-f]{64}$"},
+    "session_id": {"type": "string", "minLength": 1, "maxLength": 1024},
+    "question_ref": {"type": "string", "pattern": "^object:[0-9a-f]{64}$"},
+    "evidence_state_observed": {"type": "string", "minLength": 1, "maxLength": 128},
+    "members": {
+      "type": "array", "minItems": 1, "maxItems": 32,
+      "x-qsol-uniqueByNfcField": "member_id",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["member_id", "vote_weight_observed", "epistemic_privilege_observed", "vote_weight_inherited", "epistemic_privilege_inherited", "citizenship_inherited", "authority_effect"],
+        "properties": {
+          "member_id": {"type": "string", "minLength": 1, "maxLength": 256},
+          "vote_weight_observed": {"const": 1},
+          "epistemic_privilege_observed": {"const": "none"},
+          "vote_weight_inherited": {"const": false},
+          "epistemic_privilege_inherited": {"const": false},
+          "citizenship_inherited": {"const": false},
+          "authority_effect": {"const": "none"}
+        }
+      }
+    },
+    "minority_reports": {
+      "type": "array", "maxItems": 64,
+      "x-qsol-memberFieldMustReference": "members[].member_id",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["member_id", "choice", "rationale", "evidence_promotion", "vote_injection", "authority_effect"],
+        "properties": {
+          "member_id": {"type": "string", "minLength": 1, "maxLength": 256},
+          "choice": {"type": "string", "minLength": 1, "maxLength": 256},
+          "rationale": {"type": "string", "minLength": 1, "x-qsol-maxUtf8Bytes": 8192},
+          "evidence_promotion": {"const": false},
+          "vote_injection": {"const": false},
+          "authority_effect": {"const": "none"}
+        }
+      }
+    },
+    "secret_scrubbed": {"const": true},
+    "shared_ballot": {"const": false},
+    "vote_injection": {"const": false},
+    "evidence_promotion": {"const": false},
+    "authority_effect": {"const": "none"}
+  },
+  "$comment": "x-qsol-uniqueByNfcField and x-qsol-memberFieldMustReference are normative QSOL-FED extensions enforced by the reference validator. secret_scrubbed=true is emitted only after the pinned native NEXUS SecretScrubber finds no credential-shaped semantic text."
+}

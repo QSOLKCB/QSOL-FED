@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "qsol-fed-council-of-councils/1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "report_ids", "shared_ballot", "shared_vote_weight", "authority_effect"],
+  "properties": {
+    "schema": {"const": "qsol-fed-council-of-councils/1"},
+    "report_ids": {
+      "type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+    },
+    "shared_ballot": {"const": false},
+    "shared_vote_weight": {"const": false},
+    "authority_effect": {"const": "none"}
+  }
+}

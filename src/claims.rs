@@ -1,14 +1,15 @@
 //! Release-claim boundaries.
 //!
-//! Phase 0, Phase 2, Phase 3, and Phase 4 manifests remain historical baselines.
-//! `CURRENT_CLAIMS` is the current Phase 5A Holodeck release surface. None of these
-//! are runtime configuration.
+//! Phase 0, Phase 2, Phase 3, Phase 4, and Phase 5A manifests remain historical
+//! baselines. `CURRENT_CLAIMS` is the current Phase 5 QSOL-adapter release surface.
+//! None of these values are runtime configuration.
 
 pub const PHASE0_GATE_ID: &str = "qsol-fed-phase0-claim-gate/1";
 pub const PHASE2_GATE_ID: &str = "qsol-fed-phase2-claim-gate/1";
 pub const PHASE3_GATE_ID: &str = "qsol-fed-phase3-claim-gate/1";
 pub const PHASE4_GATE_ID: &str = "qsol-fed-phase4-claim-gate/1";
 pub const PHASE5A_GATE_ID: &str = "qsol-fed-phase5a-holodeck-gate/1";
+pub const PHASE5_GATE_ID: &str = "qsol-fed-phase5-adapter-gate/1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Phase0Claims {
@@ -66,6 +67,14 @@ pub struct CurrentClaims {
     pub holodeck_computer_safeguards: bool,
     pub holodeck_teardown_receipts: bool,
     pub live_nexus_runtime_adapter: bool,
+    pub nexus_council_report_adapter: bool,
+    pub nexus_synthetic_actor_seam: bool,
+    pub nexus_independent_redeliberation: bool,
+    pub council_of_councils_reports_only: bool,
+    pub oracle_evidence_membrane: bool,
+    pub oracle_live_transport: bool,
+    pub oracle_holodeck_synthetic_admission: bool,
+    pub ark_offline_preservation_adapter: bool,
     pub host_level_sandbox: bool,
     pub production_networking: bool,
     pub remote_execution: bool,
@@ -103,7 +112,15 @@ pub const CURRENT_CLAIMS: CurrentClaims = CurrentClaims {
     deterministic_holodeck_world_plan: true,
     holodeck_computer_safeguards: true,
     holodeck_teardown_receipts: true,
-    live_nexus_runtime_adapter: false,
+    live_nexus_runtime_adapter: true,
+    nexus_council_report_adapter: true,
+    nexus_synthetic_actor_seam: true,
+    nexus_independent_redeliberation: true,
+    council_of_councils_reports_only: true,
+    oracle_evidence_membrane: true,
+    oracle_live_transport: false,
+    oracle_holodeck_synthetic_admission: false,
+    ark_offline_preservation_adapter: true,
     host_level_sandbox: false,
     production_networking: false,
     remote_execution: false,
@@ -143,6 +160,14 @@ pub enum ReleaseClaim {
     HolodeckComputerSafeguards,
     HolodeckTeardownReceipts,
     LiveNexusRuntimeAdapter,
+    NexusCouncilReportAdapter,
+    NexusSyntheticActorSeam,
+    NexusIndependentRedeliberation,
+    CouncilOfCouncilsReportsOnly,
+    OracleEvidenceMembrane,
+    OracleLiveTransport,
+    OracleHolodeckSyntheticAdmission,
+    ArkOfflinePreservationAdapter,
     HostLevelSandbox,
     ProductionNetworking,
     RemoteExecution,
@@ -182,6 +207,14 @@ pub const fn is_established(claim: ReleaseClaim) -> bool {
         ReleaseClaim::HolodeckComputerSafeguards => CURRENT_CLAIMS.holodeck_computer_safeguards,
         ReleaseClaim::HolodeckTeardownReceipts => CURRENT_CLAIMS.holodeck_teardown_receipts,
         ReleaseClaim::LiveNexusRuntimeAdapter => CURRENT_CLAIMS.live_nexus_runtime_adapter,
+        ReleaseClaim::NexusCouncilReportAdapter => CURRENT_CLAIMS.nexus_council_report_adapter,
+        ReleaseClaim::NexusSyntheticActorSeam => CURRENT_CLAIMS.nexus_synthetic_actor_seam,
+        ReleaseClaim::NexusIndependentRedeliberation => CURRENT_CLAIMS.nexus_independent_redeliberation,
+        ReleaseClaim::CouncilOfCouncilsReportsOnly => CURRENT_CLAIMS.council_of_councils_reports_only,
+        ReleaseClaim::OracleEvidenceMembrane => CURRENT_CLAIMS.oracle_evidence_membrane,
+        ReleaseClaim::OracleLiveTransport => CURRENT_CLAIMS.oracle_live_transport,
+        ReleaseClaim::OracleHolodeckSyntheticAdmission => CURRENT_CLAIMS.oracle_holodeck_synthetic_admission,
+        ReleaseClaim::ArkOfflinePreservationAdapter => CURRENT_CLAIMS.ark_offline_preservation_adapter,
         ReleaseClaim::HostLevelSandbox => CURRENT_CLAIMS.host_level_sandbox,
         ReleaseClaim::ProductionNetworking => CURRENT_CLAIMS.production_networking,
         ReleaseClaim::RemoteExecution => CURRENT_CLAIMS.remote_execution,
@@ -204,7 +237,7 @@ mod tests {
     }
 
     #[test]
-    fn phase5a_promotes_only_reviewed_holodeck_capabilities() {
+    fn phase5_promotes_only_reviewed_adapter_capabilities() {
         for claim in [
             ReleaseClaim::ConstitutionalModel,
             ReleaseClaim::MachineContracts,
@@ -236,11 +269,19 @@ mod tests {
             ReleaseClaim::DeterministicHolodeckWorldPlan,
             ReleaseClaim::HolodeckComputerSafeguards,
             ReleaseClaim::HolodeckTeardownReceipts,
+            ReleaseClaim::LiveNexusRuntimeAdapter,
+            ReleaseClaim::NexusCouncilReportAdapter,
+            ReleaseClaim::NexusSyntheticActorSeam,
+            ReleaseClaim::NexusIndependentRedeliberation,
+            ReleaseClaim::CouncilOfCouncilsReportsOnly,
+            ReleaseClaim::OracleEvidenceMembrane,
+            ReleaseClaim::ArkOfflinePreservationAdapter,
         ] {
-            assert!(is_established(claim), "reviewed Phase 5A claim unexpectedly disabled: {claim:?}");
+            assert!(is_established(claim), "reviewed Phase 5 claim unexpectedly disabled: {claim:?}");
         }
         for claim in [
-            ReleaseClaim::LiveNexusRuntimeAdapter,
+            ReleaseClaim::OracleLiveTransport,
+            ReleaseClaim::OracleHolodeckSyntheticAdmission,
             ReleaseClaim::HostLevelSandbox,
             ReleaseClaim::ProductionNetworking,
             ReleaseClaim::RemoteExecution,
@@ -252,10 +293,13 @@ mod tests {
 
     #[test]
     fn current_claim_gate_is_not_runtime_configurable() {
-        assert_eq!(PHASE5A_GATE_ID, "qsol-fed-phase5a-holodeck-gate/1");
-        assert!(CURRENT_CLAIMS.sandboxed_synthetic_world_kernel);
-        assert!(CURRENT_CLAIMS.holodeck_computer_safeguards);
-        assert!(!CURRENT_CLAIMS.live_nexus_runtime_adapter);
+        assert_eq!(PHASE5_GATE_ID, "qsol-fed-phase5-adapter-gate/1");
+        assert!(CURRENT_CLAIMS.live_nexus_runtime_adapter);
+        assert!(CURRENT_CLAIMS.nexus_council_report_adapter);
+        assert!(CURRENT_CLAIMS.oracle_evidence_membrane);
+        assert!(CURRENT_CLAIMS.ark_offline_preservation_adapter);
+        assert!(!CURRENT_CLAIMS.oracle_live_transport);
+        assert!(!CURRENT_CLAIMS.oracle_holodeck_synthetic_admission);
         assert!(!CURRENT_CLAIMS.host_level_sandbox);
         assert!(!CURRENT_CLAIMS.production_networking);
         assert!(!CURRENT_CLAIMS.remote_execution);

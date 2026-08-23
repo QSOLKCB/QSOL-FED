@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "qsol-fed-nexus-holodeck-actor/1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "source_session_ref", "source_member_id", "synthetic_actor_id", "vote_weight_inherited", "epistemic_privilege_inherited", "citizenship_inherited", "governance_role_inherited", "authority_effect"],
+  "properties": {
+    "schema": {"const": "qsol-fed-nexus-holodeck-actor/1"},
+    "source_session_ref": {"type": "string", "pattern": "^object:[0-9a-f]{64}$"},
+    "source_member_id": {"type": "string", "minLength": 1, "maxLength": 256},
+    "synthetic_actor_id": {"type": "string", "pattern": "^holo-entity:[0-9a-f]{24}:[0-9]+$"},
+    "vote_weight_inherited": {"const": false},
+    "epistemic_privilege_inherited": {"const": false},
+    "citizenship_inherited": {"const": false},
+    "governance_role_inherited": {"const": false},
+    "authority_effect": {"const": "none"}
+  }
+}

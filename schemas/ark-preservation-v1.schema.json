@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "qsol-fed-ark-preservation/1",
+  "title": "QSOL-FED ARK Preservation Object v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "source_ref", "content_sha256", "artifact_class", "synthetic", "real_world_history", "archival_presence_is_authority", "authority_effect"],
+  "properties": {
+    "schema": {"const": "qsol-fed-ark-preservation/1"},
+    "source_ref": {"type": "string", "minLength": 1, "maxLength": 8192},
+    "content_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "artifact_class": {"enum": ["preservation_object", "synthetic_cultural_research"]},
+    "synthetic": {"type": "boolean"},
+    "real_world_history": {"const": false},
+    "archival_presence_is_authority": {"const": false},
+    "authority_effect": {"const": "none"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"artifact_class": {"const": "synthetic_cultural_research"}}},
+      "then": {"properties": {"synthetic": {"const": true}}}
+    },
+    {
+      "if": {"properties": {"artifact_class": {"const": "preservation_object"}}},
+      "then": {"properties": {"synthetic": {"const": false}}}
+    }
+  ],
+  "$comment": "Archival presence establishes preservation only. It never proves real-world historicity. Known Holodeck schemas must use synthetic_cultural_research; the Rust verifier enforces that content-sensitive rule."
+}
