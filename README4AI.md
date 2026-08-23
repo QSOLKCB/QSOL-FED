@@ -150,7 +150,7 @@
   ],
   "claim_precedence": [
     "claims/phase0.json",
-    "src/claims.rs.PHASE0_CLAIMS",
+    "src/claims.rs",
     "README4AI.md.phase0_claims",
     "README.md.phase0_claim_gate"
   ],
