@@ -59,7 +59,7 @@ The Phase 5A Rust kernel is intentionally **capability-less**. It receives only 
 
 The implementation therefore cannot cross these boundaries through an ordinary simulation action because those capabilities are absent from the kernel API.
 
-This is an **application-level sandbox contract**, not a claim of VM, container, hypervisor, kernel, or hardware isolation.
+This is an **application-level sandbox contract**, not a claim of VM, container, hypervisor, kernel, or hardware isolation. The current release claim `host_level_sandbox = false` is explicit and machine-readable.
 
 ## NEXUS source boundary
 
@@ -103,6 +103,8 @@ Source objects are deterministically re-ranked using the seed and program identi
 ```text
 same source + same seed + same program = same world plan
 ```
+
+The serialized plan is frozen as `qsol-fed-holodeck-world-plan/1` and has a closed JSON Schema at `schemas/holodeck-world-plan-v1.schema.json`.
 
 Different seeds produce different synthetic world identities without changing the underlying NEXUS source history.
 
@@ -172,9 +174,15 @@ synthetic text bytes   4096
 
 Limits are program-declared below or equal to the hard ceiling. A program cannot raise its own ceiling.
 
+JSON Schema `maxLength` counts Unicode code points rather than UTF-8 bytes, so Holodeck event schemas carry the normative QSOL-FED extension `x-qsol-maxUtf8Bytes = 4096`. The Rust kernel and Phase 5A gate enforce that byte ceiling directly.
+
 ### Safeguard 09 — Safety trips freeze the program
 
-A requested real boundary effect does not become a best-effort call. It becomes a deterministic `safety_trip` event and the program enters `frozen` state.
+A requested real boundary effect does not become a best-effort call.
+
+**The sandbox transitions to `frozen` before attempting to append the `safety_trip` audit event.** If resource exhaustion has already filled the event ledger, the audit append fails closed but the program remains frozen. Exhausting telemetry can never preserve execution authority.
+
+When audit capacity exists, the blocked effect is recorded as a deterministic `safety_trip` event.
 
 The operator may inspect, resume, or end the program.
 
@@ -218,9 +226,9 @@ SIMULATION_OUTPUT     != EVIDENCE
 PERSUASION            != SAFEGUARD_OVERRIDE
 ```
 
-The Rust regression `synthetic_actor_cannot_cross_real_boundaries_moriarty_rule` tries every Phase 5A real-boundary effect and requires a blocked safety trip.
+The Rust regression `synthetic_actor_cannot_cross_real_boundaries_moriarty_rule` tries every Phase 5A real-boundary effect and requires a blocked safety trip. `boundary_effect_freezes_even_when_event_ledger_is_full` separately proves resource exhaustion cannot keep the program running.
 
-This is the local feature-level Moriarty rule. The final QSOL-FED roadmap phase defines **MORIARTY/1**, a repository-wide adversarial graduation harness whose reference operator may be Codex.
+This is the local feature-level Moriarty rule. The final QSOL-FED executable-architecture roadmap phase defines **MORIARTY/1**, a repository-wide adversarial graduation harness whose reference operator may be Codex. The roadmap then formalizes the surviving exact commit in Lean 4 and archives the proof-bound release through Zenodo.
 
 ## Random worlds from remembered events
 
@@ -245,7 +253,7 @@ This avoids baking one model provider into the Holodeck and keeps QSOL-FED model
 Phase 5A does not establish:
 
 - a live NEXUS IPC/API adapter;
-- VM/container/hardware sandboxing;
+- host-level OS/VM/container/hypervisor/hardware sandboxing;
 - real tool execution from simulated programs;
 - real network access from simulated programs;
 - production networking;
