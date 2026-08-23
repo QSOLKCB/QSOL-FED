@@ -1,8 +1,9 @@
 //! Release-claim boundaries.
 //!
-//! Phase 0, Phase 2, Phase 3, Phase 4, Phase 5A, and Phase 5 manifests remain
-//! historical baselines. `CURRENT_CLAIMS` is the current Phase 5C live-ORACLE
-//! release surface. None of these values are runtime configuration.
+//! Phase 0, Phase 2, Phase 3, Phase 4, Phase 5A, Phase 5, and Phase 5C
+//! manifests remain historical baselines. `CURRENT_CLAIMS` is the current
+//! Phase 6 governance-neutral SDK/conformance surface. None of these values
+//! are runtime configuration.
 
 pub const PHASE0_GATE_ID: &str = "qsol-fed-phase0-claim-gate/1";
 pub const PHASE2_GATE_ID: &str = "qsol-fed-phase2-claim-gate/1";
@@ -11,6 +12,7 @@ pub const PHASE4_GATE_ID: &str = "qsol-fed-phase4-claim-gate/1";
 pub const PHASE5A_GATE_ID: &str = "qsol-fed-phase5a-holodeck-gate/1";
 pub const PHASE5_GATE_ID: &str = "qsol-fed-phase5-adapter-gate/1";
 pub const PHASE5C_GATE_ID: &str = "qsol-fed-phase5c-oracle-live-gate/1";
+pub const PHASE6_GATE_ID: &str = "qsol-fed-phase6-sdk-gate/1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Phase0Claims {
@@ -76,6 +78,14 @@ pub struct CurrentClaims {
     pub oracle_live_transport: bool,
     pub oracle_holodeck_synthetic_admission: bool,
     pub ark_offline_preservation_adapter: bool,
+    pub minimal_protocol_sdk_contract: bool,
+    pub rust_protocol_sdk: bool,
+    pub python_protocol_sdk: bool,
+    pub typescript_protocol_sdk: bool,
+    pub language_neutral_sdk_conformance: bool,
+    pub third_party_node_conformance: bool,
+    pub three_implementation_sdk_interop: bool,
+    pub institutional_integration_docs: bool,
     pub host_level_sandbox: bool,
     pub production_networking: bool,
     pub remote_execution: bool,
@@ -122,6 +132,14 @@ pub const CURRENT_CLAIMS: CurrentClaims = CurrentClaims {
     oracle_live_transport: true,
     oracle_holodeck_synthetic_admission: false,
     ark_offline_preservation_adapter: true,
+    minimal_protocol_sdk_contract: true,
+    rust_protocol_sdk: true,
+    python_protocol_sdk: true,
+    typescript_protocol_sdk: true,
+    language_neutral_sdk_conformance: true,
+    third_party_node_conformance: true,
+    three_implementation_sdk_interop: true,
+    institutional_integration_docs: true,
     host_level_sandbox: false,
     production_networking: false,
     remote_execution: false,
@@ -169,6 +187,14 @@ pub enum ReleaseClaim {
     OracleLiveTransport,
     OracleHolodeckSyntheticAdmission,
     ArkOfflinePreservationAdapter,
+    MinimalProtocolSdkContract,
+    RustProtocolSdk,
+    PythonProtocolSdk,
+    TypescriptProtocolSdk,
+    LanguageNeutralSdkConformance,
+    ThirdPartyNodeConformance,
+    ThreeImplementationSdkInterop,
+    InstitutionalIntegrationDocs,
     HostLevelSandbox,
     ProductionNetworking,
     RemoteExecution,
@@ -216,6 +242,14 @@ pub const fn is_established(claim: ReleaseClaim) -> bool {
         ReleaseClaim::OracleLiveTransport => CURRENT_CLAIMS.oracle_live_transport,
         ReleaseClaim::OracleHolodeckSyntheticAdmission => CURRENT_CLAIMS.oracle_holodeck_synthetic_admission,
         ReleaseClaim::ArkOfflinePreservationAdapter => CURRENT_CLAIMS.ark_offline_preservation_adapter,
+        ReleaseClaim::MinimalProtocolSdkContract => CURRENT_CLAIMS.minimal_protocol_sdk_contract,
+        ReleaseClaim::RustProtocolSdk => CURRENT_CLAIMS.rust_protocol_sdk,
+        ReleaseClaim::PythonProtocolSdk => CURRENT_CLAIMS.python_protocol_sdk,
+        ReleaseClaim::TypescriptProtocolSdk => CURRENT_CLAIMS.typescript_protocol_sdk,
+        ReleaseClaim::LanguageNeutralSdkConformance => CURRENT_CLAIMS.language_neutral_sdk_conformance,
+        ReleaseClaim::ThirdPartyNodeConformance => CURRENT_CLAIMS.third_party_node_conformance,
+        ReleaseClaim::ThreeImplementationSdkInterop => CURRENT_CLAIMS.three_implementation_sdk_interop,
+        ReleaseClaim::InstitutionalIntegrationDocs => CURRENT_CLAIMS.institutional_integration_docs,
         ReleaseClaim::HostLevelSandbox => CURRENT_CLAIMS.host_level_sandbox,
         ReleaseClaim::ProductionNetworking => CURRENT_CLAIMS.production_networking,
         ReleaseClaim::RemoteExecution => CURRENT_CLAIMS.remote_execution,
@@ -238,48 +272,18 @@ mod tests {
     }
 
     #[test]
-    fn phase5c_promotes_only_reviewed_oracle_live_transport() {
+    fn phase6_adds_sdk_interop_without_deployment_overclaim() {
         for claim in [
-            ReleaseClaim::ConstitutionalModel,
-            ReleaseClaim::MachineContracts,
-            ReleaseClaim::FailClosedAdmissionSkeleton,
-            ReleaseClaim::TestedConstitutionalCore,
-            ReleaseClaim::CanonicalWireContract,
-            ReleaseClaim::CryptographicIdentity,
-            ReleaseClaim::SignedEnvelopeVerification,
-            ReleaseClaim::KeyLifecycle,
-            ReleaseClaim::DurableReplayProtection,
-            ReleaseClaim::ReferenceHttpService,
-            ReleaseClaim::OptInNetworkListener,
-            ReleaseClaim::BoundedApiLimits,
-            ReleaseClaim::TlsDeploymentProfile,
-            ReleaseClaim::SecretSafeAuditLog,
-            ReleaseClaim::ApiFuzzAdversarialSuite,
-            ReleaseClaim::ForeignObjectStore,
-            ReleaseClaim::QuarantineNamespace,
-            ReleaseClaim::ProvenancePreservingDescendants,
-            ReleaseClaim::DurablePeerRegistry,
-            ReleaseClaim::SeparateTrustRegistry,
-            ReleaseClaim::ExpiringCapabilityAdvertisements,
-            ReleaseClaim::LocalCapabilityPolicy,
-            ReleaseClaim::PartitionRejoinControl,
-            ReleaseClaim::PortableFederationBundle,
-            ReleaseClaim::OfflineBundleVerification,
-            ReleaseClaim::NexusWorldSourceContract,
-            ReleaseClaim::SandboxedSyntheticWorldKernel,
-            ReleaseClaim::DeterministicHolodeckWorldPlan,
-            ReleaseClaim::HolodeckComputerSafeguards,
-            ReleaseClaim::HolodeckTeardownReceipts,
-            ReleaseClaim::LiveNexusRuntimeAdapter,
-            ReleaseClaim::NexusCouncilReportAdapter,
-            ReleaseClaim::NexusSyntheticActorSeam,
-            ReleaseClaim::NexusIndependentRedeliberation,
-            ReleaseClaim::CouncilOfCouncilsReportsOnly,
-            ReleaseClaim::OracleEvidenceMembrane,
-            ReleaseClaim::OracleLiveTransport,
-            ReleaseClaim::ArkOfflinePreservationAdapter,
+            ReleaseClaim::MinimalProtocolSdkContract,
+            ReleaseClaim::RustProtocolSdk,
+            ReleaseClaim::PythonProtocolSdk,
+            ReleaseClaim::TypescriptProtocolSdk,
+            ReleaseClaim::LanguageNeutralSdkConformance,
+            ReleaseClaim::ThirdPartyNodeConformance,
+            ReleaseClaim::ThreeImplementationSdkInterop,
+            ReleaseClaim::InstitutionalIntegrationDocs,
         ] {
-            assert!(is_established(claim), "reviewed Phase 5C claim unexpectedly disabled: {claim:?}");
+            assert!(is_established(claim), "Phase 6 SDK capability disabled: {claim:?}");
         }
         for claim in [
             ReleaseClaim::OracleHolodeckSyntheticAdmission,
@@ -288,18 +292,17 @@ mod tests {
             ReleaseClaim::RemoteExecution,
             ReleaseClaim::InteroperableFederation,
         ] {
-            assert!(!is_established(claim), "premature capability/deployment claim enabled: {claim:?}");
+            assert!(!is_established(claim), "Phase 6 deployment/authority overclaim enabled: {claim:?}");
         }
     }
 
     #[test]
     fn current_claim_gate_is_not_runtime_configurable() {
-        assert_eq!(PHASE5C_GATE_ID, "qsol-fed-phase5c-oracle-live-gate/1");
-        assert!(CURRENT_CLAIMS.live_nexus_runtime_adapter);
-        assert!(CURRENT_CLAIMS.nexus_council_report_adapter);
-        assert!(CURRENT_CLAIMS.oracle_evidence_membrane);
+        assert_eq!(PHASE6_GATE_ID, "qsol-fed-phase6-sdk-gate/1");
         assert!(CURRENT_CLAIMS.oracle_live_transport);
-        assert!(CURRENT_CLAIMS.ark_offline_preservation_adapter);
+        assert!(CURRENT_CLAIMS.minimal_protocol_sdk_contract);
+        assert!(CURRENT_CLAIMS.three_implementation_sdk_interop);
+        assert!(CURRENT_CLAIMS.third_party_node_conformance);
         assert!(!CURRENT_CLAIMS.oracle_holodeck_synthetic_admission);
         assert!(!CURRENT_CLAIMS.host_level_sandbox);
         assert!(!CURRENT_CLAIMS.production_networking);

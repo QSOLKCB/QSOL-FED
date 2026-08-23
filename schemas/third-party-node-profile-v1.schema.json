@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "third-party-node-profile/1",
+  "title": "Governance-neutral third-party Federation node profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "implementation", "governance_model", "qsol_governance_adopted", "nexus_required", "council_required"],
+  "properties": {
+    "schema": {"const": "third-party-node-profile/1"},
+    "implementation": {"type": "string", "minLength": 1, "maxLength": 128},
+    "governance_model": {"const": "local"},
+    "qsol_governance_adopted": {"const": false},
+    "nexus_required": {"const": false},
+    "council_required": {"const": false}
+  }
+}

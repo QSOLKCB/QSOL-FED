@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "qsol-fed-sdk-conformance-result/1",
+  "title": "QSOL-FED Phase 6 language-neutral SDK conformance result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "implementation",
+    "node_manifest_canonical", "node_manifest_object_id",
+    "profile_canonical", "profile_object_id",
+    "payload_canonical", "payload_object_id",
+    "provenance_canonical", "provenance_object_id",
+    "hello_canonical", "hello_message_id",
+    "evidence_canonical", "evidence_message_id",
+    "qsol_governance_adopted", "nexus_required", "council_required", "authority_effect"
+  ],
+  "properties": {
+    "schema": {"const": "qsol-fed-sdk-conformance-result/1"},
+    "implementation": {"const": "language-neutral"},
+    "node_manifest_canonical": {"type": "string", "minLength": 1, "maxLength": 8192},
+    "node_manifest_object_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "profile_canonical": {"type": "string", "minLength": 1, "maxLength": 8192},
+    "profile_object_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "payload_canonical": {"type": "string", "minLength": 1, "maxLength": 8192},
+    "payload_object_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "provenance_canonical": {"type": "string", "minLength": 1, "maxLength": 8192},
+    "provenance_object_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "hello_canonical": {"type": "string", "minLength": 1, "maxLength": 8192},
+    "hello_message_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "evidence_canonical": {"type": "string", "minLength": 1, "maxLength": 8192},
+    "evidence_message_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "qsol_governance_adopted": {"const": false},
+    "nexus_required": {"const": false},
+    "council_required": {"const": false},
+    "authority_effect": {"const": "none"}
+  }
+}

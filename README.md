@@ -4,7 +4,7 @@
 
 > **Protocol is the law. API is the port. NEXUS is the Council.**
 
-QSOL-FED now includes an attested Phase 5C live-local QSOL-ORACLE transport on top of the durable Federation core, QSOL adapters, and sandboxed AI Holodecks. Reports, evidence observations, archives, and simulations can cross typed boundaries without carrying their source system's authority with them.
+QSOL-FED now includes a governance-neutral Phase 6 SDK layer on top of the constitutional wire, durable Federation state, sandboxed AI Holodecks, QSOL adapters, and attested live-local QSOL-ORACLE transport. A third-party laboratory or institution can construct the same protocol objects without adopting QSOL internal governance.
 
 ## Historical Phase 0 claim gate
 
@@ -43,24 +43,84 @@ At Phase 0 the repository was deliberately constrained to the bootstrap claim bo
 
 [`claims/phase5.json`](claims/phase5.json) preserves the first full QSOL adapter membrane. At that milestone the FED-side ORACLE observation type existed, but `oracle_live_transport` was still **false** pending donor-side implementation and cross-repository conformance.
 
-## Current Phase 5C claim gate
+## Historical Phase 5C claim gate
+
+[`claims/phase5c.json`](claims/phase5c.json) preserves the attested live-local ORACLE promotion. That milestone established the pinned local witness process while keeping Holodeck synthetic admission, production networking, remote execution, host-level sandboxing, and deployed interoperability false.
+
+## Current Phase 6 claim gate
 
 <!-- CURRENT_CLAIM_BOUNDARY:BEGIN -->
-The current repository may claim all reviewed Phase 0–5 capabilities plus:
+The current repository may claim all reviewed Phase 0–5C capabilities plus:
 
-- attested live-local QSOL-ORACLE transport: **established and tested**;
-- exact QSOL-ORACLE merged donor commit pin: **established and tested**;
-- runtime donor release-fingerprint verification before process launch: **established and tested**;
-- bounded canonical local stdio JSONL request/response transport: **established and tested**;
-- `oracle-event:<sha256>` provenance grammar and response digest verification: **established and tested**;
+- minimal governance-neutral `qsol-fed-sdk/1` contract: **established and tested**;
+- Rust protocol SDK: **established and tested**;
+- Python protocol SDK: **established and tested**;
+- TypeScript/JavaScript protocol SDK: **established and tested**;
+- language-neutral byte-identical SDK conformance suite: **established and tested**;
+- three independent implementation interoperability transcript: **established and tested**;
+- minimal non-NEXUS, non-QSOL-specific node participation: **established and tested**;
+- institutional/research integration documentation: **established**;
 - Holodeck-to-ORACLE synthetic admission: **not established**;
 - host-level OS/VM/container/hypervisor/hardware sandbox: **not established**;
 - production networking: **not established**;
 - remote execution: **not established**;
-- interoperable federation: **not established**.
+- deployed interoperable federation: **not established**.
 <!-- CURRENT_CLAIM_BOUNDARY:END -->
 
-[`claims/phase5c.json`](claims/phase5c.json) is canonical for the current release-claim boundary.
+[`claims/phase6.json`](claims/phase6.json) is canonical for the current release-claim boundary.
+
+## Third-party protocol SDKs
+
+See [`SDK.md`](SDK.md), [`state/phase6.json`](state/phase6.json), and [`docs/THIRD_PARTY_INTEGRATION.md`](docs/THIRD_PARTY_INTEGRATION.md).
+
+Phase 6 exposes only the smallest protocol surface needed for ordinary participation:
+
+```text
+canonicalize
+object_id
+derive_message_id
+classify_protocol
+validate_capability_id
+build / validate node manifest
+build / validate unsigned envelope
+build / validate provenance
+```
+
+Reference implementations:
+
+```text
+Rust        src/sdk.rs
+Python      sdk/python/qsol_fed_sdk.py
+TypeScript  sdk/typescript/qsol_fed_sdk.ts
+JavaScript  sdk/typescript/qsol_fed_sdk.mjs
+```
+
+The Rust, Python, and JavaScript implementations independently consume [`fixtures/phase6/conformance.json`](fixtures/phase6/conformance.json) and must produce byte-identical canonical result files in CI.
+
+### Neutral third-party participant
+
+[`examples/neutral_research_node.py`](examples/neutral_research_node.py) is deliberately boring. It knows how to announce a node, identify a research payload, preserve provenance, and offer evidence. It does **not** import NEXUS, Council governance, ORACLE, ARK, Holodecks, Federation trust registries, or QSOL citizenship machinery.
+
+Its profile is frozen as:
+
+```text
+governance_model        = local
+qsol_governance_adopted = false
+nexus_required          = false
+council_required        = false
+oracle_required         = false
+ark_required            = false
+holodeck_required       = false
+authority_effect        = none
+```
+
+The frozen `qsol-fed/1` node identifier grammar still uses `fed:qsol:<id>`. Phase 6 treats that prefix as **wire syntax only**. It does not imply QSOL governance membership.
+
+```text
+WIRE COMPATIBILITY != GOVERNANCE MEMBERSHIP
+SDK CONFORMANCE != TRUST
+INTEROP TRANSCRIPT != PRODUCTION DEPLOYMENT
+```
 
 ## Native QSOL-NEXUS bridge
 
@@ -105,29 +165,17 @@ SIMULATION            != AUTHORITY
 
 ## QSOL-ORACLE live-local transport
 
-Phase 5C pins merged QSOL-ORACLE commit:
-
-```text
-043e864b3c25dfeca3ce1752b3110479479071b1
-```
-
-and release fingerprint:
-
-```text
-7b0eff4dfa9b0caa84f14920d21f6a5446114535d82706cb62e34773c39818d2
-```
+Historical Phase 5C pins merged QSOL-ORACLE commit `043e864b3c25dfeca3ce1752b3110479479071b1` and release fingerprint `7b0eff4dfa9b0caa84f14920d21f6a5446114535d82706cb62e34773c39818d2`.
 
 See [`state/phase5c.json`](state/phase5c.json), [`contracts/oracle-fed-membrane-v1.json`](contracts/oracle-fed-membrane-v1.json), and `src/oracle_live.rs`.
 
-The adapter verifies every file named by the reviewed ORACLE release fingerprint before launching the fixed local entrypoint:
+FED recomputes the donor release identity, stages a private attested runtime per request, re-attests that copy, and launches only:
 
 ```text
-python3 tools/fed_transport.py serve
+python3 -I tools/fed_transport.py serve
 ```
 
-The caller cannot supply a command, script, URL, socket, or network target. `PYTHONPATH` and `PYTHONHOME` are removed before launch. FED sends one bounded canonical request over stdin, accepts exactly one bounded canonical response over stdout, re-checks canonical bytes, validates the donor response digest, validates `known | conflict | unknown`, and requires evidence references to use `oracle-event:<sha256>`.
-
-The live transport remains non-authoritative:
+Requests and responses remain bounded canonical local stdio JSONL. The transport remains non-authoritative:
 
 ```text
 synthetic_input      = false
@@ -138,9 +186,9 @@ ledger_mutated       = false
 transport_authority  = none
 ```
 
-**Live local transport is not production networking and is not generic remote execution.** The current adapter spawns only the attested donor process on the local host.
+**Live local transport is not production networking and is not generic remote execution.**
 
-Holodeck output remains rejected at the ORACLE boundary until a separately reviewed synthetic non-evidence contract exists:
+Holodeck output remains rejected at the ORACLE boundary:
 
 ```text
 oracle_holodeck_synthetic_admission = false
@@ -149,8 +197,6 @@ oracle_holodeck_synthetic_admission = false
 ## QSOL-ARK
 
 The FED-side ARK adapter creates content-addressed preservation objects with offline verification. Archival presence creates no authority. Holodeck programs and receipts are classified `synthetic_cultural_research` and cannot be relabelled real-world history.
-
-No NEXUS or ARK repository change is required by the current implementation because the required native primitives already exist. Future repo PRs are justified only by an identified missing donor-side primitive.
 
 ## Core constitutional shorthand
 
@@ -165,6 +211,8 @@ FOREIGN STATE != LOCAL STATE
 OBSERVATION != INTERVENTION
 SIMULATION != AUTHORITY
 TRANSPORT != AUTHORITY
+SDK CONFORMANCE != TRUST
+WIRE COMPATIBILITY != GOVERNANCE MEMBERSHIP
 LOCAL SOVEREIGNTY > FEDERATION CONVENIENCE
 ```
 
@@ -172,6 +220,10 @@ LOCAL SOVEREIGNTY > FEDERATION CONVENIENCE
 
 ```bash
 cargo test --all-targets
+cargo run --quiet --bin qsol-fed-sdk-conformance
+python3 sdk/python/conformance.py
+node sdk/typescript/conformance.mjs
+python3 examples/neutral_research_node.py
 python3 tools/validate_constitution.py
 python3 tools/validate_phase0_gate.py
 python3 tools/validate_phase1_gate.py
@@ -181,12 +233,7 @@ python3 tools/validate_phase4_gate.py
 python3 tools/validate_phase5a_gate.py
 python3 tools/validate_phase5_gate.py
 python3 tools/validate_phase5c_gate.py
-```
-
-With the pinned ORACLE checkout available:
-
-```bash
-cargo run --bin qsol-fed-oracle -- .deps/QSOL-ORACLE
+python3 tools/validate_phase6_gate.py
 ```
 
 Offline Phase 4 bundle verification remains:
@@ -199,6 +246,6 @@ The final [`ROADMAP.md`](ROADMAP.md) graduation sequence remains MORIARTY/1 adve
 
 ## Status
 
-Constitutional bootstrap lineage `qsol-fed/0`; frozen wire protocol `qsol-fed/1`; current crate `0.8.0`. Phases 0 through 5 and Phase 5C have executable gates, with Phase 5A and Phase 5 preserved historically. ORACLE live-local transport is established; Holodeck-to-ORACLE synthetic admission, host-level sandboxing, production networking, real remote execution, and deployed multi-implementation interoperability remain intentionally unclaimed.
+Constitutional bootstrap lineage `qsol-fed/0`; frozen wire protocol `qsol-fed/1`; current crate `0.9.0`. Phases 0 through 6 have executable gates, with Phase 5A, Phase 5, and Phase 5C preserved historically. Language-neutral SDK interoperability and neutral third-party participation are established; Holodeck-to-ORACLE synthetic admission, host-level sandboxing, production networking, real remote execution, and deployed multi-implementation interoperability remain intentionally unclaimed.
 
 Licensed under Apache-2.0. QSOL-FED is an original technical project and is not affiliated with or endorsed by any entertainment franchise or rights holder.

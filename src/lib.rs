@@ -1,11 +1,12 @@
 #![forbid(unsafe_code)]
 
 //! QSOL-FED constitutional, canonical wire, cryptographic identity, opt-in HTTP,
-//! durable federation-state, sandboxed synthetic-world, and QSOL adapter core.
+//! durable federation-state, sandboxed synthetic-world, adapter, and governance-neutral SDK core.
 //!
 //! Persistence, import, peering, trust, capability policy, simulation, evidence
-//! observation, Council reports, archival presence, and live-local adapter transport
-//! remain separate from truth, authority, constitutional admission, and real execution effects.
+//! observation, Council reports, archival presence, live-local adapter transport,
+//! and SDK conformance remain separate from truth, authority, constitutional admission,
+//! governance membership, and real execution effects.
 
 pub mod api;
 pub mod bundle;
@@ -19,6 +20,7 @@ pub mod oracle_live;
 pub mod peering;
 pub mod qsol_adapters;
 pub mod replay;
+pub mod sdk;
 pub mod store;
 pub mod wire;
 
@@ -40,7 +42,7 @@ pub use canonical::{
 pub use claims::{
     is_established, CurrentClaims, Phase0Claims, ReleaseClaim, CURRENT_CLAIMS, PHASE0_CLAIMS,
     PHASE0_GATE_ID, PHASE2_GATE_ID, PHASE3_GATE_ID, PHASE4_GATE_ID, PHASE5A_GATE_ID,
-    PHASE5C_GATE_ID, PHASE5_GATE_ID,
+    PHASE5C_GATE_ID, PHASE5_GATE_ID, PHASE6_GATE_ID,
 };
 pub use crypto::{
     create_identity_document, derive_key_id, derive_node_id, sign_envelope,
@@ -97,6 +99,14 @@ pub use qsol_adapters::{
 pub use replay::{
     DurableReplayStore, ReplayDecision, ReplayError, MAX_REPLAY_LOG_BYTES,
     REPLAY_COMPACTION_THRESHOLD_BYTES, REPLAY_RETENTION_SECONDS,
+};
+pub use sdk::{
+    phase6_conformance_from_fixture, sdk_build_node_manifest, sdk_build_provenance,
+    sdk_build_unsigned_envelope, sdk_canonicalize, sdk_classify_protocol, sdk_object_id,
+    sdk_validate_capability_id, sdk_validate_node_manifest, sdk_validate_provenance,
+    sdk_validate_unsigned_envelope, Phase6ConformanceResult, SdkEnvelopeInput, SdkError,
+    SdkNodeManifest, ThirdPartyNodeProfile, BOOTSTRAP_PROTOCOL, SDK_CONTRACT_V1,
+    THIRD_PARTY_PROFILE_V1, WIRE_PROTOCOL,
 };
 pub use store::{
     FederationObjectStore, ForeignNamespace, ForeignObjectRecord, LocalDescendantRecord,
