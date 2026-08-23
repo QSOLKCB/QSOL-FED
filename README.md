@@ -4,7 +4,7 @@
 
 > **Protocol is the law. API is the port. NEXUS is the Council.**
 
-QSOL-FED is being designed to let independent systems exchange attributable, provenance-preserving objects without surrendering local sovereignty. Phase 2 now establishes local cryptographic node identity and signed-envelope verification, while production networking remains a later phase.
+QSOL-FED lets independent systems exchange attributable, provenance-preserving objects without surrendering local sovereignty. Phase 3 now adds a bounded, opt-in Rust reference HTTP service around the frozen Phase 1 wire and Phase 2 cryptographic boundaries.
 
 It is intentionally **not** a global brain, blockchain, truth oracle, remote administration plane, or central government.
 
@@ -25,7 +25,11 @@ At Phase 0 the repository was deliberately constrained to the bootstrap claim bo
 
 [`claims/phase0.json`](claims/phase0.json) remains the immutable historical Phase 0 release-claim baseline. Later phases promote capabilities with successor manifests instead of rewriting that record.
 
-## Current Phase 2 claim gate
+## Historical Phase 2 claim gate
+
+[`claims/phase2.json`](claims/phase2.json) preserves the point where QSOL-FED first established local Ed25519 identity, signed-envelope verification, operational-key lifecycle, bounded clock policy, and durable single-process replay protection while production networking remained false.
+
+## Current Phase 3 claim gate
 
 <!-- CURRENT_CLAIM_BOUNDARY:BEGIN -->
 The current repository may claim:
@@ -39,107 +43,43 @@ The current repository may claim:
 - signed envelope verification: **established and tested**;
 - key lifecycle: **established and tested**;
 - durable replay protection: **established and tested**;
+- reference HTTP service: **established and tested**;
+- opt-in network listener: **established and tested**;
+- bounded API limits: **established and tested**;
+- TLS deployment profile: **established and tested**;
+- secret-safe audit log: **established and tested**;
+- API fuzz/adversarial suite: **established and tested**;
 - production networking: **not established**;
 - remote execution: **not established**;
 - interoperable federation: **not established**.
 <!-- CURRENT_CLAIM_BOUNDARY:END -->
 
-[`claims/phase2.json`](claims/phase2.json) is canonical for the current release-claim boundary. Cryptographic identity here means tested local identity, signature, lifecycle, clock, and replay machinery. It does **not** mean a production-safe network node exists.
+[`claims/phase3.json`](claims/phase3.json) is canonical for the current release-claim boundary. The distinction is deliberate: **a tested opt-in reference listener is not the same claim as production networking**.
 
 ## Phase 1 canonical wire contract
 
-Phase 1 is complete and provides the first frozen wire protocol, **`qsol-fed/1`**.
+Phase 1 provides the frozen wire protocol **`qsol-fed/1`** and canonical profile [`qsol-fed-canonical-json/1`](CANONICAL_JSON.md): UTF-8, NFC normalization, duplicate-key rejection, safe integers only, deterministic escaping and ordering, bounded depth/string/collection sizes, `sha256:` object identity, and domain-separated message IDs.
 
-The canonical profile [`qsol-fed-canonical-json/1`](CANONICAL_JSON.md) freezes:
+The exact Phase 1 envelope remains unchanged. Its embedded `signature` field is still JSON `null`; Phase 2 signatures are detached.
 
-- UTF-8 with no BOM;
-- Unicode NFC normalization for keys and string values;
-- rejection of raw duplicate keys and post-NFC key collisions;
-- safe integers only (`±9007199254740991`), with floating-point/decimal numbers excluded from v1;
-- deterministic string escaping and normalized key ordering;
-- fixed input/depth/string/collection limits;
-- `sha256:` object identity over canonical bytes;
-- domain-separated message IDs excluding `message_id` and `signature` from the preimage.
-
-The exact Phase 1 envelope remains unchanged in Phase 2. Its embedded `signature` field is still JSON `null`.
-
-### Two-implementation gate
-
-Phase 1 has independent implementations:
+Two independent canonicalizers remain gated in CI:
 
 ```text
 Rust    src/canonical.rs
 Python  tools/qsol_canonical.py
 ```
 
-Both consume [`fixtures/phase1/golden-vectors.json`](fixtures/phase1/golden-vectors.json), and CI requires byte-identical canonical output and hashes.
-
 ## Phase 2 cryptographic node identity
 
 Phase 2 is defined by [`crypto/phase2.json`](crypto/phase2.json) and [`CRYPTOGRAPHY.md`](CRYPTOGRAPHY.md).
 
-### Key architecture
+Each node has an offline root identity key and a distinct rotatable Ed25519 operational key. The root derives the stable `fed:qsol:<node-id>` and authorizes lifecycle records, but cannot sign Federation envelopes.
 
-Each node has:
+Signed wrappers authenticate exact canonical Phase 1 envelope bytes. `SignatureValidity`, `TrustDisposition`, and `AuthorityDisposition` remain separate, and cryptographic verification always yields `authority = none`.
 
-```text
-offline root identity key
-        |
-        +--> stable fed:qsol:<node-id>
-        +--> identity/lifecycle records
-        |
-        X    cannot sign Federation envelopes
+Normal operational-key rotation requires root, outgoing-key, and incoming proof-of-possession signatures. Root-signed status records support revocation/compromise handling. Root compromise is terminal for the node identity.
 
-rotatable operational Ed25519 key
-        |
-        +--> detached signed-envelope wrapper
-```
-
-The node ID is SHA-256 domain-separated from the root public key. Operational key IDs are separately domain-separated. Public keys and signatures use exact lowercase-hex encodings.
-
-The root identity key is intentionally not rotatable under the same node ID. Root compromise is terminal for that identity; a replacement root creates a new node ID.
-
-### Detached signatures preserve Phase 1
-
-Phase 2 adds `qsol-fed-signed-envelope/1` around the exact Phase 1 envelope rather than changing it.
-
-The operational key signs:
-
-```text
-UTF8("qsol-fed-envelope-signature/1") || 0x00 || canonical_phase1_envelope_bytes
-```
-
-Because signing is detached, the Phase 1 `message_id` does not change.
-
-### Signature validity is not authority
-
-The reference API represents three different dimensions:
-
-```text
-SignatureValidity
-TrustDisposition
-AuthorityDisposition
-```
-
-A valid signature proves only that an admitted operational key signed the exact domain-separated bytes. Cryptographic verification returns `AuthorityDisposition::None`.
-
-A valid signature does not create truth, evidence, a Council vote, trust, or permission to execute an effect. Prime Directive admission remains separate.
-
-### Rotation and compromise recovery
-
-Normal operational-key rotation requires:
-
-- root signature;
-- outgoing operational-key signature;
-- incoming operational-key proof-of-possession signature.
-
-The new key has an explicit activation time, with an overlap window bounded to 24 hours.
-
-Root-signed key-status records can mark an operational key revoked or compromised. Recovery after compromise requires the root plus proof of possession from the replacement key and does not allow the compromised key to remain in overlap.
-
-### Clock and replay
-
-Signed envelopes require expiry and use:
+Signed messages use the frozen Phase 2 clock limits:
 
 ```text
 maximum clock skew               300 seconds
@@ -147,20 +87,88 @@ maximum signed-message lifetime 3600 seconds
 maximum rotation overlap       86400 seconds
 ```
 
-`DurableReplayStore` records message IDs in an append-only local log and fsyncs a fresh record before reporting it accepted as fresh. Partial, duplicate, malformed, or corrupt replay logs fail closed on restart.
+`DurableReplayStore` is append-only, crash-durable for creation and fresh records, calendar-validates timestamps, fails closed on corruption, and permits at most one live handle per canonical path within a process.
 
-The replay implementation is single-process. Multi-process server coordination remains Phase 3 work.
+## Phase 3 reference federation API
 
-### Verification vectors
+Phase 3 is defined by [`api/phase3.json`](api/phase3.json), [`API.md`](API.md), and [`TLS_PROFILE.md`](TLS_PROFILE.md).
 
-[`fixtures/phase2/signature-vectors.json`](fixtures/phase2/signature-vectors.json) contains:
+Implemented routes:
 
-- RFC 8032 Ed25519 baseline vector;
-- QSOL node/key derivation vector;
-- signed-envelope vector;
-- three-signature operational-key transition vector.
+```text
+GET  /fed/v1/node
+GET  /fed/v1/capabilities
+POST /fed/v1/peer/hello
+POST /fed/v1/envelopes
+GET  /fed/v1/objects/{sha256}
+GET  /fed/v1/provenance/{sha256}
+```
 
-Tests also cover algorithm confusion, signature tampering, key compromise, recovery, clock rejection, and root-key envelope-signing rejection.
+### Listener posture
+
+The `qsol-fed` binary binds loopback by default:
+
+```text
+127.0.0.1:8787
+```
+
+A non-loopback bind requires both:
+
+```text
+--allow-public-listen
+--tls-terminated-upstream
+```
+
+Public exposure is therefore explicit and must follow the TLS 1.3 deployment profile. The reference binary does not claim native TLS termination or production networking.
+
+### HTTP admission boundary
+
+POST requests require canonical JSON, exact `application/json`, no compression, no query parameters, and a maximum body of `65536` bytes. Phase 1 depth/string/collection limits remain in force.
+
+Rate limits are fixed at:
+
+```text
+120 requests / IP / minute
+30 POSTs / IP / minute
+```
+
+The `/peer/hello` endpoint verifies a Phase 2 node identity and stores it only as an **introduced, in-memory, non-trusted peer**. Peering still does not create trust or authority.
+
+`/envelopes` performs:
+
+```text
+HTTP limits
+→ canonical signed wrapper
+→ introduced peer lookup
+→ Ed25519 verification
+→ frozen clock checks
+→ durable replay record
+→ local-recipient check
+→ Prime Directive admission
+→ data-only or reject
+```
+
+Known message classes are admitted only as data. The HTTP service does not execute payloads.
+
+### Local-only retrieval and SSRF boundary
+
+Object and provenance GET routes serve only explicitly registered local canonical bytes. Missing objects return `404`.
+
+The crate intentionally contains no outbound HTTP client, no fetch URL route, no redirect-following behavior, and no fallback retrieval from peers or cloud metadata services. Fields such as `force`, `trusted`, `override`, `admin`, `fetch_url`, and `redirect` are rejected by closed request schemas.
+
+### Secret-safe audit log
+
+The JSON Lines audit surface records only bounded metadata such as timestamp, request ID, stable route label, status, remote IP, node ID, message ID, and decision. It does not intentionally record request bodies, arbitrary headers, private keys, signatures, or payload contents.
+
+### Fuzz and adversarial coverage
+
+Phase 3 adds a libFuzzer target at:
+
+```text
+fuzz/fuzz_targets/wire_and_admission.rs
+```
+
+Ordinary CI also runs deterministic mutation smoke coverage over canonicalization, signed-envelope parsing, and the constitutional admission boundary, plus pseudo-admin, SSRF-like, body-limit, compression, query, rate-limit, object-retrieval, identity, replay, and signature tests.
 
 ## Core constitutional shorthand
 
@@ -186,20 +194,7 @@ QSOL-NEXUS remains the **Council of Minds**. QSOL-FED defines the boundary aroun
 
 Remote arbitrary execution, remote authority claims, remote evidence promotion, remote governance mutation, remote history rewrite, remote capability installation, and remote citizenship mutation remain forbidden. Foreign state does not become local authority merely by import. Unknown authority-bearing actions reject.
 
-Cryptographic authentication strengthens attribution. It does not weaken any of those rules.
-
-## Planned reference API
-
-```text
-GET  /fed/v1/node
-GET  /fed/v1/capabilities
-POST /fed/v1/peer/hello
-POST /fed/v1/envelopes
-GET  /fed/v1/objects/{sha256}
-GET  /fed/v1/provenance/{sha256}
-```
-
-These remain planned transport surfaces. There is no production network listener and no current `remote-exec` endpoint.
+HTTP transport and cryptographic authentication strengthen delivery and attribution. Neither weakens those rules.
 
 ## Build and test
 
@@ -209,7 +204,16 @@ python3 tools/validate_constitution.py
 python3 tools/validate_phase0_gate.py
 python3 tools/validate_phase1_gate.py
 python3 tools/validate_phase2_gate.py
+python3 tools/validate_phase3_gate.py
 ```
+
+Run the local reference service with a public identity document:
+
+```bash
+cargo run --bin qsol-fed -- --identity node-identity.json
+```
+
+Non-loopback listening additionally requires the explicit public/TLS flags described above.
 
 ## Documentation map
 
@@ -220,16 +224,20 @@ python3 tools/validate_phase2_gate.py
 - [`PROTOCOL.md`](PROTOCOL.md) — protocol semantics.
 - [`CANONICAL_JSON.md`](CANONICAL_JSON.md) — exact canonical-byte profile.
 - [`CRYPTOGRAPHY.md`](CRYPTOGRAPHY.md) — Phase 2 identity/signature/lifecycle profile.
+- [`API.md`](API.md) — implemented Phase 3 HTTP surface.
+- [`TLS_PROFILE.md`](TLS_PROFILE.md) — Phase 3 public-exposure profile.
 - [`ROADMAP.md`](ROADMAP.md) — staged implementation plan.
 - [`claims/phase0.json`](claims/phase0.json) — immutable historical Phase 0 claims.
-- [`claims/phase2.json`](claims/phase2.json) — canonical current claims.
+- [`claims/phase2.json`](claims/phase2.json) — immutable Phase 2 claim baseline.
+- [`claims/phase3.json`](claims/phase3.json) — canonical current claims.
 - [`wire/phase1.json`](wire/phase1.json) — machine-readable Phase 1 wire contract.
 - [`crypto/phase2.json`](crypto/phase2.json) — machine-readable Phase 2 crypto contract.
+- [`api/phase3.json`](api/phase3.json) — machine-readable Phase 3 API contract.
 
 ## Status
 
-Constitutional bootstrap lineage `qsol-fed/0`; frozen wire protocol **`qsol-fed/1`**. Phase 0, Phase 1, and Phase 2 gates are enforced. Deterministic wire bytes, cryptographic node identity, detached Ed25519 verification, operational-key lifecycle, bounded clock policy, and durable single-process replay protection are established and tested.
+Constitutional bootstrap lineage `qsol-fed/0`; frozen wire protocol **`qsol-fed/1`**. Phase 0 through Phase 3 gates are enforced. Deterministic wire bytes, cryptographic node identity, detached Ed25519 verification, key lifecycle, durable replay protection, and the bounded opt-in Rust reference HTTP service are established and tested.
 
-Production networking, remote execution, deployed interoperable federation, durable peer registries, and production adapters remain intentionally unclaimed.
+**Production networking remains intentionally unclaimed**, along with remote execution, deployed interoperable federation, durable Phase 4 peer registries/object stores, and production adapters.
 
 Licensed under Apache-2.0. QSOL-FED is an original technical project inspired by the general idea of federated cooperation; it is not affiliated with or endorsed by any entertainment franchise or rights holder.
