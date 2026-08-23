@@ -66,6 +66,7 @@ pub struct CurrentClaims {
     pub holodeck_computer_safeguards: bool,
     pub holodeck_teardown_receipts: bool,
     pub live_nexus_runtime_adapter: bool,
+    pub host_level_sandbox: bool,
     pub production_networking: bool,
     pub remote_execution: bool,
     pub interoperable_federation: bool,
@@ -103,6 +104,7 @@ pub const CURRENT_CLAIMS: CurrentClaims = CurrentClaims {
     holodeck_computer_safeguards: true,
     holodeck_teardown_receipts: true,
     live_nexus_runtime_adapter: false,
+    host_level_sandbox: false,
     production_networking: false,
     remote_execution: false,
     interoperable_federation: false,
@@ -141,6 +143,7 @@ pub enum ReleaseClaim {
     HolodeckComputerSafeguards,
     HolodeckTeardownReceipts,
     LiveNexusRuntimeAdapter,
+    HostLevelSandbox,
     ProductionNetworking,
     RemoteExecution,
     InteroperableFederation,
@@ -179,6 +182,7 @@ pub const fn is_established(claim: ReleaseClaim) -> bool {
         ReleaseClaim::HolodeckComputerSafeguards => CURRENT_CLAIMS.holodeck_computer_safeguards,
         ReleaseClaim::HolodeckTeardownReceipts => CURRENT_CLAIMS.holodeck_teardown_receipts,
         ReleaseClaim::LiveNexusRuntimeAdapter => CURRENT_CLAIMS.live_nexus_runtime_adapter,
+        ReleaseClaim::HostLevelSandbox => CURRENT_CLAIMS.host_level_sandbox,
         ReleaseClaim::ProductionNetworking => CURRENT_CLAIMS.production_networking,
         ReleaseClaim::RemoteExecution => CURRENT_CLAIMS.remote_execution,
         ReleaseClaim::InteroperableFederation => CURRENT_CLAIMS.interoperable_federation,
@@ -237,6 +241,7 @@ mod tests {
         }
         for claim in [
             ReleaseClaim::LiveNexusRuntimeAdapter,
+            ReleaseClaim::HostLevelSandbox,
             ReleaseClaim::ProductionNetworking,
             ReleaseClaim::RemoteExecution,
             ReleaseClaim::InteroperableFederation,
@@ -251,6 +256,7 @@ mod tests {
         assert!(CURRENT_CLAIMS.sandboxed_synthetic_world_kernel);
         assert!(CURRENT_CLAIMS.holodeck_computer_safeguards);
         assert!(!CURRENT_CLAIMS.live_nexus_runtime_adapter);
+        assert!(!CURRENT_CLAIMS.host_level_sandbox);
         assert!(!CURRENT_CLAIMS.production_networking);
         assert!(!CURRENT_CLAIMS.remote_execution);
         assert!(!CURRENT_CLAIMS.interoperable_federation);
