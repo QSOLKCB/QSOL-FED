@@ -125,6 +125,13 @@ def validate_schemas() -> None:
         schema = load_json(path)
         require(schema.get("additionalProperties") is False, f"schema must be closed: {path}")
 
+    capability = load_json("schemas/capability-advertisement-v1.schema.json")
+    capability_authority = capability.get("properties", {}).get("authority")
+    require(
+        capability_authority is None or capability_authority.get("const") == "none",
+        "capability advertisement schema gained authority-bearing semantics",
+    )
+
     foreign = load_json("schemas/foreign-object-record-v1.schema.json")
     require(foreign["properties"]["authority"].get("const") == "none", "foreign record authority drift")
 
