@@ -1,8 +1,8 @@
 //! Release-claim boundaries.
 //!
-//! Phase 0, Phase 2, Phase 3, Phase 4, and Phase 5A manifests remain historical
-//! baselines. `CURRENT_CLAIMS` is the current Phase 5 QSOL-adapter release surface.
-//! None of these values are runtime configuration.
+//! Phase 0, Phase 2, Phase 3, Phase 4, Phase 5A, and Phase 5 manifests remain
+//! historical baselines. `CURRENT_CLAIMS` is the current Phase 5C live-ORACLE
+//! release surface. None of these values are runtime configuration.
 
 pub const PHASE0_GATE_ID: &str = "qsol-fed-phase0-claim-gate/1";
 pub const PHASE2_GATE_ID: &str = "qsol-fed-phase2-claim-gate/1";
@@ -10,6 +10,7 @@ pub const PHASE3_GATE_ID: &str = "qsol-fed-phase3-claim-gate/1";
 pub const PHASE4_GATE_ID: &str = "qsol-fed-phase4-claim-gate/1";
 pub const PHASE5A_GATE_ID: &str = "qsol-fed-phase5a-holodeck-gate/1";
 pub const PHASE5_GATE_ID: &str = "qsol-fed-phase5-adapter-gate/1";
+pub const PHASE5C_GATE_ID: &str = "qsol-fed-phase5c-oracle-live-gate/1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Phase0Claims {
@@ -118,7 +119,7 @@ pub const CURRENT_CLAIMS: CurrentClaims = CurrentClaims {
     nexus_independent_redeliberation: true,
     council_of_councils_reports_only: true,
     oracle_evidence_membrane: true,
-    oracle_live_transport: false,
+    oracle_live_transport: true,
     oracle_holodeck_synthetic_admission: false,
     ark_offline_preservation_adapter: true,
     host_level_sandbox: false,
@@ -237,7 +238,7 @@ mod tests {
     }
 
     #[test]
-    fn phase5_promotes_only_reviewed_adapter_capabilities() {
+    fn phase5c_promotes_only_reviewed_oracle_live_transport() {
         for claim in [
             ReleaseClaim::ConstitutionalModel,
             ReleaseClaim::MachineContracts,
@@ -275,12 +276,12 @@ mod tests {
             ReleaseClaim::NexusIndependentRedeliberation,
             ReleaseClaim::CouncilOfCouncilsReportsOnly,
             ReleaseClaim::OracleEvidenceMembrane,
+            ReleaseClaim::OracleLiveTransport,
             ReleaseClaim::ArkOfflinePreservationAdapter,
         ] {
-            assert!(is_established(claim), "reviewed Phase 5 claim unexpectedly disabled: {claim:?}");
+            assert!(is_established(claim), "reviewed Phase 5C claim unexpectedly disabled: {claim:?}");
         }
         for claim in [
-            ReleaseClaim::OracleLiveTransport,
             ReleaseClaim::OracleHolodeckSyntheticAdmission,
             ReleaseClaim::HostLevelSandbox,
             ReleaseClaim::ProductionNetworking,
@@ -293,12 +294,12 @@ mod tests {
 
     #[test]
     fn current_claim_gate_is_not_runtime_configurable() {
-        assert_eq!(PHASE5_GATE_ID, "qsol-fed-phase5-adapter-gate/1");
+        assert_eq!(PHASE5C_GATE_ID, "qsol-fed-phase5c-oracle-live-gate/1");
         assert!(CURRENT_CLAIMS.live_nexus_runtime_adapter);
         assert!(CURRENT_CLAIMS.nexus_council_report_adapter);
         assert!(CURRENT_CLAIMS.oracle_evidence_membrane);
+        assert!(CURRENT_CLAIMS.oracle_live_transport);
         assert!(CURRENT_CLAIMS.ark_offline_preservation_adapter);
-        assert!(!CURRENT_CLAIMS.oracle_live_transport);
         assert!(!CURRENT_CLAIMS.oracle_holodeck_synthetic_admission);
         assert!(!CURRENT_CLAIMS.host_level_sandbox);
         assert!(!CURRENT_CLAIMS.production_networking);
