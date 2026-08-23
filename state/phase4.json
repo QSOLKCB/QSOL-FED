@@ -1,0 +1,71 @@
+{
+  "document_type": "qsol-fed-phase4-state-contract",
+  "schema_version": 1,
+  "wire_protocol": "qsol-fed/1",
+  "foreign_store": {
+    "content_identity": "sha256 over exact canonical qsol-fed-canonical-json/1 bytes",
+    "payload_directory": "objects/",
+    "provenance_directory": "provenance/",
+    "namespaces": ["foreign", "quarantine"],
+    "import_default_namespace": "quarantine",
+    "authority_from_presence": false,
+    "duplicate_policy": "same hash must have byte-identical content and compatible metadata; conflicts fail closed"
+  },
+  "local_descendants": {
+    "namespace": "descendants/",
+    "relation": "derived",
+    "must_reference_foreign_parent": true,
+    "rewrites_parent_identity": false,
+    "authority_from_derivation": false
+  },
+  "peer_registry": {
+    "durable": true,
+    "states": ["unknown", "introduced", "admitted", "quarantined", "revoked", "disconnected"],
+    "unknown_is_query_only": true,
+    "identity_lifecycle_monotonic": true,
+    "same_sequence_divergence": "reject",
+    "rollback_after_restart": "reject",
+    "revoked_reintroduction": "reject"
+  },
+  "trust_registry": {
+    "separate_from_peer_registry": true,
+    "levels": ["unknown", "trusted", "distrusted"],
+    "peer_admission_creates_trust": false,
+    "import_changes_trust": false
+  },
+  "capability_advertisement": {
+    "schema": "qsol-fed-capability-advertisement/1",
+    "proof": "Phase 2 qsol-fed-signed-envelope/1 with message_class=capabilities and a self-recipient proof binding the canonical advertisement payload hash",
+    "maximum_lifetime_seconds": 86400,
+    "sequence_monotonic": true,
+    "identifier_versioning": "existing capability-id /<positive-integer> grammar",
+    "advertisement_is_authorization": false
+  },
+  "local_capability_policy": {
+    "separate_from_advertisement": true,
+    "default": "deny",
+    "decisions": ["allow", "deny"],
+    "effective_allow_requires": ["active authenticated advertisement", "explicit local allow"]
+  },
+  "partition_rejoin": {
+    "disconnect_records_snapshot": true,
+    "same_snapshot_rejoin": "clean only after explicit confirm call",
+    "changed_snapshot_rejoin": "explicit_reconciliation_required",
+    "silent_reconciliation": false
+  },
+  "portable_bundle": {
+    "schema": "qsol-fed-bundle/1",
+    "exact_bytes_encoding": "lowercase hexadecimal",
+    "preserves": ["foreign object bytes", "foreign provenance bytes", "peer identity bytes", "peer lifecycle bytes", "capability advertisement bytes"],
+    "maximum_bytes": 33554432,
+    "maximum_peers": 256,
+    "maximum_objects": 4096,
+    "offline_verification": true,
+    "network_required_for_verification": false,
+    "import_peer_state": "quarantined",
+    "import_object_namespace": "quarantine",
+    "import_authority": "none",
+    "import_trust_change": false
+  },
+  "phase4_gate": "export/import round-trips preserve foreign identity, object bytes, and provenance bytes exactly; import creates neither local authority nor trust"
+}
