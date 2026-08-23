@@ -19,8 +19,9 @@
     "max_array_items": 1024,
     "max_object_members": 1024,
     "max_capabilities_per_hello": 64,
-    "max_requests_per_ip_per_minute": 120,
-    "max_posts_per_ip_per_minute": 30,
+    "max_lifecycle_records_per_hello": 128,
+    "max_requests_per_client_per_minute": 120,
+    "max_posts_per_client_per_minute": 30,
     "max_local_export_objects": 4096
   },
   "post_body_policy": {
@@ -31,25 +32,40 @@
   },
   "peer_hello": {
     "schema": "qsol-fed-peer-hello/1",
-    "effect": "introduces verified public identity and capabilities into in-memory non-trust state only",
+    "effect": "introduces a verified public identity plus ordered authenticated lifecycle records and capabilities into in-memory non-trust state only",
+    "lifecycle_policy": "rebuild from the initial identity by applying authenticated rotation/status records in sequence; re-introduction may advance but never roll back locally retained lifecycle state",
+    "persistent_peer_registry": false,
     "peering_is_trust": false,
     "peering_is_authority": false
   },
   "envelope_pipeline": [
     "strict HTTP limits",
     "canonical signed-envelope bytes",
-    "introduced peer identity lookup",
+    "introduced lifecycle-aware peer identity lookup",
     "Ed25519 verification under frozen Phase 2 clock limits",
-    "durable replay record",
+    "local recipient equality check",
+    "durable replay record with active-window retention and compaction",
     "Prime Directive admission",
     "data-only or reject response"
   ],
+  "recipient_policy": "a valid envelope is admitted only when recipient equals the local node ID; mismatched recipients are rejected before replay recording",
+  "replay_policy": {
+    "retention_seconds": 4200,
+    "derivation": "max signed-message lifetime 3600 + two 300-second skew margins",
+    "compaction_threshold_bytes": 1048576,
+    "hard_limit_bytes": 67108864,
+    "compaction": "prune records older than the active replay window, atomically rewrite and fsync before continuing",
+    "exhaustion_policy": "active-window state that still exceeds the hard bound fails closed"
+  },
   "retrieval_policy": "objects and provenance are served only from explicitly registered local export bytes; missing content returns 404 and never triggers outbound retrieval",
   "outbound_http_client": false,
   "redirect_generation": false,
   "ssrf_policy": "no URL-bearing fetch field, no outbound HTTP client, no redirect-following, exact sha256 retrieval paths only",
   "audit_policy": {
     "format": "JSON Lines",
+    "production_in_memory_copy": false,
+    "test_only_in_memory_copy": true,
+    "replay_and_audit_paths_must_be_distinct": true,
     "logs_request_body": false,
     "logs_headers": false,
     "logs_signatures": false,
@@ -67,18 +83,25 @@
       "decision"
     ]
   },
+  "rate_limit_source_policy": {
+    "loopback_or_direct": "direct socket peer IP",
+    "proxied_public_mode": "x-qsol-client-ip accepted only when the direct socket peer equals the explicitly configured --trusted-proxy IP",
+    "forwarded_address_creates_identity_or_authority": false,
+    "untrusted_forwarded_header": "reject"
+  },
   "listener_policy": {
     "default_bind": "127.0.0.1:8787",
     "non_loopback_requires": [
       "--allow-public-listen",
-      "--tls-terminated-upstream"
+      "--tls-terminated-upstream",
+      "--trusted-proxy IP"
     ],
     "public_listen_default": false
   },
   "tls_profile": {
     "document": "TLS_PROFILE.md",
     "minimum": "TLS 1.3",
-    "reference_pattern": "loopback service behind a same-host or authenticated upstream TLS terminator",
+    "reference_pattern": "loopback/private service behind an explicitly configured upstream TLS terminator whose socket IP is pinned as trusted proxy for rate-attribution only",
     "native_tls_in_reference_binary": false
   },
   "fuzz": {
@@ -96,5 +119,5 @@
   "production_networking": false,
   "remote_execution": false,
   "interoperable_federation": false,
-  "gate": "public network listening is opt-in and the reference service is claimable only while replay, limits, identity verification, adversarial tests, and parser/admission fuzz smoke are green"
+  "gate": "public network listening is opt-in and the reference service is claimable only while replay retention/compaction, limits, lifecycle-aware identity verification, local routing, adversarial tests, and parser/admission fuzz smoke are green"
 }
