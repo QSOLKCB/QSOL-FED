@@ -73,11 +73,15 @@ Run `python3 tools/validate_phase5_gate.py` after historical Phase 5 adapter/sch
 
 - Pin QSOL-ORACLE to merged donor commit `043e864b3c25dfeca3ce1752b3110479479071b1` in CI.
 - Pin the reviewed donor release fingerprint to `7b0eff4dfa9b0caa84f14920d21f6a5446114535d82706cb62e34773c39818d2`.
-- Runtime startup must call `attest_oracle_release` before process launch and verify every release-fingerprint file byte length and SHA-256.
-- The fixed process entrypoint is exactly `python3 tools/fed_transport.py serve` under the attested donor root.
+- Recompute the donor `files_sha256` and top-level `release_fingerprint_sha256`; never trust the fingerprint file's self-declared digest without deriving it.
+- Verify every release-fingerprint file byte length and SHA-256. Explicitly pin any executable runtime import absent from the historical donor fingerprint, including `tools/nexus_membrane_common.py`.
+- Never execute directly from the mutable donor checkout. For every request, stage the reviewed donor bytes into a private temporary runtime and re-attest that staged copy before launch.
+- The fixed process entrypoint is exactly `python3 -I tools/fed_transport.py serve` under the re-attested staged runtime.
 - Never turn this adapter into a generic command runner. Callers may not supply executable names, scripts, shell fragments, URLs, sockets, or network targets.
-- Remove `PYTHONPATH` and `PYTHONHOME`; use the reviewed donor tree, not ambient Python module injection.
+- Remove `PYTHONPATH` and `PYTHONHOME`; use Python isolated mode and the reviewed staged donor tree, not ambient Python module injection.
 - Request and response bytes must remain canonical and bounded to 65,536 bytes per line.
+- Normalize response-correlation identity to the canonical NFC `request_id` actually sent over the wire.
+- Read stdout with a hard cap **before process completion**. Never use `wait_with_output()` or another unbounded child-output collector. Kill the child on overflow. Do not buffer stderr in memory.
 - Accept exactly one response line for one request. Extra stdout, noncanonical bytes, malformed JSON, bad response digest, nonzero process exit, or authority drift fail closed.
 - Evidence references must use `oracle-event:<64 lowercase hex>`; the donor itself remains responsible for ledger-membership validation and FED additionally preserves the grammar and response digest.
 - `known`, `conflict`, and `unknown` remain observation states, never truth authority.
@@ -85,7 +89,7 @@ Run `python3 tools/validate_phase5_gate.py` after historical Phase 5 adapter/sch
 - `oracle_live_transport = true` means this reviewed local process transport exists. It does **not** mean production networking or arbitrary remote execution exists.
 - `oracle_holodeck_synthetic_admission = false` remains mandatory. Live transport does not admit simulation output into ORACLE.
 - Cross-repository CI must byte-compare the local donor contract/request/response/observation schemas against the exact pinned QSOL-ORACLE commit and run the real `qsol-fed-oracle` probe.
-- CI must tamper the donor transport file and prove release attestation rejects it.
+- CI must tamper the donor transport file and prove release attestation rejects it. It should also exercise a forged fingerprint-file self-claim against a changed non-critical fingerprinted file.
 
 Run `python3 tools/validate_phase5c_gate.py` after current ORACLE transport/claim/schema/CI changes.
 
