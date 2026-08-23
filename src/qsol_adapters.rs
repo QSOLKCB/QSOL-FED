@@ -634,8 +634,17 @@ mod tests {
         assert!(project_nexus_council_actors(&report, &forged).is_err());
 
         let mut unrelated = plan();
-        unrelated.source_order[0] = format!("object:{}", "9".repeat(64));
-        unrelated.anchor_refs = vec![unrelated.source_order[0].clone()];
+        let replacement = format!("object:{}", "9".repeat(64));
+        for source in &mut unrelated.source_order {
+            if source == &report.source_session_ref {
+                *source = replacement.clone();
+            }
+        }
+        for anchor in &mut unrelated.anchor_refs {
+            if anchor == &report.source_session_ref {
+                *anchor = replacement.clone();
+            }
+        }
         assert!(project_nexus_council_actors(&report, &unrelated).is_err());
     }
 
