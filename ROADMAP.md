@@ -56,17 +56,19 @@ The listener remains a reference service, not a production-networking claim.
 
 **Status: complete; durable federation-state gate enforced.**
 
-Content-addressed foreign/quarantine storage, multiple source/provenance attributions, provenance-preserving descendants, durable peer lifecycle, separate trust registry, expiring capability advertisements, local allow/deny policy, partition/rejoin controls, portable bundles, offline verification, append-only lifecycle prefixes, persist-before-live local writes, and crash-recoverable namespace moves are complete.
+Content-addressed foreign/quarantine storage, multiple source/provenance attributions, provenance-preserving descendants, durable peer lifecycle, separate trust registry, expiring capability advertisements, local allow/deny policy, partition/rejoin controls, replay across restart, portable bundles, offline verification, append-only lifecycle prefixes, persist-before-live local policy writes, and crash-recoverable namespace moves are complete.
 
 ### Phase 4 gate
 
 Import/export round-trips must preserve foreign identity and provenance exactly. Import must not create local authority.
 
+New imported material defaults to quarantine. Existing local lifecycle/namespace decisions remain sovereign. Trust stays separate and capability permission requires admitted lifecycle state + active authenticated advertisement + explicit local allow.
+
 ---
 
 ## Phase 5 — QSOL adapters and synthetic worlds
 
-**Status: complete; historical Phase 5 and Phase 5C gates preserved.**
+**Status: complete; historical Phase 5 adapter gate preserved.**
 
 ### Phase 5A — QSOL-NEXUS AI Holodeck sandbox
 
@@ -78,16 +80,23 @@ Import/export round-trips must preserve foreign identity and provenance exactly.
 - [x] `Computer, end program` survives frozen state and event-ledger exhaustion.
 - [x] Moriarty feature-level escape/boundary regressions.
 - [x] Explicit host-level sandbox non-claim.
-- [x] Live local QSOL-NEXUS adapter constructs source manifests only after native verification.
-- [x] Reviewed Council actors project into synthetic Holodeck actors without authority inheritance.
+- [x] Live local QSOL-NEXUS adapter constructs a source manifest only **after native NEXUS export verification**.
+- [x] Reviewed NEXUS Council members project into synthetic Holodeck actors through a synthetic-event-only seam.
+- [x] Deterministic fixtures are generated from native NEXUS `WorldStore` + `PersistentWorldService.export_bundle()`.
 
 ### Phase 5A gate
 
 For identical verified source manifests and seeds, the reference implementation must produce byte-identical world plans and event identities.
 
-`Computer, end program` must terminate a frozen simulation without simulated approval.
+Every attempted real boundary effect must be blocked. `Computer, end program` remains operator-owned and terminal.
 
 ```text
+authority_effect     = none
+federation_effect    = none
+evidence_effect      = none
+network_used         = false
+real_tools_used      = false
+credentials_exposed  = false
 MORIARTY REPORT != SECURITY PROOF
 SIMULATION != AUTHORITY
 ```
@@ -106,6 +115,8 @@ SIMULATION != AUTHORITY
 - [x] Suggested searches remain non-evidence.
 - [x] Remote evidence promotion rejected.
 - [x] Historical `oracle_live_transport = false` remains frozen in `claims/phase5.json`.
+
+The donor-side **follow-up** was completed in `QSOLKCB/QSOL-ORACLE` PR #5. Phase 5C below preserves that follow-up history and the exact donor contract without rewriting the historical Phase 5 non-claim.
 
 ### QSOL-ARK
 
@@ -185,9 +196,13 @@ Assembly membership requires explicit local opt-in and does not follow network m
 
 The registry enforces one active NFC-normalized representation subject, but does not claim to prove real-world principal uniqueness. That remains an explicit admission-policy assumption.
 
+The frozen electorate is retained as Assembly-local state for vote admission. Public proposal identity uses a domain-separated `electorate_ref` plus `electorate_size`, keeping the 1,024-member ceiling compatible with the bounded canonical-object profile.
+
 ### Deterministic Charter Gate
 
 `qsol-fed-charter-gate/1` maps declared proposal effects to existing invariant IDs. A proposal that conflicts with the sitting constitutional lineage becomes `fork_required` instead of gaining an override through majority vote.
+
+Structural proposal schema validation is followed by mandatory `validate_proposal_record_semantics`, which re-derives the Charter Gate and proposal identity. A proposal cannot declare an authority-bearing effect and self-report a compatible assessment.
 
 ### NEXUS advisory status
 
@@ -204,6 +219,8 @@ Running NEXUS does not create Assembly membership.
 ### Fork/version path and receipts
 
 Accepted governance creates deterministic `qsol-fed-governance-receipt/1` records. Backward-compatible amendments require explicit source change; breaking/Charter amendments require a new major; constitutional conflicts require an explicit fork path.
+
+Finalization is terminal and removes the proposal from the bounded active set only after the receipt is successfully derived, reclaiming proposal capacity while preventing replay or post-finalization mutation.
 
 ```text
 protocol_changed_automatically = false
@@ -232,11 +249,15 @@ No Assembly mechanism may directly mutate member-local authority.
 
 **Status: planned. This is the final executable-architecture graduation gate, not a feature dependency.**
 
-`MORIARTY/1` is a provider-neutral, repository-aware constitutional adversary whose reference operator may be Codex. Every accepted finding must be a reproducible `moriarty-counterexample/1`; a valid finding reopens the owning phase and becomes a regression.
+`MORIARTY/1` is a provider-neutral, repository-aware constitutional adversary whose reference operator may be Codex. It receives public blueprints and disposable test fixtures, never production credentials/targets or constitutional bypasses.
+
+Attack families include canonical/parser differentials; signature/domain/key-role confusion; replay/downgrade/clock attacks; HTTP rate/proxy/DDoS-shaped stress; SSRF/decompression; crash/fsync/restart; lifecycle/partition/history attacks; import/provenance authority laundering; adapter confusion; Holodeck escapes; safeguard persuasion; nested-world amplification; Assembly capture/representation attacks; and cross-phase contradictions.
+
+Every accepted finding must be a reproducible `moriarty-counterexample/1`. A valid finding reopens the phase owning the invariant and becomes a regression.
 
 ### Phase 9 gate
 
-No unresolved reproducible counterexample may cross a constitutional, authority, provenance, sandbox, cryptographic, replay, storage, transport, adapter, governance, or resource-safety boundary for the exact reviewed commit.
+No unresolved reproducible counterexample may cross a constitutional, authority, provenance, sandbox, cryptographic, replay, storage, transport, adapter, Assembly, or resource-safety boundary for the exact reviewed commit.
 
 ```text
 MORIARTY REPORT != SECURITY PROOF
@@ -249,7 +270,9 @@ NO COUNTEREXAMPLE FOUND != NO COUNTEREXAMPLE EXISTS
 
 **Status: planned. Begins only after an exact commit passes MORIARTY/1.**
 
-Bind the Lean package to the exact Moriarty-surviving commit, invariant IDs, contracts, schemas, phase gates, and adversarial report. Assembly sovereignty and Charter Gate properties are theorem targets alongside earlier invariants.
+Bind the Lean package to the exact Moriarty-surviving commit, invariant IDs, contracts, schemas, phase gates, and adversarial report. Initial theorem targets include Prime Directive admission, signature/trust/authority separation, peering/capability separation, import non-authority, lifecycle monotonicity, partition sovereignty, provenance preservation, canonical identity determinism, Holodeck separation/safeguards, adapter non-authority, SDK conformance boundaries, and Assembly sovereignty.
+
+No unresolved `sorry`/`admit` is permitted in the graduation theorem set; assumptions must be named and theorem-to-contract traceability complete.
 
 ### Phase 10 gate
 
@@ -266,11 +289,13 @@ FORMAL MODEL != UNSTATED REAL-WORLD ASSUMPTION
 
 **Status: planned. Publication begins only after Phase 10 is green.**
 
-Freeze the exact executable + adversarial + Lean artifact with Git commit/tag identity, theorem manifest, MORIARTY corpus/report, machine contracts, schemas, fixtures, reproducibility instructions, citation metadata, deterministic release manifest, and `SHA256SUMS`.
+Freeze the exact executable + adversarial + Lean artifact with Git commit/tag identity, theorem manifest, MORIARTY corpus/report, machine contracts, schemas, golden/hostile fixtures, reproducibility instructions, SBOM/dependency metadata where available, citation metadata, deterministic release manifest, and `SHA256SUMS`.
+
+Record immutable version/concept DOI relationships without repointing historical releases.
 
 ### Phase 11 gate
 
-An offline verifier must bind Git commit, release tag, Lean proof tree, Moriarty input commit, machine-contract hashes, publication files, release metadata, and absence of secrets/private keys before DOI publication.
+An offline verifier must bind Git commit, release tag, Lean proof tree, Moriarty input commit, machine-contract hashes, publication files, `SHA256SUMS`, release metadata, and absence of secrets/private keys before DOI publication.
 
 ```text
 ZENODO PRESENCE != TECHNICAL AUTHORITY
@@ -282,8 +307,8 @@ ARCHIVAL IMMUTABILITY != IMPLEMENTATION PERFECTION
 
 ## Explicitly deferred / prohibited
 
-Generic remote shell, arbitrary peer-selected tools, shared global truth, transitive trust by default, global mutable state, automatic evidence promotion, automatic vote federation, secret-bearing semantic prompts, peer-controlled constitutional override, Assembly-to-member local authority mutation, Holodeck-to-real authority promotion, Holodeck-to-ORACLE synthetic admission without a separately reviewed non-evidence contract, simulated credential access, and protocol-derived personhood/legal sovereignty claims remain outside the current design.
+Generic remote shell, arbitrary peer-selected tools, shared global truth, transitive trust by default, global mutable state, automatic evidence promotion, automatic vote federation, secret-bearing semantic prompts, peer-controlled constitutional override, Assembly-to-member authority mutation, Holodeck-to-real authority promotion, Holodeck-to-ORACLE synthetic admission without a separately reviewed non-evidence contract, simulated credential access, and protocol-derived personhood/legal sovereignty claims remain outside the current design.
 
 ## Long-term success condition
 
-QSOL-FED succeeds when mutually distrustful systems can exchange useful, attributable knowledge while retaining local sovereignty; evolve the protocol through transparent non-executing governance; safely explore synthetic worlds without confusing simulation for reality; survive explicit adversarial graduation; and publish a traceable formal model without overstating what the proof or DOI establishes.
+QSOL-FED succeeds when mutually distrustful systems can exchange useful, attributable knowledge while retaining local sovereignty; safely explore synthetic worlds without confusing simulation for reality; govern protocol evolution without turning governance into remote member authority; survive explicit adversarial graduation; and publish a traceable formal model without overstating what the proof or DOI establishes.
