@@ -21,7 +21,7 @@
     "protocol": {"const": "QSOL-ORACLE-FED/1"},
     "kind": {"const": "evidence.export.result"},
     "request_id": {"type": "string", "minLength": 1, "maxLength": 256},
-    "observation": {"$ref": "oracle-observation-v1.schema.json"},
+    "observation": {"$ref": "fed-oracle-observation.schema.json"},
     "total_matches": {"type": "integer", "minimum": 0},
     "returned": {"type": "integer", "minimum": 0, "maximum": 256},
     "truncated": {"type": "boolean"},
