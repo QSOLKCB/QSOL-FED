@@ -7,6 +7,7 @@ export type MessageClass =
   | 'hello' | 'capabilities' | 'evidence.offer' | 'evidence.request'
   | 'hypothesis' | 'challenge' | 'response' | 'council.report'
   | 'minority.report' | 'experiment.receipt' | 'citation' | 'publication';
+export type ProvenanceRelation = 'observed' | 'derived' | 'quoted' | 'transported';
 
 export interface NodeManifest {
   protocol: 'qsol-fed/0';
@@ -22,6 +23,15 @@ export interface ThirdPartyNodeProfile {
   qsol_governance_adopted: false;
   nexus_required: false;
   council_required: false;
+}
+
+export interface ProvenanceObject {
+  schema: 'qsol-fed-provenance/1';
+  source_node: string;
+  source_object: string;
+  relation: ProvenanceRelation;
+  parents: string[];
+  created_at: string;
 }
 
 export interface EnvelopeInput {
@@ -58,7 +68,9 @@ export {
   validateNodeManifest,
   buildNodeManifest,
   validateThirdPartyProfile,
+  buildProvenance,
   validateProvenance,
   buildUnsignedEnvelope,
+  validateUnsignedEnvelope,
   conformanceResult,
 } from './qsol_fed_sdk.mjs';
