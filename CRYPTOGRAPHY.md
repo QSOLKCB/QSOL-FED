@@ -13,7 +13,7 @@ Each node has two Ed25519 roles:
 - **root identity key** — offline identity anchor and lifecycle authority;
 - **operational signing key** — signs Federation envelopes and normal key transitions.
 
-The root key MUST NOT sign Federation envelopes. A key accepted as a root is intentionally absent from the operational-key registry used by envelope verification.
+The root key MUST NOT sign Federation envelopes. Root and operational key IDs MUST be distinct, and rotation MUST NOT install the root key into the operational role. A key accepted as a root is intentionally absent from the operational-key registry used by envelope verification.
 
 Private keys are 32-byte Ed25519 seeds held only in local secret state. Federation objects contain only public keys, key IDs, signatures, and lifecycle records.
 
@@ -61,6 +61,8 @@ A key ID is an identifier, not an authority label.
 - initial operational public key and key ID;
 - creation timestamp;
 - exact algorithm identifier `ed25519`.
+
+The root and initial operational keys must be distinct.
 
 The root key signs the canonical document projection excluding `root_signature` using:
 
@@ -128,7 +130,7 @@ It does not imply:
 
 The new key activates at `not_before`. The outgoing key remains valid only until `overlap_until`.
 
-The overlap window is bounded to 86,400 seconds. A transition cannot nominate an unknown replacement key without proving possession of that key.
+The overlap window is bounded to 86,400 seconds. A transition cannot nominate the root key or an unknown replacement key without proving possession of the incoming operational key.
 
 ## 9. Revocation, compromise, and recovery
 
@@ -145,7 +147,8 @@ After the current operational key is revoked or compromised, a recovery rotation
 - valid incoming-key proof of possession;
 - exact `recovery` mode;
 - `previous_signature = null`;
-- no overlap with the compromised key.
+- no overlap with the compromised key;
+- the incoming key is not the root key.
 
 Normal transitions cannot use this shortcut.
 
@@ -158,6 +161,8 @@ maximum clock skew:               300 seconds
 maximum signed-message lifetime: 3600 seconds
 maximum rotation overlap:       86400 seconds
 ```
+
+The public verification API always enforces these frozen maxima internally. External callers cannot widen the skew or lifetime window by supplying a looser policy object. Stricter local policy may reject an already-authenticated result afterward, but it cannot make cryptographic verification more permissive than the Phase 2 contract.
 
 The timestamp syntax remains Phase 1 UTC second-resolution `YYYY-MM-DDTHH:MM:SSZ` and is additionally validated as a real calendar timestamp.
 
@@ -177,11 +182,13 @@ A signed message is rejected when:
 <message_id>\t<seen_at>\n
 ```
 
-A fresh record is flushed and fsynced before `FreshRecorded` is returned. On restart the complete log is reloaded.
+A fresh record is flushed and fsynced before `FreshRecorded` is returned. When a new replay-log file is created, its parent directory entry is also fsynced before the store can report freshness. On restart the complete log is reloaded.
+
+Replay timestamps must satisfy both the Phase 1 UTC syntax and real-calendar validation. Impossible dates such as `2026-99-99T99:99:99Z` fail closed.
 
 Malformed lines, duplicate records already present in the log, invalid IDs/timestamps, partial trailing writes, invalid UTF-8, or oversized replay logs fail closed.
 
-The Phase 2 implementation is explicitly **single-process**. It does not claim multi-process locking or production server concurrency; that belongs to the Phase 3 network service.
+The Phase 2 implementation is explicitly **single-process**. Within one process, at most one live `DurableReplayStore` handle may exist for a canonical replay-log path, preventing independent in-memory `seen` sets from accepting the same message. The implementation still does not claim multi-process locking or production server concurrency; that belongs to the Phase 3 network service.
 
 ## 12. Downgrade and algorithm confusion
 
@@ -193,7 +200,7 @@ The implementation rejects:
 - key-ID/public-key mismatch;
 - unsupported crypto schema versions;
 - unsupported wire protocol majors;
-- root-key attempts to sign envelopes;
+- root-key attempts to sign envelopes or become an operational key;
 - signatures from revoked, compromised, not-yet-valid, or retired operational keys.
 
 ## 13. Phase 2 gate
