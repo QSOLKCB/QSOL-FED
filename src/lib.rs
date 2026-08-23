@@ -103,7 +103,8 @@ pub use replay::{
 pub use sdk::{
     phase6_conformance_from_fixture, sdk_build_node_manifest, sdk_build_provenance,
     sdk_build_unsigned_envelope, sdk_canonicalize, sdk_classify_protocol, sdk_object_id,
-    sdk_validate_capability_id, Phase6ConformanceResult, SdkEnvelopeInput, SdkError,
+    sdk_validate_capability_id, sdk_validate_node_manifest, sdk_validate_provenance,
+    sdk_validate_unsigned_envelope, Phase6ConformanceResult, SdkEnvelopeInput, SdkError,
     SdkNodeManifest, ThirdPartyNodeProfile, BOOTSTRAP_PROTOCOL, SDK_CONTRACT_V1,
     THIRD_PARTY_PROFILE_V1, WIRE_PROTOCOL,
 };
