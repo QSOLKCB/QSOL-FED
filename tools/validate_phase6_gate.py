@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Enforce Phase 6 governance-neutral SDK and third-party interoperability claims."""
+"""Preserve Phase 6 governance-neutral SDK and third-party interoperability under successors."""
 from __future__ import annotations
 
 import ast
@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-NEW_CAPABILITIES = {
+PHASE6_CAPABILITIES = {
     "minimal_protocol_sdk_contract",
     "rust_protocol_sdk",
     "python_protocol_sdk",
@@ -17,6 +17,17 @@ NEW_CAPABILITIES = {
     "third_party_node_conformance",
     "three_implementation_sdk_interop",
     "institutional_integration_docs",
+}
+PHASE7_CAPABILITIES = {
+    "assembly_membership_separate_from_network",
+    "assembly_proposal_lifecycle",
+    "assembly_representation_model",
+    "assembly_anti_sybil_contract",
+    "deterministic_charter_gate",
+    "assembly_member_local_sovereignty",
+    "nexus_assembly_advisory_only",
+    "assembly_fork_version_path",
+    "assembly_governance_receipts",
 }
 
 
@@ -44,25 +55,26 @@ def rust_claims() -> dict[str, bool]:
 
 
 def validate_claims() -> None:
-    previous = load("claims/phase5c.json")
-    current = load("claims/phase6.json")
-    require(current.get("document_type") == "qsol-fed-phase6-sdk-claims", "Phase 6 claim id drift")
-    require(current.get("gate_id") == "qsol-fed-phase6-sdk-gate/1", "Phase 6 gate id drift")
-    require(current.get("gate_status") == "enforced", "Phase 6 gate not enforced")
-    require(current.get("runtime_override_allowed") is False, "Phase 6 claims became runtime configurable")
-    old = previous["capabilities"]
-    caps = current["capabilities"]
-    require(set(old).issubset(caps), "Phase 6 dropped a historical capability key")
-    for key, value in old.items():
-        require(caps[key] == value, f"Phase 6 changed historical capability: {key}")
-    require(set(caps) - set(old) == NEW_CAPABILITIES, "Phase 6 capability delta drift")
-    require(all(caps[key] is True for key in NEW_CAPABILITIES), "Phase 6 SDK capability not established")
-    for key in (
-        "oracle_holodeck_synthetic_admission", "host_level_sandbox", "production_networking",
-        "remote_execution", "interoperable_federation",
-    ):
-        require(caps[key] is False, f"Phase 6 deployment/authority overclaim: {key}")
-    require(rust_claims() == caps, "Rust current claims disagree with Phase 6")
+    previous = load("claims/phase5c.json")["capabilities"]
+    historical_doc = load("claims/phase6.json")
+    require(historical_doc.get("document_type") == "qsol-fed-phase6-sdk-claims", "Phase 6 claim id drift")
+    require(historical_doc.get("gate_id") == "qsol-fed-phase6-sdk-gate/1", "Phase 6 gate id drift")
+    require(historical_doc.get("gate_status") == "enforced", "Phase 6 gate not enforced")
+    require(historical_doc.get("runtime_override_allowed") is False, "Phase 6 claims became runtime configurable")
+    historical = historical_doc["capabilities"]
+    require(set(previous).issubset(historical), "Phase 6 dropped a Phase 5C capability key")
+    require(all(historical[key] == value for key, value in previous.items()), "Phase 6 changed a Phase 5C capability")
+    require(set(historical) - set(previous) == PHASE6_CAPABILITIES, "Phase 6 capability delta drift")
+    require(all(historical[key] is True for key in PHASE6_CAPABILITIES), "Phase 6 SDK capability not established")
+    for key in ("oracle_holodeck_synthetic_admission", "host_level_sandbox", "production_networking", "remote_execution", "interoperable_federation"):
+        require(historical[key] is False, f"historical Phase 6 overclaim drift: {key}")
+
+    current = load("claims/phase7.json")["capabilities"]
+    require(set(historical).issubset(current), "Phase 7 dropped a Phase 6 capability key")
+    require(all(current[key] == value for key, value in historical.items()), "Phase 7 changed a historical Phase 6 capability")
+    require(set(current) - set(historical) == PHASE7_CAPABILITIES, "Phase 7 successor capability delta drift")
+    require(all(current[key] is True for key in PHASE7_CAPABILITIES), "Phase 7 Assembly capability missing")
+    require(rust_claims() == current, "Rust current claims disagree with Phase 7 successor")
 
 
 def validate_contract_and_fixture() -> None:
@@ -71,39 +83,29 @@ def validate_contract_and_fixture() -> None:
     require(state.get("sdk_contract") == "qsol-fed-sdk/1", "SDK contract id drift")
     require(state.get("wire_protocol") == "qsol-fed/1", "SDK wire protocol drift")
     require(state.get("canonical_profile") == "qsol-fed-canonical-json/1", "SDK canonical profile drift")
-    surface = state["minimal_surface"]
     required_surface = {
         "canonicalize", "object_id", "derive_message_id", "classify_protocol",
         "validate_capability_id", "build_node_manifest", "validate_node_manifest",
         "build_unsigned_envelope", "validate_unsigned_envelope", "build_provenance", "validate_provenance",
     }
-    require(set(surface) == required_surface, "minimal SDK surface drift")
-    implementations = state["implementations"]
-    require(set(implementations) == {"rust", "python", "typescript", "javascript_runtime"}, "SDK implementation set drift")
+    require(set(state["minimal_surface"]) == required_surface, "minimal SDK surface drift")
+    require(set(state["implementations"]) == {"rust", "python", "typescript", "javascript_runtime"}, "SDK implementation set drift")
     require(state["conformance"]["required_implementations"] == 3, "three-implementation conformance requirement drift")
     require(state["conformance"]["byte_identical_results"] is True, "byte-identical interop requirement drift")
     third = state["third_party_node"]
-    for key in (
-        "qsol_governance_adopted", "nexus_required", "council_required", "oracle_required",
-        "ark_required", "holodeck_required", "wire_namespace_implies_governance",
-    ):
+    for key in ("qsol_governance_adopted", "nexus_required", "council_required", "oracle_required", "ark_required", "holodeck_required", "wire_namespace_implies_governance"):
         require(third[key] is False, f"third-party independence drift: {key}")
-    authority = state["authority_boundary"]
-    require(all(value is False for value in authority.values()), "minimal SDK gained authority/application dependency")
+    require(all(value is False for value in state["authority_boundary"].values()), "minimal SDK gained authority/application dependency")
     deployment = state["deployment_claims"]
     require(deployment["language_neutral_sdk_interop"] is True and deployment["third_party_node_conformance"] is True, "Phase 6 interop evidence missing")
     require(deployment["deployed_interoperable_federation"] is False and deployment["production_networking"] is False and deployment["remote_execution"] is False, "Phase 6 deployment overclaim")
 
     fixture = load("fixtures/phase6/conformance.json")
     require(fixture["schema"] == "qsol-fed-sdk-conformance/1", "Phase 6 fixture schema drift")
-    profile = fixture["third_party_profile"]
-    require(profile == {
-        "schema": "third-party-node-profile/1",
-        "implementation": "neutral-research-node",
-        "governance_model": "local",
-        "qsol_governance_adopted": False,
-        "nexus_required": False,
-        "council_required": False,
+    require(fixture["third_party_profile"] == {
+        "schema": "third-party-node-profile/1", "implementation": "neutral-research-node",
+        "governance_model": "local", "qsol_governance_adopted": False,
+        "nexus_required": False, "council_required": False,
     }, "neutral third-party profile drift")
     expected = fixture["expected"]
     require(expected["node_manifest_object_id"] == "sha256:1c33ecd73cbf0730659079c66ea67ef4d126c4e0d6f3e38d16be6b805ca8b012", "node manifest vector drift")
@@ -150,21 +152,15 @@ def validate_schemas_and_implementations() -> None:
     ):
         for marker in markers:
             require(marker in text, f"{name} SDK marker missing: {marker}")
-
-    for forbidden in (
-        "crate::qsol_adapters", "crate::holodeck", "crate::oracle_live",
-        "PeerRegistry", "TrustRegistry", "CouncilOfCouncils",
-    ):
+    for forbidden in ("crate::qsol_adapters", "crate::holodeck", "crate::oracle_live", "PeerRegistry", "TrustRegistry", "CouncilOfCouncils"):
         require(forbidden not in rust, f"Rust minimal SDK imported application subsystem: {forbidden}")
 
     third_party = (ROOT / "examples/neutral_research_node.py").read_text(encoding="utf-8")
     modules, names = _python_imports(third_party)
-    forbidden_modules = {"nexus_runtime", "qsol_adapters", "oracle_live", "holodeck"}
     for module in modules:
-        require(not any(module == item or module.startswith(item + ".") for item in forbidden_modules), f"third-party node imported QSOL subsystem: {module}")
+        require(not any(module == item or module.startswith(item + ".") for item in {"nexus_runtime", "qsol_adapters", "oracle_live", "holodeck"}), f"third-party node imported QSOL subsystem: {module}")
     for forbidden_name in ("PeerRegistry", "TrustRegistry", "CouncilOfCouncils"):
         require(forbidden_name not in names, f"third-party node imported QSOL authority type: {forbidden_name}")
-
     require((ROOT / "sdk/python/test_sdk.py").is_file(), "Python Phase 6 adversarial regression suite missing")
     require((ROOT / "sdk/typescript/adversarial.mjs").is_file(), "JavaScript Phase 6 adversarial regression suite missing")
 
@@ -178,12 +174,7 @@ def validate_surfaces_and_ci() -> None:
         require(marker.lower() in integration.lower(), f"integration doc marker missing: {marker}")
 
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-    for marker in (
-        "qsol-fed-sdk-conformance", "sdk/python/conformance.py", "sdk/typescript/conformance.mjs",
-        "sdk/python/test_sdk.py", "sdk/typescript/adversarial.mjs", "neutral_research_node.py",
-        "validate_phase6_gate.py", "cmp /tmp/phase6-rust.json /tmp/phase6-python.json",
-        "cmp /tmp/phase6-rust.json /tmp/phase6-js.json",
-    ):
+    for marker in ("qsol-fed-sdk-conformance", "sdk/python/conformance.py", "sdk/typescript/conformance.mjs", "sdk/python/test_sdk.py", "sdk/typescript/adversarial.mjs", "neutral_research_node.py", "validate_phase6_gate.py", "cmp /tmp/phase6-rust.json /tmp/phase6-python.json", "cmp /tmp/phase6-rust.json /tmp/phase6-js.json"):
         require(marker in workflow, f"CI Phase 6 marker missing: {marker}")
 
     roadmap = (ROOT / "ROADMAP.md").read_text(encoding="utf-8")
@@ -194,9 +185,9 @@ def validate_surfaces_and_ci() -> None:
         require(marker in agents, f"AGENTS Phase 6 marker missing: {marker}")
 
     ai = load("README4AI.md")
-    require(ai.get("phase6_status") == "third_party_sdk_gate_enforced", "README4AI Phase 6 status missing")
-    require(ai.get("current_claim_manifest") == "claims/phase6.json", "README4AI current Phase 6 manifest drift")
-    require(ai.get("current_claims") == load("claims/phase6.json")["capabilities"], "README4AI Phase 6 claims drift")
+    require(ai.get("phase6_status") in {"third_party_sdk_gate_enforced", "historical_third_party_sdk_gate_preserved"}, "README4AI Phase 6 status missing")
+    require(ai.get("current_claim_manifest") == "claims/phase7.json", "README4AI Phase 7 successor manifest not active")
+    require(ai.get("current_claims") == load("claims/phase7.json")["capabilities"], "README4AI current Phase 7 claims drift")
 
 
 def main() -> None:
@@ -204,7 +195,7 @@ def main() -> None:
     validate_contract_and_fixture()
     validate_schemas_and_implementations()
     validate_surfaces_and_ci()
-    print("phase6 SDK gate OK: Rust/Python/TypeScript references, byte-identical three-implementation conformance, hostile parser parity, neutral third-party participation, and governance independence preserved without deployment overclaim")
+    print("phase6 historical SDK gate OK: Rust/Python/TypeScript conformance, hostile parser parity, neutral third-party participation, and governance independence preserved under Phase 7 successor")
 
 
 if __name__ == "__main__":
