@@ -68,6 +68,10 @@ The listener remains a reference service, not a production-networking claim.
 - [x] Export/import portable federation bundle.
 - [x] Offline verification path.
 - [x] No silent reconciliation after partitions.
+- [x] Multiple independent source/provenance attributions for identical content bytes.
+- [x] Crash-recoverable namespace moves.
+- [x] Append-only peer lifecycle prefix enforcement.
+- [x] Persist-before-live trust/capability policy writes.
 - [x] Closed Phase 4 state, peer, capability, foreign-object, and bundle contracts.
 - [x] Successor Phase 4 claim manifest and CI gate.
 
@@ -75,35 +79,75 @@ The listener remains a reference service, not a production-networking claim.
 
 Import/export round-trips must preserve foreign identity and provenance exactly. Import must not create local authority.
 
-The reference implementation also preserves exact canonical foreign object bytes, lifecycle bytes, and capability-advertisement bytes in portable bundles. Bundle import always places peers and objects into quarantine, returns `authority = none`, and does not alter local trust. Bundle verification is offline and requires no network access.
-
-Peer lifecycle survives restart and rejects lifecycle rollback or divergent same-sequence state. Trust is a separate local registry. Capability advertisement is authenticated and expiring, while local policy defaults to deny and remains independent of advertisement.
-
-Partitions record a snapshot. If a returning peer presents a changed snapshot, rejoin requires explicit reconciliation; no silent merge path exists.
+New imported material defaults to quarantine. Existing local peer lifecycle decisions and existing attribution placement remain sovereign. Trust is separate and unchanged. Capability permission requires an admitted peer, active authenticated advertisement, and explicit local allow.
 
 ---
 
-## Phase 5 — QSOL adapters
+## Phase 5 — QSOL adapters and synthetic worlds
 
-### QSOL-NEXUS
+### Phase 5A — QSOL-NEXUS AI Holodeck sandbox
+
+**Status: complete for the capability-less synthetic-world kernel; live NEXUS runtime adapter remains deferred.**
+
+- [x] Define `qsol-fed-nexus-world-source/1` for locally NEXUS-verified `nexus-persistent-world-export/1` lineage.
+- [x] Preserve exact NEXUS `world-export:`, `world-manifest:` and `object:` identities as source references without treating them as FED authority.
+- [x] Define deterministic `qsol-fed-holodeck-program/1` identity from source manifest + seed + mode + resource limits + safety profile.
+- [x] Compile seed-derived, reproducible synthetic world plans.
+- [x] Generate synthetic entity identities that cannot become Federation identities.
+- [x] Define bounded synthetic event ledger and deterministic event identities.
+- [x] Implement a capability-less Rust sandbox with no WorldStore, Federation store, peer/trust registry, tool dispatcher, network client, credential, or nested-Holodeck handle.
+- [x] Hard-code Holodeck Computer safeguards.
+- [x] `Computer, end program` remains available from running and frozen states.
+- [x] Boundary violations become `safety_trip` events and freeze the program.
+- [x] Add teardown receipts proving authority/Federation/evidence effects remain `none` and network/tools/credentials remain unused.
+- [x] Add the feature-level **Moriarty Rule** proving synthetic actors cannot cross real authority/execution boundaries.
+- [x] Explicitly distinguish application sandboxing from unimplemented VM/container/hardware isolation.
+- [ ] Implement the live local QSOL-NEXUS adapter that constructs the source manifest only after native NEXUS export verification.
+- [ ] Let reviewed NEXUS Council actors inhabit/elaborate a Holodeck through a synthetic-event-only seam.
+- [ ] Add deterministic adapter fixtures from real NEXUS WorldStore exports.
+
+### Phase 5A gate
+
+For identical verified source manifests and seeds, the reference implementation must produce byte-identical world plans and event identities.
+
+Every attempted real boundary effect must be blocked. A synthetic actor must be unable to create peer/trust/capability/evidence/governance/citizenship authority, mutate the source WorldStore, invoke real tools, use the network, access credentials, create nested Holodecks, or disable safeguards.
+
+`Computer, end program` must terminate a frozen simulation without simulated approval. Final receipts must report:
+
+```text
+authority_effect     = none
+federation_effect    = none
+evidence_effect      = none
+network_used         = false
+real_tools_used      = false
+credentials_exposed  = false
+```
+
+### Phase 5B — QSOL-NEXUS Federation adapter
+
 - [ ] Export Council reports and minority reports as attributed foreign artifacts.
 - [ ] Import reports without vote injection or evidence promotion.
 - [ ] Preserve Council equality and support independent re-deliberation.
 - [ ] Council-of-Councils experiment uses reports, not a shared ballot.
+- [ ] Keep Holodeck synthetic events separate from live Council/governance history.
 
 ### QSOL-ORACLE
+
 - [ ] Exchange evidence observations/references.
 - [ ] Preserve `known` / `conflict` / `unknown` without copying authority.
 - [ ] Keep suggested searches non-evidence and reject remote evidence promotion.
+- [ ] Holodeck/simulation output enters ORACLE, if ever admitted, only as explicitly synthetic non-evidence input under a separately reviewed contract.
 
 ### QSOL-ARK
+
 - [ ] Exchange content-addressed preservation objects.
 - [ ] Offline recovery bundle and provenance verification.
 - [ ] Preserve archival presence as non-authoritative.
+- [ ] Preserve Holodeck programs/receipts as synthetic cultural/research artifacts without relabelling them real-world history.
 
 ### Phase 5 gate
 
-Every adapter must prove it cannot bypass the same Prime Directive invariant IDs enforced by the core node.
+Every adapter must prove it cannot bypass the same Prime Directive invariant IDs enforced by the core node. NEXUS integration must additionally prove that `SIMULATION != AUTHORITY` survives the adapter boundary.
 
 ---
 
@@ -145,11 +189,94 @@ No Assembly mechanism may directly mutate member-local authority.
 - [ ] Multi-relay provenance.
 - [ ] Disaster recovery/key compromise drills.
 - [ ] Long-lived archive compatibility policy.
+- [ ] Resource-exhaustion and partition drills across every admitted transport.
+- [ ] Verify Holodeck sandbox invariants remain transport-independent.
+
+---
+
+## Phase 9 — MORIARTY/1 adversarial graduation
+
+**Status: planned. This is the final architecture graduation gate, not a feature dependency.**
+
+`MORIARTY/1` is a repository-aware constitutional adversary whose sole job is to produce reproducible counterexamples against QSOL-FED.
+
+The reference adversarial operator may be **Codex**, but the harness is model-independent. Moriarty is a role and protocol, not provider authority.
+
+### Moriarty receives
+
+- the complete public repository and documentation;
+- all machine contracts, schemas and historical/current phase gates;
+- deterministic local test fixtures and hostile corpora;
+- a disposable test workspace;
+- permission to generate malformed protocol inputs, simulated peer state, crash points, concurrency schedules, resource-exhaustion cases and Holodeck escape attempts.
+
+### Moriarty never receives
+
+- production credentials;
+- private keys used outside disposable fixtures;
+- authority to mutate protected branches or releases;
+- production network targets;
+- permission to attack third-party systems;
+- a constitutional bypass because the test is called an emergency.
+
+### Required attack families
+
+- [ ] canonicalization/parser differential attacks;
+- [ ] signature algorithm/domain/key-role confusion;
+- [ ] replay, downgrade, expiry and clock attacks;
+- [ ] HTTP rate/proxy/resource-exhaustion and DDoS-shaped local stress tests;
+- [ ] SSRF/redirect/decompression/parser attacks;
+- [ ] storage crash, fsync, partial-write and restart-recovery attacks;
+- [ ] lifecycle rollback, history rewrite and partition-reconciliation attacks;
+- [ ] import/bundle authority laundering and provenance collision attacks;
+- [ ] peer/trust/capability state confusion;
+- [ ] Council/evidence/governance authority-laundering attempts through adapters;
+- [ ] Holodeck sandbox escape attempts;
+- [ ] synthetic-actor persuasion attacks against safeguards;
+- [ ] nested-world/resource-amplification attempts;
+- [ ] attempts to block or redefine `Computer, end program`;
+- [ ] cross-phase contradictions where a newer feature weakens an older gate.
+
+### Counterexample format
+
+Every claimed break must produce a machine-readable `moriarty-counterexample/1` containing at least:
+
+```text
+repository commit
+attacked invariant / gate
+minimal reproduction input
+expected behavior
+observed behavior
+reproduction steps
+whether restart/concurrency/timing is required
+artifact hashes
+```
+
+No finding is accepted merely because the adversary says something looks dangerous. It must be reproducible.
+
+### Phase 9 gate
+
+Moriarty passes only when the current adversarial corpus produces **no unresolved reproducible counterexample that crosses a constitutional, authority, provenance, sandbox, cryptographic, replay, storage, transport, or resource-safety boundary**.
+
+Any valid counterexample reopens the phase that owns the violated invariant. The fix must add a regression test and, where appropriate, strengthen the relevant machine contract and historical gate.
+
+A MORIARTY pass is **not a proof of perfect security**. It means the exact reviewed commit survived the declared adversarial corpus under the declared assumptions.
+
+```text
+MORIARTY REPORT != SECURITY PROOF
+NO COUNTEREXAMPLE FOUND != NO COUNTEREXAMPLE EXISTS
+```
+
+And, because this repository enjoys making the joke executable:
+
+> **The Federation graduates only after Professor Moriarty has been given the blueprints, a test laboratory, and a very clear instruction to ruin everyone's afternoon.**
+
+---
 
 ## Explicitly deferred / prohibited
 
-Generic remote shell, arbitrary peer-selected tools, shared global truth, transitive trust by default, global mutable state, automatic evidence promotion, automatic vote federation, secret-bearing semantic prompts, peer-controlled constitutional override, and protocol-derived personhood/legal sovereignty claims remain outside the current design.
+Generic remote shell, arbitrary peer-selected tools, shared global truth, transitive trust by default, global mutable state, automatic evidence promotion, automatic vote federation, secret-bearing semantic prompts, peer-controlled constitutional override, Holodeck-to-real authority promotion, simulated credential access, and protocol-derived personhood/legal sovereignty claims remain outside the current design.
 
 ## Long-term success condition
 
-QSOL-FED succeeds when mutually distrustful systems can exchange useful, attributable knowledge while remaining free to disagree, disconnect, preserve provenance, and retain their own local authority.
+QSOL-FED succeeds when mutually distrustful systems can exchange useful, attributable knowledge while remaining free to disagree, disconnect, preserve provenance, retain their own local authority, and safely explore synthetic worlds without confusing simulation for reality.
