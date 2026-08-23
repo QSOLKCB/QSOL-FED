@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": [
     "schema", "receipt_id", "proposal_id", "outcome", "charter_gate",
-    "representation_model", "electorate_size", "yes_votes", "no_votes",
+    "representation_model", "electorate_ref", "electorate_size", "yes_votes", "no_votes",
     "abstain_votes", "quorum_required", "quorum_met", "approval_required",
     "approval_met", "version_path", "source_change_required",
     "protocol_changed_automatically", "member_local_authority_mutated",
@@ -30,6 +30,7 @@
       }
     },
     "representation_model": {"const": "one-member-one-vote/1"},
+    "electorate_ref": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
     "electorate_size": {"type": "integer", "minimum": 1, "maximum": 1024},
     "yes_votes": {"type": "integer", "minimum": 0, "maximum": 1024},
     "no_votes": {"type": "integer", "minimum": 0, "maximum": 1024},
