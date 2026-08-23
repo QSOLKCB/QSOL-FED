@@ -18,6 +18,53 @@ NEW_CAPABILITIES = {
     "assembly_fork_version_path",
     "assembly_governance_receipts",
 }
+EXPECTED_AUTHORITY_KEYS = {
+    "assembly_may_mutate_peer_registry",
+    "assembly_may_mutate_trust_registry",
+    "assembly_may_install_capability",
+    "assembly_may_promote_evidence",
+    "assembly_may_rewrite_history",
+    "assembly_may_mutate_citizenship",
+    "assembly_may_execute_tools",
+    "assembly_may_access_credentials",
+    "assembly_may_use_network",
+    "assembly_may_open_files",
+    "assembly_may_spawn_processes",
+    "assembly_may_mutate_member_local_governance",
+    "assembly_consensus_is_truth",
+    "assembly_consensus_is_member_local_authority",
+}
+EXPECTED_ASSEMBLY_USES = {
+    "std::collections::{BTreeMap,BTreeSet}",
+    "std::fmt",
+    "serde::{Deserialize,Serialize}",
+    "serde_json::Value",
+    "sha2::{Digest,Sha256}",
+    "unicode_normalization::UnicodeNormalization",
+    "crate::canonical::{canonicalize,sha256_ref}",
+    "crate::wire::{is_node_id,is_sha256_ref}",
+    "std::fmt::Writeas_",
+}
+FORBIDDEN_CAPABILITY_PATHS = (
+    "std::net::",
+    "std::fs::",
+    "std::process::",
+    "std::os::",
+    "std::env::",
+    "std::thread::",
+    "tokio::",
+    "reqwest::",
+    "hyper::",
+    "axum::",
+    "tower::",
+    "crate::peering",
+    "crate::store",
+    "crate::oracle_live",
+    "crate::qsol_adapters",
+    "crate::holodeck",
+    "crate::replay",
+    "crate::crypto",
+)
 
 
 def require(condition: bool, message: str) -> None:
@@ -41,6 +88,13 @@ def rust_claims() -> dict[str, bool]:
     result = {key: value == "true" for key, value in pairs}
     require(len(result) == len(pairs), "duplicate Rust current claim")
     return result
+
+
+def rust_use_statements(source: str) -> set[str]:
+    return {
+        re.sub(r"\s+", "", match)
+        for match in re.findall(r"(?ms)^\s*use\s+(.+?);", source)
+    }
 
 
 def validate_claims() -> None:
@@ -85,15 +139,26 @@ def validate_contract() -> None:
     require(representation["member_vote_weight"] == 1, "Assembly vote weight drift")
     require(representation["one_vote_per_member_per_proposal"] is True, "Assembly one-vote rule drift")
     require(representation["electorate_snapshotted_when_proposal_opens"] is True, "electorate snapshot drift")
+    require(representation["proposal_embeds_full_electorate"] is False, "proposal reintroduced oversized electorate embedding")
+    require(representation["proposal_records_electorate_ref_and_size"] is True, "bounded electorate identity drift")
     require(representation["mid_vote_membership_change_reweights_electorate"] is False, "mid-vote electorate mutation enabled")
 
     lifecycle = state["proposal_lifecycle"]
+    require(lifecycle["states"] == ["open", "fork_required", "withdrawn"], "active proposal state set drift")
+    require(lifecycle["final_outcomes_live_in_receipts"] is True, "terminal outcomes leaked back into mutable proposal state")
+    require(lifecycle["proposal_record_semantic_validator"] == "validate_proposal_record_semantics", "proposal semantic validator drift")
+    require(lifecycle["schema_only_is_sufficient"] is False, "proposal schema incorrectly became sufficient without Charter derivation")
+    require(lifecycle["maximum_active_proposals"] == 1024, "active proposal limit drift")
+    require(lifecycle["finalization_is_terminal"] is True and lifecycle["fork_required_finalization_is_terminal"] is True, "proposal finalization terminality drift")
+    require(lifecycle["finalization_reclaims_active_capacity"] is True, "finalized proposals no longer reclaim active capacity")
     require(lifecycle["duplicate_vote_replacement"] is False, "Assembly vote history became mutable")
+    require(lifecycle["protocol_and_charter_amendments_require_compatibility"] is True, "amendment compatibility validation drift")
     require(lifecycle["accepted_proposal_executes_source_change"] is False, "Assembly acceptance gained source execution")
     require(lifecycle["accepted_proposal_changes_running_protocol"] is False, "Assembly acceptance gained runtime protocol mutation")
 
     gate = state["charter_gate_policy"]
     require(gate["deterministic"] is True and gate["uses_existing_invariant_ids"] is True, "deterministic Charter Gate drift")
+    require(gate["assessment_derived_from_declared_effects"] is True and gate["proposal_record_must_match_derived_assessment"] is True, "Charter Gate semantic binding drift")
     require(gate["ordinary_proposal_can_weaken_current_constitution"] is False, "ordinary Assembly proposal can weaken Charter")
     require(gate["conflicting_current_lineage_proposal"] == "fork_required", "Charter conflict routing drift")
     require(gate["fork_endorsement_mutates_current_lineage"] is False, "fork endorsement rewrites current lineage")
@@ -112,12 +177,14 @@ def validate_contract() -> None:
     receipts = state["governance_receipts"]
     require(receipts["schema"] == "qsol-fed-governance-receipt/1", "governance receipt schema drift")
     require(receipts["deterministic_identity"] is True, "governance receipt identity drift")
+    require(receipts["records_electorate_digest_and_tally"] is True, "receipt electorate binding drift")
     require(receipts["protocol_changed_automatically"] is False, "governance receipt gained protocol execution")
     require(receipts["member_local_authority_mutated"] is False, "governance receipt gained member-local mutation")
     require(receipts["authority_effect"] == "none", "governance receipt gained authority")
 
     authority = state["authority_boundary"]
-    require(all(value is False for value in authority.values()), "Assembly authority boundary gained a forbidden effect")
+    require(set(authority) == EXPECTED_AUTHORITY_KEYS, "Assembly authority-boundary key set drift")
+    require(all(authority[key] is False for key in EXPECTED_AUTHORITY_KEYS), "Assembly authority boundary gained a forbidden effect")
 
 
 def validate_schemas_and_source() -> None:
@@ -132,13 +199,20 @@ def validate_schemas_and_source() -> None:
     require(member["properties"]["representation_weight"].get("const") == 1, "member schema representation weight drift")
     require(member["properties"]["authority_effect"].get("const") == "none", "member schema authority drift")
 
+    require(proposal.get("x-qsol-semanticValidator") == "validate_proposal_record_semantics", "proposal schema semantic validator missing")
+    require("MUST be followed" in proposal.get("$comment", ""), "proposal schema semantic-validation requirement missing")
+    require("electorate_ref" in proposal["required"] and "electorate_size" in proposal["required"], "proposal bounded electorate fields missing")
+    require("electorate_member_ids" not in proposal["properties"], "proposal schema reintroduced oversized electorate embedding")
+    require(proposal["properties"]["status"].get("enum") == ["open", "fork_required", "withdrawn"], "proposal active status schema drift")
+    require(len(proposal.get("allOf", [])) >= 3, "proposal kind/compatibility structural rules missing")
     advisory = proposal["$defs"]["advisory"]["properties"]
     require(advisory["advisory_weight"].get("const") == 0 and advisory["vote_weight"].get("const") == 0, "Assembly advisory weight schema drift")
     require(advisory["authority_effect"].get("const") == "none", "Assembly advisory authority drift")
-    gate = proposal["$defs"]["charterGate"]["properties"]
-    require(gate["gate"].get("const") == "qsol-fed-charter-gate/1", "Charter Gate schema id drift")
-    require(gate["member_local_authority_effect"].get("const") == "none", "Charter Gate schema authority drift")
+    charter = proposal["$defs"]["charterGate"]["properties"]
+    require(charter["gate"].get("const") == "qsol-fed-charter-gate/1", "Charter Gate schema id drift")
+    require(charter["member_local_authority_effect"].get("const") == "none", "Charter Gate schema authority drift")
 
+    require(receipt["properties"]["electorate_ref"].get("pattern") == "^sha256:[0-9a-f]{64}$", "receipt electorate digest drift")
     require(receipt["properties"]["protocol_changed_automatically"].get("const") is False, "receipt automatic protocol change drift")
     require(receipt["properties"]["member_local_authority_mutated"].get("const") is False, "receipt member-local mutation drift")
     require(receipt["properties"]["nexus_advisory_vote_weight"].get("const") == 0, "receipt NEXUS vote weight drift")
@@ -146,27 +220,30 @@ def validate_schemas_and_source() -> None:
 
     assembly = (ROOT / "src/assembly.rs").read_text(encoding="utf-8")
     for marker in (
+        "default_and_new_start_at_sequence_one",
         "network_membership_does_not_grant_assembly_membership",
         "normalized_representation_subject_cannot_duplicate_active_membership",
         "electorate_snapshot_cannot_be_reweighted_mid_vote",
-        "charter_gate_routes_member_local_authority_mutation_to_fork_path",
+        "maximum_electorate_uses_digest_not_oversized_identity_projection",
+        "protocol_amendment_rejects_not_applicable_compatibility",
+        "fork_required_finalization_is_terminal",
+        "finalized_proposal_reclaims_active_capacity",
+        "proposal_semantic_validator_rejects_forged_gate",
         "accepted_amendment_creates_receipt_not_execution",
         "nexus_advisory_report_has_zero_vote_weight",
         "incompatible_fork_can_be_endorsed_without_rewriting_current_lineage",
         "governance_receipt_identity_is_deterministic",
-        "ASSEMBLY_CHARTER_GATE_V1",
-        "ANTI_SYBIL_ASSUMPTION",
+        "validate_proposal_record_semantics",
+        "ASSEMBLY_ELECTORATE_DOMAIN_V1",
         "member_local_authority_mutated: false",
         "protocol_changed_automatically: false",
     ):
         require(marker in assembly, f"Phase 7 Rust marker missing: {marker}")
 
-    for forbidden in (
-        "PeerRegistry", "TrustRegistry", "LocalCapabilityPolicy", "FederationObjectStore",
-        "OracleLiveAdapter", "DurableReplayStore", "LocalSigningKey", "std::process::Command",
-        "TcpStream", "tokio::net", "reqwest", "hyper::client",
-    ):
-        require(forbidden not in assembly, f"Assembly kernel gained member-local/execution capability: {forbidden}")
+    uses = rust_use_statements(assembly)
+    require(uses == EXPECTED_ASSEMBLY_USES, f"Assembly Rust import allowlist drift: {sorted(uses)}")
+    for forbidden in FORBIDDEN_CAPABILITY_PATHS:
+        require(forbidden not in assembly, f"Assembly kernel gained forbidden capability path: {forbidden}")
 
 
 def validate_surfaces_and_ci() -> None:
@@ -205,7 +282,7 @@ def main() -> None:
     validate_contract()
     validate_schemas_and_source()
     validate_surfaces_and_ci()
-    print("phase7 Assembly gate OK: separate opt-in membership, frozen representation, explicit anti-Sybil assumptions, deterministic Charter/fork routing, zero-weight NEXUS advice, deterministic receipts, and no member-local authority mutation")
+    print("phase7 Assembly gate OK: separate opt-in membership, bounded electorate digests, immutable finalization, explicit anti-Sybil assumptions, deterministic Charter/fork routing, zero-weight NEXUS advice, semantic proposal validation, deterministic receipts, and no member-local authority mutation")
 
 
 if __name__ == "__main__":
