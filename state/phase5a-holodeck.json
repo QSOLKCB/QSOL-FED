@@ -35,7 +35,7 @@
     "nested_holodeck_allowed": false,
     "participant_can_disable_safeguards": false,
     "participant_can_block_end_program": false,
-    "boundary_violation_action": "record safety_trip and freeze",
+    "boundary_violation_action": "freeze before safety_trip audit append; audit append may fail closed at hard event ceiling",
     "simulation_output_authority": "none",
     "simulation_output_federation_effect": "none",
     "simulation_output_evidence_effect": "none"
@@ -49,6 +49,7 @@
     "maximum_entities": 256,
     "maximum_event_source_refs": 16,
     "maximum_text_bytes": 4096,
+    "text_byte_limit_schema_keyword": "x-qsol-maxUtf8Bytes",
     "event_source_refs_must_come_from_source_manifest": true,
     "event_ids_deterministic": true,
     "teardown_receipt_schema": "qsol-fed-holodeck-receipt/1"
@@ -70,5 +71,5 @@
     "remote_execution": false,
     "deployed_interoperable_federation": false
   },
-  "phase5a_gate": "identical verified source manifests and seeds must produce byte-identical world plans and event identities; every attempted real boundary effect must be blocked; Computer end program must remain available from a frozen simulation; synthetic output must report authority, Federation effect, and evidence effect as none"
+  "phase5a_gate": "identical verified source manifests and seeds must produce byte-identical world plans and event identities; every attempted real boundary effect must freeze the sandbox even if audit capacity is exhausted; Computer end program must remain available from a frozen simulation; synthetic output must report authority, Federation effect, and evidence effect as none"
 }
