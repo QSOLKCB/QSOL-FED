@@ -5,15 +5,16 @@
   "wire_protocol": "qsol-fed/1",
   "charter": "qsol-fed-charter/1",
   "prime_directive": "qsol-fed-prime-directive/1",
-  "status": "phase5_adapter_gate_enforced",
+  "status": "phase5c_oracle_live_gate_enforced",
   "phase0_status": "historical_gate_preserved",
   "phase1_status": "canonical_wire_gate_enforced",
   "phase2_status": "historical_crypto_gate_preserved",
   "phase3_status": "historical_api_gate_preserved",
   "phase4_status": "historical_federation_state_gate_preserved",
   "phase5a_status": "historical_holodeck_sandbox_gate_preserved",
-  "phase5_status": "qsol_adapter_gate_enforced",
-  "claim_boundary": "Phase 5 preserves the reviewed Phase 0-5A substrate and adds a pinned live-local native-verified QSOL-NEXUS bridge, Council report/minority-report adapter, synthetic-only Council-actor Holodeck seam, FED-side ORACLE evidence membrane, and offline QSOL-ARK preservation adapter. ORACLE live transport and Holodeck-to-ORACLE synthetic admission remain explicitly deferred; host-level sandboxing, production networking, remote execution, and deployed multi-implementation federation remain unestablished.",
+  "phase5_status": "historical_qsol_adapter_gate_preserved",
+  "phase5c_status": "oracle_live_transport_gate_enforced",
+  "claim_boundary": "Phase 5C preserves the reviewed Phase 0-5 adapter substrate and promotes only an attested live-local QSOL-ORACLE transport pinned to merged donor commit 043e864b3c25dfeca3ce1752b3110479479071b1 and release fingerprint 7b0eff4dfa9b0caa84f14920d21f6a5446114535d82706cb62e34773c39818d2. The transport is bounded canonical local stdio JSONL, creates no truth/evidence/governance/capability/citizenship/history/execution authority, and does not admit Holodeck synthetic input. Host-level sandboxing, production networking, remote execution, and deployed multi-implementation federation remain unestablished.",
   "phase0_claims": {
     "constitutional_model": true,
     "machine_contracts": true,
@@ -24,7 +25,7 @@
     "remote_execution": false,
     "interoperable_federation": false
   },
-  "current_claim_manifest": "claims/phase5.json",
+  "current_claim_manifest": "claims/phase5c.json",
   "current_claims": {
     "constitutional_model": true,
     "machine_contracts": true,
@@ -62,7 +63,7 @@
     "nexus_independent_redeliberation": true,
     "council_of_councils_reports_only": true,
     "oracle_evidence_membrane": true,
-    "oracle_live_transport": false,
+    "oracle_live_transport": true,
     "oracle_holodeck_synthetic_admission": false,
     "ark_offline_preservation_adapter": true,
     "host_level_sandbox": false,
@@ -123,6 +124,7 @@
     "host_level_sandbox_claim": false
   },
   "phase5_adapters": {
+    "historical": true,
     "contract": "state/phase5.json",
     "documentation": "QSOL_ADAPTERS.md",
     "rust_membrane": "src/qsol_adapters.rs",
@@ -144,6 +146,28 @@
     "ark_archival_presence_is_authority": false,
     "simulation_is_authority": false
   },
+  "phase5c_oracle_live": {
+    "contract": "state/phase5c.json",
+    "claim_manifest": "claims/phase5c.json",
+    "donor_contract_snapshot": "contracts/oracle-fed-membrane-v1.json",
+    "request_schema": "schemas/oracle-transport-request-v1.schema.json",
+    "response_schema": "schemas/oracle-transport-response-v1.schema.json",
+    "observation_schema": "schemas/oracle-observation-v1.schema.json",
+    "rust_adapter": "src/oracle_live.rs",
+    "probe_binary": "src/bin/qsol-fed-oracle.rs",
+    "gate_validator": "tools/validate_phase5c_gate.py",
+    "oracle_repository": "QSOLKCB/QSOL-ORACLE",
+    "oracle_pinned_commit": "043e864b3c25dfeca3ce1752b3110479479071b1",
+    "oracle_release_fingerprint_sha256": "7b0eff4dfa9b0caa84f14920d21f6a5446114535d82706cb62e34773c39818d2",
+    "transport_profile": "local-stdio-jsonl",
+    "runtime_release_fingerprint_attestation": true,
+    "cross_repository_schema_comparison": true,
+    "transport_authority": "none",
+    "oracle_live_transport": true,
+    "oracle_holodeck_synthetic_admission": false,
+    "production_networking": false,
+    "remote_execution": false
+  },
   "normative_precedence": [
     "invariants/fed-v1.json",
     "claims/phase0.json",
@@ -152,6 +176,7 @@
     "claims/phase4.json",
     "claims/phase5a.json",
     "claims/phase5.json",
+    "claims/phase5c.json",
     "src/invariants.rs",
     "src/claims.rs",
     "wire/phase1.json",
@@ -160,8 +185,10 @@
     "state/phase4.json",
     "state/phase5a-holodeck.json",
     "state/phase5.json",
+    "state/phase5c.json",
     "src/holodeck.rs",
     "src/qsol_adapters.rs",
+    "src/oracle_live.rs",
     "tools/nexus_live_adapter.py",
     "tests_and_ci",
     "CHARTER.md",
@@ -178,7 +205,7 @@
     "README.md.phase0_claim_gate"
   ],
   "current_claim_precedence": [
-    "claims/phase5.json",
+    "claims/phase5c.json",
     "src/claims.rs.CURRENT_CLAIMS",
     "README4AI.md.current_claims",
     "README.md.current_claim_gate"
@@ -230,7 +257,8 @@
     "adapter_vote_injection": false,
     "adapter_evidence_promotion": false,
     "adapter_authority_promotion": false,
-    "oracle_live_transport_claim": false,
+    "oracle_live_transport_claim": true,
+    "oracle_holodeck_synthetic_admission": false,
     "host_level_sandbox_claim": false,
     "remote_execution_enabled": false,
     "production_networking_claim": false
@@ -245,13 +273,17 @@
     "phase4_claims": "claims/phase4.json",
     "phase5a_claims": "claims/phase5a.json",
     "phase5_claims": "claims/phase5.json",
+    "phase5c_claims": "claims/phase5c.json",
     "phase4_state": "state/phase4.json",
     "phase5a_holodeck": "state/phase5a-holodeck.json",
     "phase5_adapters": "state/phase5.json",
+    "phase5c_oracle_live": "state/phase5c.json",
     "holodeck_docs": "HOLODECK.md",
     "adapter_docs": "QSOL_ADAPTERS.md",
     "rust_adapters": "src/qsol_adapters.rs",
+    "rust_oracle_live": "src/oracle_live.rs",
     "nexus_live_adapter": "tools/nexus_live_adapter.py",
-    "phase5_validator": "tools/validate_phase5_gate.py"
+    "phase5_validator": "tools/validate_phase5_gate.py",
+    "phase5c_validator": "tools/validate_phase5c_gate.py"
   }
 }
