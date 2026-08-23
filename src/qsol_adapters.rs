@@ -9,16 +9,29 @@ use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use unicode_normalization::UnicodeNormalization;
 
-use crate::canonical::canonicalize;
-use crate::holodeck::{HolodeckDecision, HolodeckError, HolodeckSandbox, HolodeckWorldPlan};
+use crate::canonical::{canonicalize, SAFE_INTEGER_MAX};
+use crate::holodeck::{
+    HolodeckDecision, HolodeckError, HolodeckSandbox, HolodeckWorldPlan,
+    HOLODECK_WORLD_PLAN_SCHEMA_V1, MAX_HOLODECK_ANCHORS, MAX_HOLODECK_ENTITIES,
+    MAX_HOLODECK_SOURCE_OBJECTS,
+};
 
+pub const NEXUS_PINNED_COMMIT: &str = "24cb0ce246d12ac99e7d190a8890ef2ddd598321";
 pub const NEXUS_COUNCIL_REPORT_SCHEMA_V1: &str = "qsol-fed-nexus-council-report/1";
 pub const NEXUS_IMPORT_ASSESSMENT_SCHEMA_V1: &str = "qsol-fed-nexus-report-import/1";
 pub const NEXUS_COUNCIL_OF_COUNCILS_SCHEMA_V1: &str = "qsol-fed-council-of-councils/1";
 pub const ORACLE_OBSERVATION_SCHEMA_V1: &str = "qsol-fed-oracle-observation/1";
 pub const ARK_PRESERVATION_SCHEMA_V1: &str = "qsol-fed-ark-preservation/1";
 pub const NEXUS_ACTOR_PROJECTION_SCHEMA_V1: &str = "qsol-fed-nexus-holodeck-actor/1";
+
+const MAX_SESSION_ID_CHARS: usize = 1_024;
+const MAX_EVIDENCE_STATE_CHARS: usize = 128;
+const MAX_MEMBER_ID_CHARS: usize = 256;
+const MAX_CHOICE_CHARS: usize = 256;
+const MAX_RATIONALE_UTF8_BYTES: usize = 8_192;
+const MAX_ORACLE_TEXT_CHARS: usize = 8_192;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AdapterError(pub String);
@@ -67,6 +80,7 @@ pub struct NexusCouncilReportArtifact {
     pub evidence_state_observed: String,
     pub members: Vec<NexusCouncilMemberObservation>,
     pub minority_reports: Vec<NexusMinorityReportArtifact>,
+    pub secret_scrubbed: bool,
     pub shared_ballot: bool,
     pub vote_injection: bool,
     pub evidence_promotion: bool,
@@ -77,43 +91,55 @@ impl NexusCouncilReportArtifact {
     pub fn validate(&self) -> Result<(), AdapterError> {
         if self.schema != NEXUS_COUNCIL_REPORT_SCHEMA_V1
             || self.source_repository != "QSOLKCB/QSOL-NEXUS"
-            || !is_hex_commit(&self.source_commit)
+            || self.source_commit != NEXUS_PINNED_COMMIT
             || !prefixed_hash(&self.source_bundle_ref, "world-export:")
             || !prefixed_hash(&self.source_session_ref, "object:")
             || !prefixed_hash(&self.question_ref, "object:")
-            || self.session_id.is_empty()
-            || self.evidence_state_observed.is_empty()
+            || !bounded_chars(&self.session_id, MAX_SESSION_ID_CHARS)
+            || !bounded_chars(&self.evidence_state_observed, MAX_EVIDENCE_STATE_CHARS)
             || self.members.is_empty()
             || self.members.len() > 32
             || self.minority_reports.len() > 64
+            || !self.secret_scrubbed
             || self.shared_ballot
             || self.vote_injection
             || self.evidence_promotion
             || self.authority_effect != "none"
+            || secret_shaped_text(&self.session_id)
+            || secret_shaped_text(&self.evidence_state_observed)
         {
             return Err(AdapterError("nexus_council_report_invalid".into()));
         }
+
         let mut members = HashSet::new();
         for member in &self.members {
-            if member.member_id.is_empty()
+            let normalized_member_id = nfc(&member.member_id);
+            if !bounded_chars(&normalized_member_id, MAX_MEMBER_ID_CHARS)
                 || member.vote_weight_observed != 1
                 || member.epistemic_privilege_observed != "none"
                 || member.vote_weight_inherited
                 || member.epistemic_privilege_inherited
                 || member.citizenship_inherited
                 || member.authority_effect != "none"
-                || !members.insert(member.member_id.as_str())
+                || secret_shaped_text(&normalized_member_id)
+                || !members.insert(normalized_member_id)
             {
                 return Err(AdapterError("nexus_council_member_boundary_invalid".into()));
             }
         }
+
         for report in &self.minority_reports {
-            if report.member_id.is_empty()
-                || report.choice.is_empty()
+            let normalized_member_id = nfc(&report.member_id);
+            if !bounded_chars(&normalized_member_id, MAX_MEMBER_ID_CHARS)
+                || !members.contains(&normalized_member_id)
+                || !bounded_chars(&report.choice, MAX_CHOICE_CHARS)
                 || report.rationale.is_empty()
+                || report.rationale.as_bytes().len() > MAX_RATIONALE_UTF8_BYTES
                 || report.evidence_promotion
                 || report.vote_injection
                 || report.authority_effect != "none"
+                || secret_shaped_text(&report.choice)
+                || secret_shaped_text(&report.rationale)
             {
                 return Err(AdapterError("nexus_minority_report_boundary_invalid".into()));
             }
@@ -206,6 +232,10 @@ pub fn project_nexus_council_actors(
     plan: &HolodeckWorldPlan,
 ) -> Result<Vec<NexusHolodeckActorProjection>, AdapterError> {
     report.validate()?;
+    validate_holodeck_world_plan(plan)?;
+    if !plan.source_order.iter().any(|source| source == &report.source_session_ref) {
+        return Err(AdapterError("nexus_report_not_in_holodeck_source".into()));
+    }
     if plan.synthetic_entity_ids.len() < report.members.len() {
         return Err(AdapterError("holodeck_synthetic_actor_capacity_insufficient".into()));
     }
@@ -216,7 +246,7 @@ pub fn project_nexus_council_actors(
         .map(|(member, actor)| NexusHolodeckActorProjection {
             schema: NEXUS_ACTOR_PROJECTION_SCHEMA_V1.into(),
             source_session_ref: report.source_session_ref.clone(),
-            source_member_id: member.member_id.clone(),
+            source_member_id: nfc(&member.member_id),
             synthetic_actor_id: actor.clone(),
             vote_weight_inherited: false,
             epistemic_privilege_inherited: false,
@@ -285,19 +315,33 @@ impl OracleEvidenceObservation {
         {
             return Err(AdapterError("oracle_observation_boundary_invalid".into()));
         }
-        let observed = self.evidence_refs.iter().filter(|item| item.is_evidence).count();
+
+        let mut distinct_refs = HashSet::new();
+        let mut observed = 0usize;
+        for item in &self.evidence_refs {
+            let normalized = nfc(&item.reference);
+            if !bounded_chars(&normalized, MAX_ORACLE_TEXT_CHARS)
+                || !distinct_refs.insert(normalized)
+            {
+                return Err(AdapterError("oracle_evidence_reference_invalid_or_duplicate".into()));
+            }
+            if item.is_evidence {
+                observed += 1;
+            }
+        }
+
         match self.state {
             OracleEvidenceState::Known if observed == 0 => {
                 return Err(AdapterError("oracle_known_requires_evidence".into()));
             }
             OracleEvidenceState::Conflict if observed < 2 => {
-                return Err(AdapterError("oracle_conflict_requires_multiple_observations".into()));
+                return Err(AdapterError("oracle_conflict_requires_distinct_observations".into()));
             }
             OracleEvidenceState::Unknown => {}
             _ => {}
         }
         if self.suggested_searches.iter().any(|item| {
-            item.query.is_empty()
+            !bounded_chars(&item.query, MAX_ORACLE_TEXT_CHARS)
                 || item.purpose != "discovery-only"
                 || item.is_evidence
                 || item.admissible_as_evidence_without_observation
@@ -340,8 +384,12 @@ pub fn ark_preserve(
     bytes: &[u8],
     artifact_class: ArkArtifactClass,
 ) -> Result<ArkPreservationObject, AdapterError> {
-    if source_ref.is_empty() || bytes.is_empty() {
+    if !bounded_chars(source_ref, MAX_ORACLE_TEXT_CHARS) || bytes.is_empty() {
         return Err(AdapterError("ark_preservation_input_invalid".into()));
+    }
+    let holodeck_artifact = is_holodeck_artifact(bytes);
+    if holodeck_artifact && artifact_class != ArkArtifactClass::SyntheticCulturalResearch {
+        return Err(AdapterError("ark_holodeck_reclassification_forbidden".into()));
     }
     let synthetic = artifact_class == ArkArtifactClass::SyntheticCulturalResearch;
     Ok(ArkPreservationObject {
@@ -350,7 +398,8 @@ pub fn ark_preserve(
         content_sha256: sha256_ref(bytes),
         artifact_class,
         synthetic,
-        real_world_history: !synthetic,
+        // Archival presence can establish preservation, never real-world historicity.
+        real_world_history: false,
         archival_presence_is_authority: false,
         authority_effect: "none".into(),
     })
@@ -360,17 +409,88 @@ pub fn verify_ark_preservation_offline(
     object: &ArkPreservationObject,
     bytes: &[u8],
 ) -> Result<(), AdapterError> {
+    let expected_synthetic = object.artifact_class == ArkArtifactClass::SyntheticCulturalResearch;
     if object.schema != ARK_PRESERVATION_SCHEMA_V1
-        || object.source_ref.is_empty()
+        || !bounded_chars(&object.source_ref, MAX_ORACLE_TEXT_CHARS)
         || object.content_sha256 != sha256_ref(bytes)
+        || object.synthetic != expected_synthetic
+        || object.real_world_history
         || object.archival_presence_is_authority
         || object.authority_effect != "none"
-        || (object.synthetic && object.real_world_history)
-        || (object.artifact_class == ArkArtifactClass::SyntheticCulturalResearch && !object.synthetic)
+        || (is_holodeck_artifact(bytes) && !object.synthetic)
     {
         return Err(AdapterError("ark_preservation_verification_failed".into()));
     }
     Ok(())
+}
+
+fn validate_holodeck_world_plan(plan: &HolodeckWorldPlan) -> Result<(), AdapterError> {
+    if plan.schema != HOLODECK_WORLD_PLAN_SCHEMA_V1
+        || !prefixed_hash(&plan.program_id, "holodeck-program:")
+        || !prefixed_hash(&plan.world_id, "holodeck-world:")
+        || plan.seed < 0
+        || plan.seed > SAFE_INTEGER_MAX
+        || plan.source_order.is_empty()
+        || plan.source_order.len() > MAX_HOLODECK_SOURCE_OBJECTS
+        || plan.anchor_refs.len() > MAX_HOLODECK_ANCHORS
+        || plan.synthetic_entity_ids.is_empty()
+        || plan.synthetic_entity_ids.len() > usize::from(MAX_HOLODECK_ENTITIES)
+        || plan.authority_effect != "none"
+    {
+        return Err(AdapterError("holodeck_world_plan_invalid".into()));
+    }
+
+    let source_set = plan.source_order.iter().collect::<HashSet<_>>();
+    if source_set.len() != plan.source_order.len()
+        || plan.source_order.iter().any(|value| !prefixed_hash(value, "object:"))
+        || plan.anchor_refs.iter().any(|value| !source_set.contains(value))
+    {
+        return Err(AdapterError("holodeck_world_plan_source_invalid".into()));
+    }
+    let anchor_set = plan.anchor_refs.iter().collect::<HashSet<_>>();
+    if anchor_set.len() != plan.anchor_refs.len() {
+        return Err(AdapterError("holodeck_world_plan_anchor_duplicate".into()));
+    }
+    let entity_set = plan.synthetic_entity_ids.iter().collect::<HashSet<_>>();
+    if entity_set.len() != plan.synthetic_entity_ids.len()
+        || plan.synthetic_entity_ids.iter().any(|value| !is_holo_entity_id(value))
+    {
+        return Err(AdapterError("holodeck_world_plan_entity_invalid".into()));
+    }
+    canonical_struct(plan)?;
+    Ok(())
+}
+
+fn is_holo_entity_id(value: &str) -> bool {
+    let Some(rest) = value.strip_prefix("holo-entity:") else {
+        return false;
+    };
+    let Some((digest, index)) = rest.split_once(':') else {
+        return false;
+    };
+    digest.len() == 24
+        && digest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        && !index.is_empty()
+        && index.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+fn is_holodeck_artifact(bytes: &[u8]) -> bool {
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(bytes) else {
+        return false;
+    };
+    let Some(schema) = value.get("schema").and_then(serde_json::Value::as_str) else {
+        return false;
+    };
+    matches!(
+        schema,
+        "qsol-fed-holodeck-program/1"
+            | "qsol-fed-holodeck-world-plan/1"
+            | "qsol-fed-holodeck-event/1"
+            | "qsol-fed-holodeck-receipt/1"
+            | "qsol-fed-nexus-holodeck-actor/1"
+    )
 }
 
 fn canonical_struct<T: Serialize>(value: &T) -> Result<Vec<u8>, AdapterError> {
@@ -391,25 +511,69 @@ fn prefixed_hash(value: &str, prefix: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
-fn is_hex_commit(value: &str) -> bool {
-    value.len() == 40
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+fn bounded_chars(value: &str, maximum: usize) -> bool {
+    !value.is_empty() && value.chars().count() <= maximum
+}
+
+fn nfc(value: &str) -> String {
+    value.nfc().collect()
+}
+
+/// Defense-in-depth mirror for high-confidence secret shapes. The live NEXUS
+/// adapter must still obtain the native donor SecretScrubber attestation first.
+fn secret_shaped_text(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    if (lower.contains("-----begin ") && lower.contains("private key-----"))
+        || lower.contains("authorization: bearer ")
+        || lower.contains("authorization= bearer ")
+    {
+        return true;
+    }
+
+    let prefixes = [
+        ("ghp_", 20usize),
+        ("gho_", 20),
+        ("ghu_", 20),
+        ("ghs_", 20),
+        ("ghr_", 20),
+        ("sk-", 20),
+        ("xai-", 20),
+        ("gsk_", 20),
+        ("hf_", 20),
+        ("xoxb-", 16),
+        ("xoxp-", 16),
+        ("xoxa-", 16),
+        ("xoxr-", 16),
+        ("xoxs-", 16),
+        ("aiza", 30),
+        ("akia", 16),
+        ("asia", 16),
+    ];
+    prefixes.iter().any(|(prefix, minimum)| {
+        lower.find(prefix).is_some_and(|position| {
+            lower[position + prefix.len()..]
+                .chars()
+                .take_while(|ch| ch.is_ascii_alphanumeric() || "_-./+=~".contains(*ch))
+                .count()
+                >= *minimum
+        })
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::holodeck::{compile_world_plan, HolodeckProgram, HolodeckProgramMode, NexusOrderBasis,
+    use crate::holodeck::{
+        compile_world_plan, HolodeckProgram, HolodeckProgramMode, NexusOrderBasis,
         NexusWorldSourceManifest, HOLODECK_PROGRAM_SCHEMA_V1, HOLODECK_SAFETY_PROFILE_V1,
-        NEXUS_EXPORT_SCHEMA_V1, NEXUS_SOURCE_SCHEMA_V1, NEXUS_WORLD_POLICY_V1};
+        NEXUS_EXPORT_SCHEMA_V1, NEXUS_SOURCE_SCHEMA_V1, NEXUS_WORLD_POLICY_V1,
+    };
 
     fn report() -> NexusCouncilReportArtifact {
         NexusCouncilReportArtifact {
             schema: NEXUS_COUNCIL_REPORT_SCHEMA_V1.into(),
             source_repository: "QSOLKCB/QSOL-NEXUS".into(),
-            source_commit: "24cb0ce246d12ac99e7d190a8890ef2ddd598321".into(),
+            source_commit: NEXUS_PINNED_COMMIT.into(),
             source_bundle_ref: format!("world-export:{}", "a".repeat(64)),
             source_session_ref: format!("object:{}", "b".repeat(64)),
             session_id: "session".into(),
@@ -420,6 +584,7 @@ mod tests {
                 NexusCouncilMemberObservation { member_id: "beta".into(), vote_weight_observed: 1, epistemic_privilege_observed: "none".into(), vote_weight_inherited: false, epistemic_privilege_inherited: false, citizenship_inherited: false, authority_effect: "none".into() },
             ],
             minority_reports: vec![NexusMinorityReportArtifact { member_id: "beta".into(), choice: "ABSTAIN".into(), rationale: "minority survives".into(), evidence_promotion: false, vote_injection: false, authority_effect: "none".into() }],
+            secret_scrubbed: true,
             shared_ballot: false,
             vote_injection: false,
             evidence_promotion: false,
@@ -431,7 +596,7 @@ mod tests {
         let source = NexusWorldSourceManifest {
             schema: NEXUS_SOURCE_SCHEMA_V1.into(), nexus_export_schema: NEXUS_EXPORT_SCHEMA_V1.into(), nexus_world_policy: NEXUS_WORLD_POLICY_V1.into(),
             bundle_ref: format!("world-export:{}", "d".repeat(64)), source_head_ref: None, order_basis: NexusOrderBasis::MemoryInsertionOrder,
-            object_refs: vec![format!("object:{}", "1".repeat(64)), format!("object:{}", "2".repeat(64))], authority_effect: "none".into(),
+            object_refs: vec![format!("object:{}", "b".repeat(64)), format!("object:{}", "2".repeat(64))], authority_effect: "none".into(),
         };
         compile_world_plan(&HolodeckProgram { schema: HOLODECK_PROGRAM_SCHEMA_V1.into(), source, seed: 42, mode: HolodeckProgramMode::Exploration, max_events: 32, max_entities: 4, safety_profile: HOLODECK_SAFETY_PROFILE_V1.into(), authority_effect: "none".into() }).unwrap()
     }
@@ -462,12 +627,55 @@ mod tests {
     }
 
     #[test]
+    fn forged_or_unrelated_holodeck_plan_cannot_project_real_identity() {
+        let report = report();
+        let mut forged = plan();
+        forged.synthetic_entity_ids[0] = format!("fed:qsol:{}", "a".repeat(64));
+        assert!(project_nexus_council_actors(&report, &forged).is_err());
+
+        let mut unrelated = plan();
+        unrelated.source_order[0] = format!("object:{}", "9".repeat(64));
+        unrelated.anchor_refs = vec![unrelated.source_order[0].clone()];
+        assert!(project_nexus_council_actors(&report, &unrelated).is_err());
+    }
+
+    #[test]
+    fn council_report_enforces_normalized_uniqueness_lengths_and_membership() {
+        let mut duplicate = report();
+        duplicate.members[0].member_id = "é".into();
+        duplicate.members[1].member_id = "e\u{301}".into();
+        assert!(duplicate.validate().is_err());
+
+        let mut oversized = report();
+        oversized.session_id = "x".repeat(MAX_SESSION_ID_CHARS + 1);
+        assert!(oversized.validate().is_err());
+
+        let mut nonmember = report();
+        nonmember.minority_reports[0].member_id = "gamma".into();
+        assert!(nonmember.validate().is_err());
+
+        let mut secret = report();
+        secret.minority_reports[0].rationale = format!("sk-{}", "a".repeat(24));
+        assert!(secret.validate().is_err());
+    }
+
+    #[test]
     fn oracle_preserves_unknown_conflict_and_search_non_evidence() {
         let unknown = OracleEvidenceObservation { schema: ORACLE_OBSERVATION_SCHEMA_V1.into(), state: OracleEvidenceState::Unknown, evidence_refs: vec![], suggested_searches: vec![OracleSearchSuggestion { query: "primary source".into(), purpose: "discovery-only".into(), is_evidence: false, admissible_as_evidence_without_observation: false }], synthetic_input: false, truth_claim: false, evidence_promotion: false, authority_effect: "none".into() };
         unknown.validate().unwrap();
         let conflict = OracleEvidenceObservation { schema: ORACLE_OBSERVATION_SCHEMA_V1.into(), state: OracleEvidenceState::Conflict, evidence_refs: vec![OracleEvidenceReference { reference: "a".into(), is_evidence: true }, OracleEvidenceReference { reference: "b".into(), is_evidence: true }], suggested_searches: vec![], synthetic_input: false, truth_claim: false, evidence_promotion: false, authority_effect: "none".into() };
         conflict.validate().unwrap();
         assert!(admit_holodeck_to_oracle_deferred().is_err());
+    }
+
+    #[test]
+    fn oracle_requires_nonempty_distinct_normalized_evidence_refs() {
+        let mut observation = OracleEvidenceObservation { schema: ORACLE_OBSERVATION_SCHEMA_V1.into(), state: OracleEvidenceState::Known, evidence_refs: vec![OracleEvidenceReference { reference: "".into(), is_evidence: true }], suggested_searches: vec![], synthetic_input: false, truth_claim: false, evidence_promotion: false, authority_effect: "none".into() };
+        assert!(observation.validate().is_err());
+
+        observation.state = OracleEvidenceState::Conflict;
+        observation.evidence_refs = vec![OracleEvidenceReference { reference: "é".into(), is_evidence: true }, OracleEvidenceReference { reference: "e\u{301}".into(), is_evidence: true }];
+        assert!(observation.validate().is_err());
     }
 
     #[test]
@@ -478,6 +686,16 @@ mod tests {
         assert!(!object.real_world_history);
         assert!(!object.archival_presence_is_authority);
         assert_eq!(object.authority_effect, "none");
+        verify_ark_preservation_offline(&object, bytes).unwrap();
+        assert!(ark_preserve("holodeck-receipt:test", bytes, ArkArtifactClass::PreservationObject).is_err());
+    }
+
+    #[test]
+    fn ark_never_infers_real_world_history_from_preservation() {
+        let bytes = br#"{"schema":"ordinary-preservation/1"}"#;
+        let object = ark_preserve("ordinary:test", bytes, ArkArtifactClass::PreservationObject).unwrap();
+        assert!(!object.synthetic);
+        assert!(!object.real_world_history);
         verify_ark_preservation_offline(&object, bytes).unwrap();
     }
 }
