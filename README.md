@@ -23,15 +23,17 @@ At Phase 0 the repository was deliberately constrained to the bootstrap claim bo
 
 [`claims/phase0.json`](claims/phase0.json) remains the immutable historical Phase 0 release-claim baseline.
 
-## Later historical claim gates
+## Historical Phase 2 claim gate
 
-Historical successor baselines also remain immutable:
+[`claims/phase2.json`](claims/phase2.json) preserves the cryptographic-identity milestone: Ed25519 identity, detached signed-envelope verification, key lifecycle, frozen clock limits, durable replay, and strict separation of signature validity from trust and authority.
 
-```text
-claims/phase2.json   cryptographic identity
-claims/phase3.json   bounded reference API
-claims/phase4.json   durable federation state
-```
+## Historical Phase 3 claim gate
+
+[`claims/phase3.json`](claims/phase3.json) preserves the bounded reference-API milestone: six `/fed/v1` routes, strict canonical/body/rate limits, trusted-proxy handling, replay-safe admission, TLS deployment profile, SSRF isolation, secret-safe audit, and parser/admission fuzzing.
+
+## Historical Phase 4 claim gate
+
+[`claims/phase4.json`](claims/phase4.json) preserves durable federation state: content-addressed foreign/quarantine storage, multiple source/provenance attributions, append-only peer lifecycle, separate trust and capability policy, explicit partition reconciliation, crash-recoverable namespace moves, bounded portable bundles, and offline verification.
 
 Later phases advance capabilities through successor manifests rather than rewriting those records.
 
