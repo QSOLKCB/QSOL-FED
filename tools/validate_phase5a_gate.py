@@ -85,8 +85,8 @@ def validate_surfaces() -> None:
     ai = load("README4AI.md")
     require(ai.get("phase5a_status") == "historical_holodeck_sandbox_gate_preserved", "README4AI must preserve Phase 5A historically")
     require(ai.get("phase5a_holodeck", {}).get("contract") == "state/phase5a-holodeck.json", "README4AI Holodeck map missing")
-    require(ai.get("current_claim_manifest") == "claims/phase5c.json", "Phase 5C successor claim manifest not active")
-    require(ai.get("current_claims") == load("claims/phase5c.json")["capabilities"], "README4AI Phase 5C claims drift")
+    require(ai.get("current_claim_manifest") == "claims/phase6.json", "Phase 6 successor claim manifest not active")
+    require(ai.get("current_claims") == load("claims/phase6.json")["capabilities"], "README4AI Phase 6 claims drift")
     agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8").lower()
     for marker in ("state/phase5a-holodeck.json", "holodeck.md", "claims/phase5a.json", "moriarty rule", "computer, end program", "python3 tools/validate_phase5a_gate.py"):
         require(marker in agents, f"AGENTS Phase 5A marker missing: {marker}")
