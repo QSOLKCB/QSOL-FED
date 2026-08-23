@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Enforce Phase 5 QSOL adapter authority boundaries and explicit deferrals."""
+"""Preserve the historical Phase 5 QSOL adapter authority boundary under successors."""
 from __future__ import annotations
 
 import json
@@ -37,19 +37,27 @@ def validate_claims_and_contract() -> None:
     claims = load("claims/phase5.json")
     require(claims.get("document_type") == "qsol-fed-phase5-adapter-claims", "Phase 5 claim id drift")
     require(claims.get("gate_status") == "enforced", "Phase 5 claim gate not enforced")
+    require(claims.get("runtime_override_allowed") is False, "historical Phase 5 claims became runtime configurable")
     caps = claims["capabilities"]
-    require(rust_claims() == caps, "Rust claims disagree with claims/phase5.json")
     for key in (
         "live_nexus_runtime_adapter", "nexus_council_report_adapter", "nexus_synthetic_actor_seam",
         "nexus_independent_redeliberation", "council_of_councils_reports_only",
         "oracle_evidence_membrane", "ark_offline_preservation_adapter",
     ):
-        require(caps.get(key) is True, f"reviewed Phase 5 capability missing: {key}")
+        require(caps.get(key) is True, f"historical Phase 5 capability missing: {key}")
     for key in (
         "oracle_live_transport", "oracle_holodeck_synthetic_admission", "host_level_sandbox",
         "production_networking", "remote_execution", "interoperable_federation",
     ):
-        require(caps.get(key) is False, f"premature Phase 5 claim enabled: {key}")
+        require(caps.get(key) is False, f"historical Phase 5 false claim drift: {key}")
+
+    successor = load("claims/phase5c.json")
+    successor_caps = successor["capabilities"]
+    require(set(successor_caps) == set(caps), "Phase 5C capability key set does not preserve Phase 5")
+    changed = {key for key in caps if caps[key] != successor_caps[key]}
+    require(changed == {"oracle_live_transport"}, f"Phase 5C changed unexpected historical Phase 5 claims: {sorted(changed)}")
+    require(successor_caps["oracle_live_transport"] is True, "Phase 5C did not promote ORACLE live transport")
+    require(rust_claims() == successor_caps, "Rust current claims disagree with Phase 5C successor")
 
     contract = load("state/phase5.json")
     require(contract.get("document_type") == "qsol-fed-phase5-adapter-contract", "Phase 5 contract id drift")
@@ -79,8 +87,8 @@ def validate_claims_and_contract() -> None:
     require(oracle["evidence_reference_uniqueness"] == "NFC-normalized reference", "ORACLE NFC uniqueness drift")
     require(oracle["suggested_search_is_evidence"] is False, "ORACLE suggested search became evidence")
     require(oracle["remote_evidence_promotion"] is False, "ORACLE evidence promotion enabled")
-    require(oracle["live_transport"] is False, "ORACLE live transport prematurely claimed")
-    require(oracle["holodeck_synthetic_admission"] is False, "Holodeck-to-ORACLE admission prematurely claimed")
+    require(oracle["live_transport"] is False, "historical Phase 5 ORACLE live transport drift")
+    require(oracle["holodeck_synthetic_admission"] is False, "Holodeck-to-ORACLE admission historical drift")
     require(oracle["deferred_pr"] == "QSOLKCB/QSOL-ORACLE", "ORACLE follow-up target drift")
 
     ark = contract["ark"]
@@ -207,7 +215,7 @@ def validate_fixtures_and_surfaces() -> None:
 
     roadmap = (ROOT / "ROADMAP.md").read_text(encoding="utf-8")
     require("Phase 5 — QSOL adapters" in roadmap, "ROADMAP Phase 5 missing")
-    require("QSOLKCB/QSOL-ORACLE" in roadmap and "follow-up" in roadmap.lower(), "ROADMAP ORACLE follow-up missing")
+    require("QSOLKCB/QSOL-ORACLE" in roadmap and "follow-up" in roadmap.lower(), "ROADMAP ORACLE follow-up history missing")
     docs = (ROOT / "QSOL_ADAPTERS.md").read_text(encoding="utf-8")
     for marker in (
         "native NEXUS verification",
@@ -221,7 +229,13 @@ def validate_fixtures_and_surfaces() -> None:
         "ARK",
         "deferred",
     ):
-        require(marker.lower() in docs.lower(), f"QSOL_ADAPTERS.md marker missing: {marker}")
+        require(marker.lower() in docs.lower(), f"QSOL_ADAPTERS.md historical marker missing: {marker}")
+
+    ai = load("README4AI.md")
+    require(ai.get("phase5_status") == "historical_qsol_adapter_gate_preserved", "README4AI Phase 5 historical status missing")
+    require(ai.get("phase5_adapters", {}).get("oracle_live_transport") is False, "README4AI historical Phase 5 ORACLE non-claim drift")
+    require(ai.get("current_claim_manifest") == "claims/phase5c.json", "Phase 5C successor claim manifest not active")
+    require(ai.get("current_claims") == load("claims/phase5c.json")["capabilities"], "README4AI current Phase 5C claims drift")
 
 
 def main() -> None:
@@ -229,9 +243,9 @@ def main() -> None:
     validate_schemas_and_source()
     validate_fixtures_and_surfaces()
     print(
-        "phase5 adapter gate OK: attested native NEXUS bridge, canonical secret-safe report projection, "
+        "phase5 historical adapter gate OK: attested native NEXUS bridge, canonical secret-safe report projection, "
         "report-only Council federation, source-bound synthetic actors, ORACLE distinct non-authority evidence, "
-        "ARK preservation without history inference, live ORACLE transport deferred, and SIMULATION != AUTHORITY preserved"
+        "ARK preservation without history inference, historical ORACLE live-transport non-claim preserved, and SIMULATION != AUTHORITY preserved"
     )
 
 
