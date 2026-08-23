@@ -12,7 +12,7 @@
   "phase3_status": "historical_api_gate_preserved",
   "phase4_status": "historical_federation_state_gate_preserved",
   "phase5a_status": "holodeck_sandbox_gate_enforced",
-  "claim_boundary": "Phase 5A establishes the reviewed Phase 0-4 substrate plus a closed NEXUS WorldStore source contract, deterministic synthetic-world compiler, capability-less Holodeck sandbox, hard-coded Computer safeguards, and deterministic teardown receipts. A live NEXUS runtime bridge, OS/VM-level sandboxing, production networking, real remote execution, and deployed multi-implementation federation remain unestablished.",
+  "claim_boundary": "Phase 5A establishes the reviewed Phase 0-4 substrate plus a closed NEXUS WorldStore source contract, deterministic synthetic-world compiler, capability-less Holodeck sandbox, hard-coded Computer safeguards, and deterministic teardown receipts. A live NEXUS runtime bridge, host-level OS/VM/container/hypervisor/hardware sandbox, production networking, real remote execution, and deployed multi-implementation federation remain unestablished.",
   "phase0_claims": {
     "constitutional_model": true,
     "machine_contracts": true,
@@ -56,6 +56,7 @@
     "holodeck_computer_safeguards": true,
     "holodeck_teardown_receipts": true,
     "live_nexus_runtime_adapter": false,
+    "host_level_sandbox": false,
     "production_networking": false,
     "remote_execution": false,
     "interoperable_federation": false
@@ -102,6 +103,7 @@
     "rust_kernel": "src/holodeck.rs",
     "source_schema": "schemas/nexus-world-source-v1.schema.json",
     "program_schema": "schemas/holodeck-program-v1.schema.json",
+    "world_plan_schema": "schemas/holodeck-world-plan-v1.schema.json",
     "event_schema": "schemas/holodeck-event-v1.schema.json",
     "receipt_schema": "schemas/holodeck-receipt-v1.schema.json",
     "gate_validator": "tools/validate_phase5a_gate.py",
@@ -119,7 +121,7 @@
     "participant_can_block_end_program": false,
     "simulation_output_authority": "none",
     "live_nexus_runtime_adapter": false,
-    "os_vm_hardware_sandbox_claim": false
+    "host_level_sandbox_claim": false
   },
   "normative_precedence": [
     "invariants/fed-v1.json",
@@ -137,6 +139,7 @@
     "state/phase5a-holodeck.json",
     "schemas/nexus-world-source-v1.schema.json",
     "schemas/holodeck-program-v1.schema.json",
+    "schemas/holodeck-world-plan-v1.schema.json",
     "schemas/holodeck-event-v1.schema.json",
     "schemas/holodeck-receipt-v1.schema.json",
     "src/holodeck.rs",
@@ -203,6 +206,7 @@
     "simulation_can_spawn_nested_holodeck": false,
     "simulation_can_disable_safeguards": false,
     "simulation_can_block_end_program": false,
+    "host_level_sandbox_claim": false,
     "remote_execution_enabled": false,
     "production_networking_claim": false
   },
