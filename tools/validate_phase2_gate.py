@@ -140,7 +140,9 @@ def validate_surfaces() -> None:
     require(ai.get("phase2_status") == "historical_crypto_gate_preserved", "README4AI must preserve Phase 2 historically")
     require(ai.get("phase2_crypto", {}).get("contract") == "crypto/phase2.json", "README4AI Phase 2 crypto map missing")
     require(ai.get("claim_disagreement_policy") == "fail_closed", "claim disagreement policy drift")
-    if (ROOT / "claims/phase4.json").exists():
+    if (ROOT / "claims/phase5a.json").exists():
+        require(ai.get("current_claim_manifest") == "claims/phase5a.json", "Phase 5A successor claim manifest not active")
+    elif (ROOT / "claims/phase4.json").exists():
         require(ai.get("current_claim_manifest") == "claims/phase4.json", "Phase 4 successor claim manifest not active")
     elif (ROOT / "claims/phase3.json").exists():
         require(ai.get("current_claim_manifest") == "claims/phase3.json", "Phase 3 successor claim manifest not active")
