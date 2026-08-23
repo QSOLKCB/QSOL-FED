@@ -1,0 +1,73 @@
+{
+  "document_type": "qsol-fed-phase5-adapter-contract",
+  "schema_version": 1,
+  "wire_protocol": "qsol-fed/1",
+  "nexus": {
+    "pinned_repository": "QSOLKCB/QSOL-NEXUS",
+    "pinned_commit": "24cb0ce246d12ac99e7d190a8890ef2ddd598321",
+    "native_verifier": "nexus_runtime.persistent_world.validate_world_export_bundle",
+    "live_local_adapter": true,
+    "network_required": false,
+    "manifest_only_after_native_verification": true,
+    "fixture_generator_uses_native_worldstore": true,
+    "council_report_schema": "qsol-fed-nexus-council-report/1",
+    "minority_reports_preserved": true,
+    "vote_injection": false,
+    "evidence_promotion": false,
+    "source_vote_weight_observed": 1,
+    "source_epistemic_privilege_observed": "none",
+    "vote_weight_inherited": false,
+    "epistemic_privilege_inherited": false,
+    "citizenship_inherited": false,
+    "independent_re_deliberation": true,
+    "council_of_councils_shared_ballot": false,
+    "council_of_councils_shared_vote_weight": false,
+    "holodeck_actor_projection_is_synthetic_only": true,
+    "holodeck_projection_inherits_governance": false,
+    "authority_effect": "none"
+  },
+  "oracle": {
+    "fed_side_membrane": true,
+    "states": ["known", "conflict", "unknown"],
+    "state_is_truth_authority": false,
+    "suggested_search_purpose": "discovery-only",
+    "suggested_search_is_evidence": false,
+    "remote_evidence_promotion": false,
+    "holodeck_synthetic_admission": false,
+    "holodeck_admission_requires_separate_reviewed_contract": true,
+    "live_transport": false,
+    "deferred_pr": "QSOLKCB/QSOL-ORACLE",
+    "deferred_reason": "QSOL-ORACLE currently documents the ORACLE-NEXUS transport/audit membrane as unfinished; FED does not claim live cross-process ORACLE transport before the donor repository implements and gates it",
+    "authority_effect": "none"
+  },
+  "ark": {
+    "fed_side_offline_preservation": true,
+    "content_addressed_sha256": true,
+    "offline_verification": true,
+    "network_required": false,
+    "archival_presence_is_authority": false,
+    "holodeck_artifact_class": "synthetic_cultural_research",
+    "holodeck_relabelled_real_world_history": false,
+    "live_cross_repository_transport_required": false,
+    "followup_repo_pr_required_now": false,
+    "authority_effect": "none"
+  },
+  "prime_directive": {
+    "same_core_invariants_apply": true,
+    "adapter_may_create_local_governance_authority": false,
+    "adapter_may_promote_evidence": false,
+    "adapter_may_create_or_reweight_votes": false,
+    "adapter_may_install_capabilities": false,
+    "adapter_may_rewrite_history": false,
+    "adapter_may_mutate_citizenship": false,
+    "adapter_may_trigger_remote_execution": false,
+    "simulation_is_authority": false
+  },
+  "deferred": {
+    "oracle_live_transport": "follow-up QSOL-ORACLE PR",
+    "oracle_holodeck_synthetic_admission": "separately reviewed ORACLE synthetic-input contract after live transport exists",
+    "nexus_repo_change": "not required by current FED implementation; native verifier/export/WorldStore primitives already exist",
+    "ark_repo_change": "not required by current FED implementation; FED offline preservation contract is self-contained; add ARK-side integration only if a missing native primitive is identified"
+  },
+  "phase5_gate": "every adapter must preserve the Prime Directive; NEXUS source manifests require native NEXUS verification, Council reports cannot inject votes or promote evidence, Council actor projections remain synthetic-only, ORACLE preserves known/conflict/unknown and non-evidence search semantics without live-transport overclaim, ARK preservation is content-addressed/offline/non-authoritative, and SIMULATION != AUTHORITY survives every adapter boundary"
+}
