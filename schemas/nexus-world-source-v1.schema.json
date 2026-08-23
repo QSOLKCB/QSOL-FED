@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "qsol-fed-nexus-world-source/1",
+  "title": "QSOL-FED NEXUS-verified World Source v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "nexus_export_schema", "nexus_world_policy", "bundle_ref", "source_head_ref", "order_basis", "object_refs", "authority_effect"],
+  "properties": {
+    "schema": {"const": "qsol-fed-nexus-world-source/1"},
+    "nexus_export_schema": {"const": "nexus-persistent-world-export/1"},
+    "nexus_world_policy": {"const": "nexus-persistent-world/1"},
+    "bundle_ref": {"type": "string", "pattern": "^world-export:[0-9a-f]{64}$"},
+    "source_head_ref": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "string", "pattern": "^world-manifest:[0-9a-f]{64}$"}
+      ]
+    },
+    "order_basis": {"enum": ["continuity_commit_order", "memory_insertion_order", "lexical_object_ref"]},
+    "object_refs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^object:[0-9a-f]{64}$"}
+    },
+    "authority_effect": {"const": "none"}
+  }
+}
