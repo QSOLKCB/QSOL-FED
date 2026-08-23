@@ -1,12 +1,13 @@
 //! Release-claim boundaries.
 //!
-//! `PHASE0_CLAIMS` is an immutable historical baseline. Phase 2 is preserved by
-//! `claims/phase2.json`. `CURRENT_CLAIMS` is the current Phase 3 release surface.
-//! None of these are runtime configuration.
+//! Phase 0, Phase 2, and Phase 3 manifests remain historical baselines.
+//! `CURRENT_CLAIMS` is the current Phase 4 release surface. None of these are
+//! runtime configuration.
 
 pub const PHASE0_GATE_ID: &str = "qsol-fed-phase0-claim-gate/1";
 pub const PHASE2_GATE_ID: &str = "qsol-fed-phase2-claim-gate/1";
 pub const PHASE3_GATE_ID: &str = "qsol-fed-phase3-claim-gate/1";
+pub const PHASE4_GATE_ID: &str = "qsol-fed-phase4-claim-gate/1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Phase0Claims {
@@ -48,6 +49,16 @@ pub struct CurrentClaims {
     pub tls_deployment_profile: bool,
     pub secret_safe_audit_log: bool,
     pub api_fuzz_adversarial_suite: bool,
+    pub foreign_object_store: bool,
+    pub quarantine_namespace: bool,
+    pub provenance_preserving_descendants: bool,
+    pub durable_peer_registry: bool,
+    pub separate_trust_registry: bool,
+    pub expiring_capability_advertisements: bool,
+    pub local_capability_policy: bool,
+    pub partition_rejoin_control: bool,
+    pub portable_federation_bundle: bool,
+    pub offline_bundle_verification: bool,
     pub production_networking: bool,
     pub remote_execution: bool,
     pub interoperable_federation: bool,
@@ -69,6 +80,16 @@ pub const CURRENT_CLAIMS: CurrentClaims = CurrentClaims {
     tls_deployment_profile: true,
     secret_safe_audit_log: true,
     api_fuzz_adversarial_suite: true,
+    foreign_object_store: true,
+    quarantine_namespace: true,
+    provenance_preserving_descendants: true,
+    durable_peer_registry: true,
+    separate_trust_registry: true,
+    expiring_capability_advertisements: true,
+    local_capability_policy: true,
+    partition_rejoin_control: true,
+    portable_federation_bundle: true,
+    offline_bundle_verification: true,
     production_networking: false,
     remote_execution: false,
     interoperable_federation: false,
@@ -91,14 +112,21 @@ pub enum ReleaseClaim {
     TlsDeploymentProfile,
     SecretSafeAuditLog,
     ApiFuzzAdversarialSuite,
+    ForeignObjectStore,
+    QuarantineNamespace,
+    ProvenancePreservingDescendants,
+    DurablePeerRegistry,
+    SeparateTrustRegistry,
+    ExpiringCapabilityAdvertisements,
+    LocalCapabilityPolicy,
+    PartitionRejoinControl,
+    PortableFederationBundle,
+    OfflineBundleVerification,
     ProductionNetworking,
     RemoteExecution,
     InteroperableFederation,
 }
 
-/// Current release claim. No peer, model, environment variable, API request,
-/// signature, trust decision, HTTP header, or listener option can change this
-/// compile-time surface.
 pub const fn is_established(claim: ReleaseClaim) -> bool {
     match claim {
         ReleaseClaim::ConstitutionalModel => CURRENT_CLAIMS.constitutional_model,
@@ -116,6 +144,16 @@ pub const fn is_established(claim: ReleaseClaim) -> bool {
         ReleaseClaim::TlsDeploymentProfile => CURRENT_CLAIMS.tls_deployment_profile,
         ReleaseClaim::SecretSafeAuditLog => CURRENT_CLAIMS.secret_safe_audit_log,
         ReleaseClaim::ApiFuzzAdversarialSuite => CURRENT_CLAIMS.api_fuzz_adversarial_suite,
+        ReleaseClaim::ForeignObjectStore => CURRENT_CLAIMS.foreign_object_store,
+        ReleaseClaim::QuarantineNamespace => CURRENT_CLAIMS.quarantine_namespace,
+        ReleaseClaim::ProvenancePreservingDescendants => CURRENT_CLAIMS.provenance_preserving_descendants,
+        ReleaseClaim::DurablePeerRegistry => CURRENT_CLAIMS.durable_peer_registry,
+        ReleaseClaim::SeparateTrustRegistry => CURRENT_CLAIMS.separate_trust_registry,
+        ReleaseClaim::ExpiringCapabilityAdvertisements => CURRENT_CLAIMS.expiring_capability_advertisements,
+        ReleaseClaim::LocalCapabilityPolicy => CURRENT_CLAIMS.local_capability_policy,
+        ReleaseClaim::PartitionRejoinControl => CURRENT_CLAIMS.partition_rejoin_control,
+        ReleaseClaim::PortableFederationBundle => CURRENT_CLAIMS.portable_federation_bundle,
+        ReleaseClaim::OfflineBundleVerification => CURRENT_CLAIMS.offline_bundle_verification,
         ReleaseClaim::ProductionNetworking => CURRENT_CLAIMS.production_networking,
         ReleaseClaim::RemoteExecution => CURRENT_CLAIMS.remote_execution,
         ReleaseClaim::InteroperableFederation => CURRENT_CLAIMS.interoperable_federation,
@@ -137,7 +175,7 @@ mod tests {
     }
 
     #[test]
-    fn phase3_promotes_only_reviewed_reference_api_capabilities() {
+    fn phase4_promotes_only_reviewed_state_capabilities() {
         for claim in [
             ReleaseClaim::ConstitutionalModel,
             ReleaseClaim::MachineContracts,
@@ -154,23 +192,30 @@ mod tests {
             ReleaseClaim::TlsDeploymentProfile,
             ReleaseClaim::SecretSafeAuditLog,
             ReleaseClaim::ApiFuzzAdversarialSuite,
+            ReleaseClaim::ForeignObjectStore,
+            ReleaseClaim::QuarantineNamespace,
+            ReleaseClaim::ProvenancePreservingDescendants,
+            ReleaseClaim::DurablePeerRegistry,
+            ReleaseClaim::SeparateTrustRegistry,
+            ReleaseClaim::ExpiringCapabilityAdvertisements,
+            ReleaseClaim::LocalCapabilityPolicy,
+            ReleaseClaim::PartitionRejoinControl,
+            ReleaseClaim::PortableFederationBundle,
+            ReleaseClaim::OfflineBundleVerification,
         ] {
-            assert!(is_established(claim), "reviewed Phase 3 claim unexpectedly disabled: {claim:?}");
+            assert!(is_established(claim), "reviewed Phase 4 claim unexpectedly disabled: {claim:?}");
         }
-        for claim in [
-            ReleaseClaim::ProductionNetworking,
-            ReleaseClaim::RemoteExecution,
-            ReleaseClaim::InteroperableFederation,
-        ] {
-            assert!(!is_established(claim), "premature production claim enabled: {claim:?}");
+        for claim in [ReleaseClaim::ProductionNetworking, ReleaseClaim::RemoteExecution, ReleaseClaim::InteroperableFederation] {
+            assert!(!is_established(claim), "premature deployment claim enabled: {claim:?}");
         }
     }
 
     #[test]
     fn current_claim_gate_is_not_runtime_configurable() {
-        assert_eq!(PHASE3_GATE_ID, "qsol-fed-phase3-claim-gate/1");
-        assert!(CURRENT_CLAIMS.reference_http_service);
-        assert!(CURRENT_CLAIMS.opt_in_network_listener);
+        assert_eq!(PHASE4_GATE_ID, "qsol-fed-phase4-claim-gate/1");
+        assert!(CURRENT_CLAIMS.foreign_object_store);
+        assert!(CURRENT_CLAIMS.durable_peer_registry);
+        assert!(CURRENT_CLAIMS.portable_federation_bundle);
         assert!(!CURRENT_CLAIMS.production_networking);
         assert!(!CURRENT_CLAIMS.remote_execution);
         assert!(!CURRENT_CLAIMS.interoperable_federation);
