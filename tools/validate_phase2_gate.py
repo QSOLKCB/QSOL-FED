@@ -39,7 +39,7 @@ def validate_schemas_and_vectors() -> None:
     identity = load_json("schemas/node-identity-v1.schema.json")
     require(identity.get("additionalProperties") is False and identity["properties"]["algorithm"].get("const") == "ed25519", "identity schema drift")
     rotation = load_json("schemas/key-rotation-v1.schema.json")
-    require(rotation.get("additionalProperties") is False and rotation["properties"]["mode"].get("enum") == ["transition", "recovery"], "rotation schema drift")
+    require(rotation.get("additionalProperties") is False and rotation["properties"]["mode"].get("enum") == ["transition", "recovery"], "rotation mode drift")
     require("previous_signature" in rotation.get("required", []), "rotation previous_signature required-nullable drift")
     status = load_json("schemas/key-status-v1.schema.json")
     require(status.get("additionalProperties") is False and status["properties"]["status"].get("enum") == ["revoked", "compromised"], "key status drift")
@@ -73,6 +73,7 @@ def validate_surfaces() -> None:
     require(ai.get("phase2_crypto", {}).get("contract") == "crypto/phase2.json", "README4AI Phase 2 crypto map missing")
     require(ai.get("claim_disagreement_policy") == "fail_closed", "claim disagreement policy drift")
     for path, expected in (
+        ("claims/phase7.json", "claims/phase7.json"),
         ("claims/phase6.json", "claims/phase6.json"),
         ("claims/phase5c.json", "claims/phase5c.json"),
         ("claims/phase5.json", "claims/phase5.json"),
