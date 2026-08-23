@@ -196,7 +196,7 @@ No Assembly mechanism may directly mutate member-local authority.
 
 ## Phase 9 — MORIARTY/1 adversarial graduation
 
-**Status: planned. This is the final architecture graduation gate, not a feature dependency.**
+**Status: planned. This is the final executable-architecture graduation gate, not a feature dependency.**
 
 `MORIARTY/1` is a repository-aware constitutional adversary whose sole job is to produce reproducible counterexamples against QSOL-FED.
 
@@ -273,10 +273,111 @@ And, because this repository enjoys making the joke executable:
 
 ---
 
+## Phase 10 — Lean 4 formalization
+
+**Status: planned. Begins only after an exact commit passes MORIARTY/1.**
+
+Phase 10 translates the surviving executable architecture into a machine-checked Lean 4 specification. It does not redesign the protocol and must not formalize an earlier, easier commit than the one Moriarty attacked.
+
+### Formalization input binding
+
+- [ ] Record the exact Git commit SHA that passed Phase 9.
+- [ ] Bind the Lean package to the exact current machine contracts, invariant IDs, schemas and phase-gate versions from that commit.
+- [ ] Preserve the complete MORIARTY corpus/report as a referenced formalization input.
+- [ ] Define a machine-readable map from each Lean definition/theorem to the Rust/JSON contract elements it models.
+- [ ] Treat implementation-specific operational assumptions separately from mathematical invariants.
+
+### Initial theorem targets
+
+- [ ] **Prime Directive admission:** a correctly authenticated forbidden effect remains rejected.
+- [ ] **Signature separation:** signature validity implies neither trust nor authority.
+- [ ] **Peering separation:** peer admission implies neither trust nor capability permission.
+- [ ] **Capability conjunction:** permission requires admitted lifecycle state + active authenticated advertisement + explicit local allow.
+- [ ] **Import non-authority:** bundle import cannot create trust or local authority.
+- [ ] **Lifecycle monotonicity:** an accepted lifecycle advancement preserves the exact prior prefix.
+- [ ] **Partition sovereignty:** changed partition state cannot cleanly rejoin without explicit reconciliation.
+- [ ] **Provenance preservation:** foreign identity/provenance survives the modeled import/export round trip.
+- [ ] **Canonical identity model:** the restricted canonical JSON/object-ID/message-ID model is deterministic under the frozen Phase 1 assumptions.
+- [ ] **Holodeck separation:** synthetic identities/events/roles/capabilities do not inhabit the real Federation authority domain.
+- [ ] **Holodeck safeguards:** modeled boundary effects cannot mutate real state and end-program remains an operator-owned terminal transition.
+- [ ] **Assembly sovereignty:** no modeled Assembly action directly mutates member-local authority.
+
+### Proof discipline
+
+- [ ] No `sorry` or `admit` in the graduation theorem set.
+- [ ] No undeclared axiom may be introduced merely to make a target theorem compile.
+- [ ] Every unavoidable foundational/operational assumption is named, scoped and documented.
+- [ ] Lean examples/reference models are cross-checked against frozen Rust golden/adversarial fixtures where a direct finite comparison is meaningful.
+- [ ] CI compiles the exact theorem manifest on a pinned Lean toolchain.
+
+### Phase 10 gate
+
+The Phase 10 theorem manifest must compile from a clean checkout of the **exact Moriarty-surviving commit lineage** with no unresolved `sorry`/`admit`, no hidden assumption drift, and complete theorem-to-contract traceability.
+
+A Lean proof establishes properties of the formal model under its stated assumptions. It does not by itself prove that every implementation, dependency, deployment or host environment is defect-free.
+
+```text
+LEAN THEOREM != DEPLOYMENT SECURITY PROOF
+FORMAL MODEL != UNSTATED REAL-WORLD ASSUMPTION
+```
+
+---
+
+## Phase 11 — Zenodo formalization and archival release
+
+**Status: planned. Publication begins only after Phase 10 is green.**
+
+Phase 11 freezes the exact executable + adversarial + formal artifact as a citable research release. Zenodo is the archival publication layer, not a source of technical authority.
+
+### Publication bundle
+
+- [ ] Tag the exact reviewed commit only after all required gates are green.
+- [ ] Archive the exact source tree and release tag identity.
+- [ ] Include the Lean 4 source, theorem manifest, pinned toolchain metadata and proof-build instructions.
+- [ ] Include the final MORIARTY/1 report, adversarial corpus and any historical counterexamples that caused reopened phases.
+- [ ] Include frozen machine contracts, schemas, golden vectors, hostile fixtures and gate outputs.
+- [ ] Include reproducibility instructions for Rust tests, Python validators, Lean checks and offline bundle verification.
+- [ ] Include `CITATION.cff` and publication metadata aligned with the release title/authors/version.
+- [ ] Generate a deterministic release manifest plus `SHA256SUMS` covering publication artifacts.
+- [ ] Include dependency/SBOM information where available without embedding credentials or private environment data.
+- [ ] Record the Git commit SHA, release tag, archive hashes and DOI relationship in machine-readable metadata.
+
+### Zenodo identity discipline
+
+- [ ] Publish a new immutable Zenodo version for the formalized release.
+- [ ] Record both the version DOI and Zenodo concept DOI where applicable.
+- [ ] Never repoint an old DOI/version to a different Git commit.
+- [ ] Scope the abstract/claims to exactly what the executable gates, MORIARTY corpus and Lean theorem set establish.
+- [ ] Keep security/adversarial limitations and formal-model assumptions visible in the archived documentation.
+
+### Phase 11 gate
+
+Before publication, an offline release verifier must confirm that:
+
+```text
+Git commit == release tag source
+Lean theorem manifest == archived proof tree
+MORIARTY report commit == formalization input commit
+machine contracts == archived contract hashes
+SHA256SUMS == publication files
+release metadata == exact version identity
+secrets/private keys == absent
+```
+
+The DOI is assigned to the exact surviving, formalized artifact after those bindings are verified.
+
+```text
+ZENODO PRESENCE != TECHNICAL AUTHORITY
+DOI != PROOF OF TRUTH
+ARCHIVAL IMMUTABILITY != IMPLEMENTATION PERFECTION
+```
+
+---
+
 ## Explicitly deferred / prohibited
 
 Generic remote shell, arbitrary peer-selected tools, shared global truth, transitive trust by default, global mutable state, automatic evidence promotion, automatic vote federation, secret-bearing semantic prompts, peer-controlled constitutional override, Holodeck-to-real authority promotion, simulated credential access, and protocol-derived personhood/legal sovereignty claims remain outside the current design.
 
 ## Long-term success condition
 
-QSOL-FED succeeds when mutually distrustful systems can exchange useful, attributable knowledge while remaining free to disagree, disconnect, preserve provenance, retain their own local authority, and safely explore synthetic worlds without confusing simulation for reality.
+QSOL-FED succeeds when mutually distrustful systems can exchange useful, attributable knowledge while remaining free to disagree, disconnect, preserve provenance, retain their own local authority, safely explore synthetic worlds without confusing simulation for reality, survive an explicit adversarial graduation, and publish a traceable formal model of the surviving architecture without overstating what the formalization proves.
