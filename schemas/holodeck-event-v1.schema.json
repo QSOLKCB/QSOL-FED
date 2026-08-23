@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "qsol-fed-holodeck-event/1",
   "title": "QSOL-FED Holodeck Synthetic Event v1",
+  "$comment": "x-qsol-maxUtf8Bytes is a normative QSOL-FED extension enforced by the Phase 5A validator/runtime because JSON Schema maxLength counts Unicode code points rather than UTF-8 bytes.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema", "program_id", "world_id", "sequence", "event_id", "kind", "synthetic_actor", "text", "source_refs", "authority_effect", "federation_effect", "evidence_effect"],
@@ -18,7 +19,12 @@
         {"type": "string", "pattern": "^holo-entity:[0-9a-f]{24}:[0-9]+$"}
       ]
     },
-    "text": {"type": "string", "minLength": 1, "maxLength": 4096},
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "x-qsol-maxUtf8Bytes": 4096
+    },
     "source_refs": {
       "type": "array",
       "maxItems": 16,
