@@ -30,12 +30,16 @@
     "max_clock_skew_seconds": 300,
     "max_signed_message_lifetime_seconds": 3600,
     "signed_envelope_expiry_required": true,
-    "max_rotation_overlap_seconds": 86400
+    "max_rotation_overlap_seconds": 86400,
+    "public_verifier_policy": "frozen maxima are enforced internally and cannot be widened by callers"
   },
   "replay_policy": {
     "store": "durable append-only local replay log",
     "key": "message_id",
     "write_order": "validate signature and clock, fsync replay record, then expose fresh decision",
+    "creation_durability": "fsync the parent directory entry when creating a replay log before any FreshRecorded decision",
+    "timestamp_validation": "UTC second-resolution syntax plus real Gregorian calendar validation",
+    "single_process_handle_policy": "at most one live replay-store handle per canonical path within a process",
     "corruption_policy": "fail_closed",
     "multi_process_claim": false
   },
