@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "qsol-fed-holodeck-receipt/1",
+  "title": "QSOL-FED Holodeck Teardown Receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "program_id", "world_id", "final_state", "event_count", "event_chain_hash", "source_bundle_ref", "authority_effect", "federation_effect", "evidence_effect", "network_used", "real_tools_used", "credentials_exposed"],
+  "properties": {
+    "schema": {"const": "qsol-fed-holodeck-receipt/1"},
+    "program_id": {"type": "string", "pattern": "^holodeck-program:[0-9a-f]{64}$"},
+    "world_id": {"type": "string", "pattern": "^holodeck-world:[0-9a-f]{64}$"},
+    "final_state": {"const": "ended"},
+    "event_count": {"type": "integer", "minimum": 1, "maximum": 4096},
+    "event_chain_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "source_bundle_ref": {"type": "string", "pattern": "^world-export:[0-9a-f]{64}$"},
+    "authority_effect": {"const": "none"},
+    "federation_effect": {"const": "none"},
+    "evidence_effect": {"const": "none"},
+    "network_used": {"const": false},
+    "real_tools_used": {"const": false},
+    "credentials_exposed": {"const": false}
+  }
+}
