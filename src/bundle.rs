@@ -570,7 +570,16 @@ mod tests {
             before.peers[0].capability_advertisement_hex,
             after.peers[0].capability_advertisement_hex
         );
-        assert_eq!(before.objects, after.objects);
+        assert_eq!(before.objects.len(), after.objects.len());
+        for (original, imported) in before.objects.iter().zip(after.objects.iter()) {
+            assert_eq!(original.object_id, imported.object_id);
+            assert_eq!(original.source_node, imported.source_node);
+            assert_eq!(original.object_hex, imported.object_hex);
+            assert_eq!(original.provenance_id, imported.provenance_id);
+            assert_eq!(original.provenance_hex, imported.provenance_hex);
+            assert_eq!(original.exported_namespace, ForeignNamespace::Foreign);
+            assert_eq!(imported.exported_namespace, ForeignNamespace::Quarantine);
+        }
         let _ = fs::remove_dir_all(root);
     }
 
