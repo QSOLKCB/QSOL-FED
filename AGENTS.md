@@ -98,7 +98,7 @@ Do not add any network path that:
 - follows redirects;
 - proxies arbitrary HTTP;
 - contacts cloud metadata services;
-- treats `X-Forwarded-*` or another header as Federation identity or authority;
+- treats a forwarding header as Federation identity or authority;
 - decompresses Federation request bodies;
 - accepts non-canonical JSON on POST;
 - accepts pseudo-admin fields such as `force`, `trusted`, `override`, `admin`, `fetch_url`, or `redirect`;
@@ -107,6 +107,8 @@ Do not add any network path that:
 - executes or interprets envelope payloads as tools/commands;
 - turns a peer hello into trust, persistence, membership, or governance authority.
 
+Peer hello lifecycle is monotonic. A hello may carry up to 128 ordered, authenticated Phase 2 key-rotation/key-status records. Reconstruct the peer from the root-signed identity and apply those records in sequence. If a peer is already introduced in this process, a later hello may advance that locally retained lifecycle state but MUST NOT roll it back or replace the same sequence with a different state.
+
 The reference crate MUST NOT gain an outbound HTTP client dependency during Phase 3. Missing object/provenance IDs return `404`; they do not trigger network retrieval.
 
 Frozen Phase 3 limits are:
@@ -114,14 +116,21 @@ Frozen Phase 3 limits are:
 ```text
 HTTP body                         65536 bytes
 capabilities / hello              64
-requests / IP / minute            120
-POSTs / IP / minute               30
+lifecycle records / hello         128
+requests / client / minute        120
+POSTs / client / minute           30
 local export registry entries     4096 per object class
 ```
 
 Phase 1 JSON depth/string/array/object limits remain in force.
 
-The binary MUST bind loopback by default. A non-loopback bind requires both `--allow-public-listen` and `--tls-terminated-upstream`. Public exposure follows `TLS_PROFILE.md`; do not describe this as native TLS or production networking.
+The binary MUST bind loopback by default. A non-loopback bind requires `--allow-public-listen`, `--tls-terminated-upstream`, and `--trusted-proxy IP`. When the direct socket peer equals that trusted proxy, `x-qsol-client-ip` is required and may be used only for per-client rate limiting and audit metadata. A forwarded client IP from any other socket peer is rejected. It never becomes Federation identity, trust, authority, or admission.
+
+Replay compaction MUST preserve the entire active replay window. Phase 3 retains replay IDs for 4200 seconds, derived from the 3600-second signed-message lifetime plus both 300-second skew margins. Once the append log reaches the compaction threshold, expired records may be pruned and the retained set must be atomically rewritten and fsynced. Do not solve replay exhaustion by dropping still-active IDs.
+
+Replay and audit paths MUST resolve to distinct files. The production audit logger must not retain an unbounded in-memory copy; any in-memory audit mirror is test-only.
+
+Public exposure follows `TLS_PROFILE.md`; do not describe this as native TLS or production networking.
 
 Audit logging must remain metadata-only. Do not intentionally log request bodies, arbitrary headers, bearer tokens, private seeds, signatures, or payload contents.
 
@@ -157,40 +166,15 @@ Never claim consensus truth, global state, a functioning Federation Assembly, or
 
 Security-critical invariant changes require explicit rationale, compatibility analysis, updated machine/human contracts, regression tests, and migration or rejection behavior.
 
-Wire-contract changes additionally require:
+Wire-contract changes require synchronized `wire/phase1.json`, `CANONICAL_JSON.md`, Rust/Python implementations, golden/adversarial vectors, and `tools/validate_phase1_gate.py` updates.
 
-- `wire/phase1.json` update;
-- `CANONICAL_JSON.md` update;
-- Rust and Python implementation updates;
-- language-neutral golden-vector updates;
-- adversarial/oversized fixture updates where relevant;
-- `tools/validate_phase1_gate.py` update;
-- evidence that both implementations still agree byte-for-byte.
+Crypto-contract changes require synchronized `crypto/phase2.json`, `CRYPTOGRAPHY.md`, schemas/vectors, Rust lifecycle/replay tests, and `tools/validate_phase2_gate.py` updates.
 
-Crypto-contract changes additionally require:
-
-- `crypto/phase2.json` update;
-- `CRYPTOGRAPHY.md` update;
-- schema updates;
-- signature-vector updates;
-- Rust cryptographic/lifecycle/replay regression tests;
-- `tools/validate_phase2_gate.py` update;
-- explicit analysis of downgrade, algorithm confusion, key compromise, replay, and Prime Directive interaction.
-
-API-contract changes additionally require:
-
-- `api/phase3.json` update;
-- `API.md` and `TLS_PROFILE.md` updates where relevant;
-- strict route/body/rate-limit tests;
-- pseudo-admin and SSRF-like adversarial tests;
-- audit-field review;
-- deterministic fuzz-smoke coverage;
-- `fuzz/fuzz_targets/wire_and_admission.rs` review when parser/admission semantics change;
-- `tools/validate_phase3_gate.py` update.
+API-contract changes require synchronized `api/phase3.json`, `API.md`, `TLS_PROFILE.md`, strict route/body/rate-limit tests, lifecycle/recipient/replay tests, pseudo-admin/SSRF adversarial tests, audit-field review, fuzz-smoke review, and `tools/validate_phase3_gate.py` updates.
 
 Release-claim changes require updating the canonical successor claim manifest, Rust claim mirror, public/machine status surfaces, roadmap evidence, and claim-gate validation.
 
-Do not silently weaken an invariant, parser rejection, key-lifecycle rule, replay rule, HTTP limit, SSRF boundary, listener posture, audit boundary, or release claim to make integration easier.
+Do not silently weaken an invariant, parser rejection, key-lifecycle rule, replay rule, HTTP limit, SSRF boundary, listener posture, trusted proxy rule, audit boundary, or release claim to make integration easier.
 
 ### Tests
 
