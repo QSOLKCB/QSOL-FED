@@ -68,7 +68,7 @@ New imported material defaults to quarantine. Existing local lifecycle/namespace
 
 ## Phase 5 — QSOL adapters and synthetic worlds
 
-**Status: complete; historical Phase 5 adapter gate preserved by `claims/phase5.json`. Phase 5C is current.**
+**Status: complete; historical Phase 5 adapter gate preserved.**
 
 ### Phase 5A — QSOL-NEXUS AI Holodeck sandbox
 
@@ -82,15 +82,13 @@ New imported material defaults to quarantine. Existing local lifecycle/namespace
 - [x] Explicit host-level sandbox non-claim.
 - [x] Live local QSOL-NEXUS adapter constructs a source manifest only **after native NEXUS export verification**.
 - [x] Reviewed NEXUS Council members project into synthetic Holodeck actors through a synthetic-event-only seam.
-- [x] Deterministic fixtures are generated from native NEXUS `WorldStore` + `PersistentWorldService.export_bundle()` and reproduced in CI from pinned commit `24cb0ce246d12ac99e7d190a8890ef2ddd598321`.
+- [x] Deterministic fixtures are generated from native NEXUS `WorldStore` + `PersistentWorldService.export_bundle()`.
 
 ### Phase 5A gate
 
 For identical verified source manifests and seeds, the reference implementation must produce byte-identical world plans and event identities.
 
-Every attempted real boundary effect must be blocked. A synthetic actor must be unable to create peer/trust/capability/evidence/governance/citizenship authority, mutate the source WorldStore, invoke real tools, use the network, access credentials, create nested Holodecks, or disable safeguards.
-
-`Computer, end program` must terminate a frozen simulation without simulated approval. Final receipts must report:
+Every attempted real boundary effect must be blocked. `Computer, end program` remains operator-owned and terminal.
 
 ```text
 authority_effect     = none
@@ -99,75 +97,54 @@ evidence_effect      = none
 network_used         = false
 real_tools_used      = false
 credentials_exposed  = false
+MORIARTY REPORT != SECURITY PROOF
+SIMULATION != AUTHORITY
 ```
 
 ### Phase 5B — QSOL-NEXUS Federation adapter
 
-- [x] Export verified Council sessions and minority reports as attributed `qsol-fed-nexus-council-report/1` artifacts.
-- [x] Import reports without vote injection or evidence promotion.
-- [x] Preserve observed Council equality while inheriting no vote weight, epistemic privilege, citizenship, or governance authority.
-- [x] Support independent local re-deliberation.
-- [x] Council-of-Councils consumes report identities, not a shared ballot or shared vote weight.
-- [x] Holodeck synthetic actors/events remain outside live Council/governance history.
-
-No QSOL-NEXUS follow-up PR is required for this slice because the native WorldStore/export/verifier primitives already exist. Add a NEXUS-side PR only if later integration identifies an actual missing donor primitive.
+- [x] Export Council and minority reports as attributed artifacts.
+- [x] Import without vote injection or evidence promotion.
+- [x] Preserve Council equality without inherited authority.
+- [x] Independent re-deliberation.
+- [x] Council-of-Councils uses reports, not a shared ballot.
 
 ### QSOL-ORACLE historical Phase 5 membrane
 
-- [x] Implement FED-side typed evidence observations/references.
-- [x] Preserve `known` / `conflict` / `unknown` without copying authority.
-- [x] Keep suggested searches `discovery-only`, non-evidence, and inadmissible without observation.
-- [x] Reject evidence promotion through the FED adapter.
-- [x] Reject Holodeck/simulation admission until a separately reviewed synthetic non-evidence contract exists.
-- [x] Preserve the historical Phase 5 non-claim `oracle_live_transport = false` in `claims/phase5.json`.
+- [x] Preserve `known` / `conflict` / `unknown` without authority promotion.
+- [x] Suggested searches remain non-evidence.
+- [x] Remote evidence promotion rejected.
+- [x] Historical `oracle_live_transport = false` remains frozen in `claims/phase5.json`.
 
-The donor-side follow-up was implemented and hardened in `QSOLKCB/QSOL-ORACLE` PR #5. Phase 5C below is the successor that earns the live-local transport claim without rewriting Phase 5 history.
+The donor-side **follow-up** was completed in `QSOLKCB/QSOL-ORACLE` PR #5. Phase 5C below preserves that follow-up history and the exact donor contract without rewriting the historical Phase 5 non-claim.
 
 ### QSOL-ARK
 
-- [x] Content-addressed SHA-256 preservation objects.
-- [x] Offline verification path requiring no network.
-- [x] Archival presence explicitly non-authoritative.
-- [x] Holodeck programs/receipts preserved as `synthetic_cultural_research`, never relabelled real-world history.
-
-No QSOL-ARK PR is required for the current offline FED-side preservation contract. Add one only if future live integration reveals a missing native recovery/preservation primitive.
+- [x] Content-addressed offline preservation.
+- [x] Archival presence remains non-authoritative.
+- [x] Holodeck artifacts remain synthetic cultural/research material.
 
 ### Phase 5 gate
 
 Every adapter must prove it cannot bypass the same Prime Directive invariant IDs enforced by the core node. NEXUS integration must additionally prove that `SIMULATION != AUTHORITY` survives the adapter boundary.
 
-The historical Phase 5 gate pins the NEXUS donor commit, reproduces native WorldStore export fixtures, requires report-only Council federation, preserves the then-false ORACLE live-transport claim, and verifies ARK preservation offline.
-
 ### Phase 5C — QSOL-ORACLE live transport
 
-**Status: current; attested live-local ORACLE gate enforced by `claims/phase5c.json`.**
+**Status: complete; historical attested live-local ORACLE gate preserved.**
 
-- [x] Pin merged QSOL-ORACLE donor commit `043e864b3c25dfeca3ce1752b3110479479071b1`.
-- [x] Pin donor release fingerprint `7b0eff4dfa9b0caa84f14920d21f6a5446114535d82706cb62e34773c39818d2`.
-- [x] Byte-compare donor membrane, request schema, response schema, and FED observation schema in cross-repository CI.
-- [x] Verify every donor release-fingerprint file byte length and SHA-256 before local process launch.
-- [x] Use the fixed donor entrypoint `python3 tools/fed_transport.py serve`; do not expose a generic command runner.
-- [x] Remove `PYTHONPATH` and `PYTHONHOME` from the donor process environment.
-- [x] Send bounded canonical JSONL requests and accept exactly one bounded canonical response.
-- [x] Verify donor response canonical bytes and `response_sha256` in FED.
-- [x] Preserve `oracle-event:<sha256>` evidence-reference grammar.
-- [x] Run a real live process probe against the historical ORACLE timelock witness.
-- [x] Tamper the donor transport file in CI and prove runtime release attestation rejects it.
-- [x] Promote `oracle_live_transport = true`.
-- [x] Keep `oracle_holodeck_synthetic_admission = false`.
-- [x] Keep production networking and remote execution false.
+Pinned donor commit: `043e864b3c25dfeca3ce1752b3110479479071b1`.
+
+- [x] Attested donor release and exact schema/contract comparison.
+- [x] Private staged runtime per request.
+- [x] Bounded canonical local stdio JSONL.
+- [x] Response identity/provenance verification.
+- [x] `oracle_live_transport = true`.
+- [x] `oracle_holodeck_synthetic_admission = false`.
+- [x] Production networking and remote execution remain false.
 
 ### Phase 5C gate
 
-The exact reviewed QSOL-ORACLE donor release must attest locally before process launch. FED must produce bounded canonical requests, accept one bounded canonical response, verify donor response identity/provenance semantics, and preserve `known` / `conflict` / `unknown` without truth or authority promotion.
-
-The Phase 5C capability delta is exactly:
-
-```text
-oracle_live_transport: false -> true
-```
-
-No other Phase 5 capability bit may change. In particular:
+The exact reviewed QSOL-ORACLE donor release must attest locally before process launch. FED must preserve `known` / `conflict` / `unknown` without truth or authority promotion.
 
 ```text
 oracle_holodeck_synthetic_admission = false
@@ -181,26 +158,74 @@ interoperable_federation            = false
 
 ## Phase 6 — Third-party federation SDKs
 
-- [ ] Minimal protocol SDK contract.
-- [ ] Rust, Python, and JavaScript/TypeScript SDKs.
-- [ ] Language-neutral conformance suite.
-- [ ] Minimal non-QSOL node.
-- [ ] Institutional/research integration docs.
-- [ ] Interop test across at least three independent implementations.
+**Status: complete; historical third-party SDK gate preserved by `claims/phase6.json`.**
+
+- [x] Minimal protocol SDK contract.
+- [x] Rust, Python, and JavaScript/TypeScript SDKs.
+- [x] Language-neutral conformance suite.
+- [x] Minimal non-QSOL node.
+- [x] Institutional/research integration docs.
+- [x] Interop test across at least three independent implementations.
 
 ### Phase 6 gate
 
 A non-NEXUS, non-QSOL-specific node must participate without adopting QSOL internal governance.
 
+```text
+WIRE COMPATIBILITY != GOVERNANCE MEMBERSHIP
+SDK CONFORMANCE != TRUST
+```
+
+Phase 6 proves local three-implementation protocol conformance. It does not claim deployed `interoperable_federation`.
+
 ---
 
 ## Phase 7 — Federation Assembly
 
-- [ ] Separate Assembly membership from network membership.
-- [ ] Proposal/amendment lifecycle, representation and anti-Sybil assumptions.
-- [ ] Deterministic Charter Gate.
-- [ ] Preserve member-local sovereignty and NEXUS advisory status.
-- [ ] Transparent fork/version path and governance receipts.
+**Status: current; sovereignty-preserving Assembly gate enforced by `claims/phase7.json`.**
+
+- [x] Separate Assembly membership from network membership.
+- [x] Proposal/amendment lifecycle, representation and anti-Sybil assumptions.
+- [x] Deterministic Charter Gate.
+- [x] Preserve member-local sovereignty and NEXUS advisory status.
+- [x] Transparent fork/version path and governance receipts.
+
+### Membership and representation
+
+Assembly membership requires explicit local opt-in and does not follow network membership. The reference model is `one-member-one-vote/1`, freezes the electorate when a proposal opens, and rejects duplicate votes rather than replacing history.
+
+The registry enforces one active NFC-normalized representation subject, but does not claim to prove real-world principal uniqueness. That remains an explicit admission-policy assumption.
+
+The frozen electorate is retained as Assembly-local state for vote admission. Public proposal identity uses a domain-separated `electorate_ref` plus `electorate_size`, keeping the 1,024-member ceiling compatible with the bounded canonical-object profile.
+
+### Deterministic Charter Gate
+
+`qsol-fed-charter-gate/1` maps declared proposal effects to existing invariant IDs. A proposal that conflicts with the sitting constitutional lineage becomes `fork_required` instead of gaining an override through majority vote.
+
+Structural proposal schema validation is followed by mandatory `validate_proposal_record_semantics`, which re-derives the Charter Gate and proposal identity. A proposal cannot declare an authority-bearing effect and self-report a compatible assessment.
+
+### NEXUS advisory status
+
+NEXUS reports may be attached as advisory artifacts with:
+
+```text
+advisory_weight = 0
+vote_weight     = 0
+authority_effect = none
+```
+
+Running NEXUS does not create Assembly membership.
+
+### Fork/version path and receipts
+
+Accepted governance creates deterministic `qsol-fed-governance-receipt/1` records. Backward-compatible amendments require explicit source change; breaking/Charter amendments require a new major; constitutional conflicts require an explicit fork path.
+
+Finalization is terminal and removes the proposal from the bounded active set only after the receipt is successfully derived, reclaiming proposal capacity while preventing replay or post-finalization mutation.
+
+```text
+protocol_changed_automatically = false
+member_local_authority_mutated = false
+```
 
 ### Phase 7 gate
 
@@ -226,13 +251,13 @@ No Assembly mechanism may directly mutate member-local authority.
 
 `MORIARTY/1` is a provider-neutral, repository-aware constitutional adversary whose reference operator may be Codex. It receives public blueprints and disposable test fixtures, never production credentials/targets or constitutional bypasses.
 
-Attack families include canonical/parser differentials; signature/domain/key-role confusion; replay/downgrade/clock attacks; HTTP rate/proxy/DDoS-shaped stress; SSRF/decompression; crash/fsync/restart; lifecycle/partition/history attacks; import/provenance authority laundering; adapter confusion; Holodeck escapes; safeguard persuasion; nested-world amplification; and cross-phase contradictions.
+Attack families include canonical/parser differentials; signature/domain/key-role confusion; replay/downgrade/clock attacks; HTTP rate/proxy/DDoS-shaped stress; SSRF/decompression; crash/fsync/restart; lifecycle/partition/history attacks; import/provenance authority laundering; adapter confusion; Holodeck escapes; safeguard persuasion; nested-world amplification; Assembly capture/representation attacks; and cross-phase contradictions.
 
 Every accepted finding must be a reproducible `moriarty-counterexample/1`. A valid finding reopens the phase owning the invariant and becomes a regression.
 
 ### Phase 9 gate
 
-No unresolved reproducible counterexample may cross a constitutional, authority, provenance, sandbox, cryptographic, replay, storage, transport, adapter, or resource-safety boundary for the exact reviewed commit.
+No unresolved reproducible counterexample may cross a constitutional, authority, provenance, sandbox, cryptographic, replay, storage, transport, adapter, Assembly, or resource-safety boundary for the exact reviewed commit.
 
 ```text
 MORIARTY REPORT != SECURITY PROOF
@@ -245,7 +270,7 @@ NO COUNTEREXAMPLE FOUND != NO COUNTEREXAMPLE EXISTS
 
 **Status: planned. Begins only after an exact commit passes MORIARTY/1.**
 
-Bind the Lean package to the exact Moriarty-surviving commit, invariant IDs, contracts, schemas, phase gates, and adversarial report. Initial theorem targets include Prime Directive admission, signature/trust/authority separation, peering/capability separation, import non-authority, lifecycle monotonicity, partition sovereignty, provenance preservation, canonical identity determinism, Holodeck separation/safeguards, adapter non-authority, and Assembly sovereignty.
+Bind the Lean package to the exact Moriarty-surviving commit, invariant IDs, contracts, schemas, phase gates, and adversarial report. Initial theorem targets include Prime Directive admission, signature/trust/authority separation, peering/capability separation, import non-authority, lifecycle monotonicity, partition sovereignty, provenance preservation, canonical identity determinism, Holodeck separation/safeguards, adapter non-authority, SDK conformance boundaries, and Assembly sovereignty.
 
 No unresolved `sorry`/`admit` is permitted in the graduation theorem set; assumptions must be named and theorem-to-contract traceability complete.
 
@@ -282,8 +307,8 @@ ARCHIVAL IMMUTABILITY != IMPLEMENTATION PERFECTION
 
 ## Explicitly deferred / prohibited
 
-Generic remote shell, arbitrary peer-selected tools, shared global truth, transitive trust by default, global mutable state, automatic evidence promotion, automatic vote federation, secret-bearing semantic prompts, peer-controlled constitutional override, Holodeck-to-real authority promotion, Holodeck-to-ORACLE synthetic admission without a separately reviewed non-evidence contract, simulated credential access, and protocol-derived personhood/legal sovereignty claims remain outside the current design.
+Generic remote shell, arbitrary peer-selected tools, shared global truth, transitive trust by default, global mutable state, automatic evidence promotion, automatic vote federation, secret-bearing semantic prompts, peer-controlled constitutional override, Assembly-to-member authority mutation, Holodeck-to-real authority promotion, Holodeck-to-ORACLE synthetic admission without a separately reviewed non-evidence contract, simulated credential access, and protocol-derived personhood/legal sovereignty claims remain outside the current design.
 
 ## Long-term success condition
 
-QSOL-FED succeeds when mutually distrustful systems can exchange useful, attributable knowledge while retaining local sovereignty; safely explore synthetic worlds without confusing simulation for reality; survive explicit adversarial graduation; and publish a traceable formal model without overstating what the proof or DOI establishes.
+QSOL-FED succeeds when mutually distrustful systems can exchange useful, attributable knowledge while retaining local sovereignty; safely explore synthetic worlds without confusing simulation for reality; govern protocol evolution without turning governance into remote member authority; survive explicit adversarial graduation; and publish a traceable formal model without overstating what the proof or DOI establishes.

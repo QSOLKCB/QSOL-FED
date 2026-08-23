@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "qsol-fed-assembly-member/1",
+  "title": "Federation Assembly membership record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "member_id", "representation_subject", "federation_node_id", "status", "representation_weight", "network_membership_required", "qsol_governance_required", "authority_effect"],
+  "properties": {
+    "schema": {"const": "qsol-fed-assembly-member/1"},
+    "member_id": {"type": "string", "pattern": "^assembly:[a-z0-9][a-z0-9._-]{0,127}$"},
+    "representation_subject": {"type": "string", "minLength": 1, "maxLength": 256},
+    "federation_node_id": {
+      "anyOf": [
+        {"type": "null"},
+        {"type": "string", "pattern": "^fed:qsol:[a-z0-9][a-z0-9._-]{0,127}$"}
+      ]
+    },
+    "status": {"enum": ["active", "withdrawn"]},
+    "representation_weight": {"const": 1},
+    "network_membership_required": {"const": false},
+    "qsol_governance_required": {"const": false},
+    "authority_effect": {"const": "none"}
+  }
+}

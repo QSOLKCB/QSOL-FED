@@ -1,8 +1,8 @@
 //! Release-claim boundaries.
 //!
-//! Phase 0, Phase 2, Phase 3, Phase 4, Phase 5A, Phase 5, and Phase 5C
+//! Phase 0, Phase 2, Phase 3, Phase 4, Phase 5A, Phase 5, Phase 5C, and Phase 6
 //! manifests remain historical baselines. `CURRENT_CLAIMS` is the current
-//! Phase 6 governance-neutral SDK/conformance surface. None of these values
+//! Phase 7 sovereignty-preserving Federation Assembly surface. None of these values
 //! are runtime configuration.
 
 pub const PHASE0_GATE_ID: &str = "qsol-fed-phase0-claim-gate/1";
@@ -13,6 +13,7 @@ pub const PHASE5A_GATE_ID: &str = "qsol-fed-phase5a-holodeck-gate/1";
 pub const PHASE5_GATE_ID: &str = "qsol-fed-phase5-adapter-gate/1";
 pub const PHASE5C_GATE_ID: &str = "qsol-fed-phase5c-oracle-live-gate/1";
 pub const PHASE6_GATE_ID: &str = "qsol-fed-phase6-sdk-gate/1";
+pub const PHASE7_GATE_ID: &str = "qsol-fed-phase7-assembly-gate/1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Phase0Claims {
@@ -86,6 +87,15 @@ pub struct CurrentClaims {
     pub third_party_node_conformance: bool,
     pub three_implementation_sdk_interop: bool,
     pub institutional_integration_docs: bool,
+    pub assembly_membership_separate_from_network: bool,
+    pub assembly_proposal_lifecycle: bool,
+    pub assembly_representation_model: bool,
+    pub assembly_anti_sybil_contract: bool,
+    pub deterministic_charter_gate: bool,
+    pub assembly_member_local_sovereignty: bool,
+    pub nexus_assembly_advisory_only: bool,
+    pub assembly_fork_version_path: bool,
+    pub assembly_governance_receipts: bool,
     pub host_level_sandbox: bool,
     pub production_networking: bool,
     pub remote_execution: bool,
@@ -140,6 +150,15 @@ pub const CURRENT_CLAIMS: CurrentClaims = CurrentClaims {
     third_party_node_conformance: true,
     three_implementation_sdk_interop: true,
     institutional_integration_docs: true,
+    assembly_membership_separate_from_network: true,
+    assembly_proposal_lifecycle: true,
+    assembly_representation_model: true,
+    assembly_anti_sybil_contract: true,
+    deterministic_charter_gate: true,
+    assembly_member_local_sovereignty: true,
+    nexus_assembly_advisory_only: true,
+    assembly_fork_version_path: true,
+    assembly_governance_receipts: true,
     host_level_sandbox: false,
     production_networking: false,
     remote_execution: false,
@@ -195,6 +214,15 @@ pub enum ReleaseClaim {
     ThirdPartyNodeConformance,
     ThreeImplementationSdkInterop,
     InstitutionalIntegrationDocs,
+    AssemblyMembershipSeparateFromNetwork,
+    AssemblyProposalLifecycle,
+    AssemblyRepresentationModel,
+    AssemblyAntiSybilContract,
+    DeterministicCharterGate,
+    AssemblyMemberLocalSovereignty,
+    NexusAssemblyAdvisoryOnly,
+    AssemblyForkVersionPath,
+    AssemblyGovernanceReceipts,
     HostLevelSandbox,
     ProductionNetworking,
     RemoteExecution,
@@ -250,6 +278,15 @@ pub const fn is_established(claim: ReleaseClaim) -> bool {
         ReleaseClaim::ThirdPartyNodeConformance => CURRENT_CLAIMS.third_party_node_conformance,
         ReleaseClaim::ThreeImplementationSdkInterop => CURRENT_CLAIMS.three_implementation_sdk_interop,
         ReleaseClaim::InstitutionalIntegrationDocs => CURRENT_CLAIMS.institutional_integration_docs,
+        ReleaseClaim::AssemblyMembershipSeparateFromNetwork => CURRENT_CLAIMS.assembly_membership_separate_from_network,
+        ReleaseClaim::AssemblyProposalLifecycle => CURRENT_CLAIMS.assembly_proposal_lifecycle,
+        ReleaseClaim::AssemblyRepresentationModel => CURRENT_CLAIMS.assembly_representation_model,
+        ReleaseClaim::AssemblyAntiSybilContract => CURRENT_CLAIMS.assembly_anti_sybil_contract,
+        ReleaseClaim::DeterministicCharterGate => CURRENT_CLAIMS.deterministic_charter_gate,
+        ReleaseClaim::AssemblyMemberLocalSovereignty => CURRENT_CLAIMS.assembly_member_local_sovereignty,
+        ReleaseClaim::NexusAssemblyAdvisoryOnly => CURRENT_CLAIMS.nexus_assembly_advisory_only,
+        ReleaseClaim::AssemblyForkVersionPath => CURRENT_CLAIMS.assembly_fork_version_path,
+        ReleaseClaim::AssemblyGovernanceReceipts => CURRENT_CLAIMS.assembly_governance_receipts,
         ReleaseClaim::HostLevelSandbox => CURRENT_CLAIMS.host_level_sandbox,
         ReleaseClaim::ProductionNetworking => CURRENT_CLAIMS.production_networking,
         ReleaseClaim::RemoteExecution => CURRENT_CLAIMS.remote_execution,
@@ -272,18 +309,19 @@ mod tests {
     }
 
     #[test]
-    fn phase6_adds_sdk_interop_without_deployment_overclaim() {
+    fn phase7_adds_assembly_without_member_local_authority() {
         for claim in [
-            ReleaseClaim::MinimalProtocolSdkContract,
-            ReleaseClaim::RustProtocolSdk,
-            ReleaseClaim::PythonProtocolSdk,
-            ReleaseClaim::TypescriptProtocolSdk,
-            ReleaseClaim::LanguageNeutralSdkConformance,
-            ReleaseClaim::ThirdPartyNodeConformance,
-            ReleaseClaim::ThreeImplementationSdkInterop,
-            ReleaseClaim::InstitutionalIntegrationDocs,
+            ReleaseClaim::AssemblyMembershipSeparateFromNetwork,
+            ReleaseClaim::AssemblyProposalLifecycle,
+            ReleaseClaim::AssemblyRepresentationModel,
+            ReleaseClaim::AssemblyAntiSybilContract,
+            ReleaseClaim::DeterministicCharterGate,
+            ReleaseClaim::AssemblyMemberLocalSovereignty,
+            ReleaseClaim::NexusAssemblyAdvisoryOnly,
+            ReleaseClaim::AssemblyForkVersionPath,
+            ReleaseClaim::AssemblyGovernanceReceipts,
         ] {
-            assert!(is_established(claim), "Phase 6 SDK capability disabled: {claim:?}");
+            assert!(is_established(claim), "Phase 7 Assembly capability disabled: {claim:?}");
         }
         for claim in [
             ReleaseClaim::OracleHolodeckSyntheticAdmission,
@@ -292,17 +330,19 @@ mod tests {
             ReleaseClaim::RemoteExecution,
             ReleaseClaim::InteroperableFederation,
         ] {
-            assert!(!is_established(claim), "Phase 6 deployment/authority overclaim enabled: {claim:?}");
+            assert!(!is_established(claim), "Phase 7 deployment/authority overclaim enabled: {claim:?}");
         }
     }
 
     #[test]
     fn current_claim_gate_is_not_runtime_configurable() {
-        assert_eq!(PHASE6_GATE_ID, "qsol-fed-phase6-sdk-gate/1");
-        assert!(CURRENT_CLAIMS.oracle_live_transport);
+        assert_eq!(PHASE7_GATE_ID, "qsol-fed-phase7-assembly-gate/1");
         assert!(CURRENT_CLAIMS.minimal_protocol_sdk_contract);
         assert!(CURRENT_CLAIMS.three_implementation_sdk_interop);
-        assert!(CURRENT_CLAIMS.third_party_node_conformance);
+        assert!(CURRENT_CLAIMS.assembly_membership_separate_from_network);
+        assert!(CURRENT_CLAIMS.deterministic_charter_gate);
+        assert!(CURRENT_CLAIMS.assembly_member_local_sovereignty);
+        assert!(CURRENT_CLAIMS.nexus_assembly_advisory_only);
         assert!(!CURRENT_CLAIMS.oracle_holodeck_synthetic_admission);
         assert!(!CURRENT_CLAIMS.host_level_sandbox);
         assert!(!CURRENT_CLAIMS.production_networking);

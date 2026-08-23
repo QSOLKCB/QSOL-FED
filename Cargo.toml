@@ -1,8 +1,8 @@
 [package]
 name = "qsol-fed"
-version = "0.9.0"
+version = "0.10.0"
 edition = "2024"
-description = "Constitutional federation core with governance-neutral third-party protocol SDKs and conformance suites"
+description = "Constitutional federation core with governance-neutral SDKs and a sovereignty-preserving Federation Assembly"
 license = "Apache-2.0"
 repository = "https://github.com/QSOLKCB/QSOL-FED"
 rust-version = "1.85"

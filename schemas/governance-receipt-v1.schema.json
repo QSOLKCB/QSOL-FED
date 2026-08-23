@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "qsol-fed-governance-receipt/1",
+  "title": "Federation Assembly governance receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "receipt_id", "proposal_id", "outcome", "charter_gate",
+    "representation_model", "electorate_ref", "electorate_size", "yes_votes", "no_votes",
+    "abstain_votes", "quorum_required", "quorum_met", "approval_required",
+    "approval_met", "version_path", "source_change_required",
+    "protocol_changed_automatically", "member_local_authority_mutated",
+    "nexus_advisory_reports", "nexus_advisory_vote_weight", "authority_effect"
+  ],
+  "properties": {
+    "schema": {"const": "qsol-fed-governance-receipt/1"},
+    "receipt_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "proposal_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "outcome": {"enum": ["accepted", "rejected", "withdrawn", "fork_required", "fork_endorsed"]},
+    "charter_gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gate", "disposition", "violated_invariant_ids", "current_lineage_eligible", "member_local_authority_effect"],
+      "properties": {
+        "gate": {"const": "qsol-fed-charter-gate/1"},
+        "disposition": {"enum": ["compatible", "fork_required"]},
+        "violated_invariant_ids": {"type": "array", "uniqueItems": true, "maxItems": 13, "items": {"type": "string"}},
+        "current_lineage_eligible": {"type": "boolean"},
+        "member_local_authority_effect": {"const": "none"}
+      }
+    },
+    "representation_model": {"const": "one-member-one-vote/1"},
+    "electorate_ref": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "electorate_size": {"type": "integer", "minimum": 1, "maximum": 1024},
+    "yes_votes": {"type": "integer", "minimum": 0, "maximum": 1024},
+    "no_votes": {"type": "integer", "minimum": 0, "maximum": 1024},
+    "abstain_votes": {"type": "integer", "minimum": 0, "maximum": 1024},
+    "quorum_required": {"type": "integer", "minimum": 1, "maximum": 1024},
+    "quorum_met": {"type": "boolean"},
+    "approval_required": {"type": "integer", "minimum": 0, "maximum": 1024},
+    "approval_met": {"type": "boolean"},
+    "version_path": {"enum": ["no_protocol_change", "compatible_source_change_required", "new_major_required", "fork_required"]},
+    "source_change_required": {"type": "boolean"},
+    "protocol_changed_automatically": {"const": false},
+    "member_local_authority_mutated": {"const": false},
+    "nexus_advisory_reports": {"type": "integer", "minimum": 0, "maximum": 64},
+    "nexus_advisory_vote_weight": {"const": 0},
+    "authority_effect": {"const": "none"}
+  }
+}

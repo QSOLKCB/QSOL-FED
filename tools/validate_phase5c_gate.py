@@ -15,6 +15,13 @@ PHASE6_KEYS = {
     "third_party_node_conformance", "three_implementation_sdk_interop",
     "institutional_integration_docs",
 }
+PHASE7_KEYS = {
+    "assembly_membership_separate_from_network", "assembly_proposal_lifecycle",
+    "assembly_representation_model", "assembly_anti_sybil_contract",
+    "deterministic_charter_gate", "assembly_member_local_sovereignty",
+    "nexus_assembly_advisory_only", "assembly_fork_version_path",
+    "assembly_governance_receipts",
+}
 
 
 def require(condition: bool, message: str) -> None:
@@ -56,12 +63,18 @@ def validate_claim_delta() -> None:
     for key in ("oracle_holodeck_synthetic_admission", "host_level_sandbox", "production_networking", "remote_execution", "interoperable_federation"):
         require(caps[key] is False, f"Phase 5C premature claim enabled: {key}")
 
-    current = load("claims/phase6.json")["capabilities"]
-    require(set(caps).issubset(current), "Phase 6 dropped Phase 5C capability keys")
-    require(all(current[key] == value for key, value in caps.items()), "Phase 6 changed a historical Phase 5C capability")
-    require(set(current) - set(caps) == PHASE6_KEYS, "Phase 6 successor capability key drift")
-    require(all(current[key] is True for key in PHASE6_KEYS), "Phase 6 SDK capability missing")
-    require(rust_claims() == current, "Rust current claims disagree with Phase 6 successor")
+    phase6 = load("claims/phase6.json")["capabilities"]
+    require(set(caps).issubset(phase6), "Phase 6 dropped Phase 5C capability keys")
+    require(all(phase6[key] == value for key, value in caps.items()), "Phase 6 changed a historical Phase 5C capability")
+    require(set(phase6) - set(caps) == PHASE6_KEYS, "Phase 6 successor capability key drift")
+    require(all(phase6[key] is True for key in PHASE6_KEYS), "Phase 6 SDK capability missing")
+
+    phase7 = load("claims/phase7.json")["capabilities"]
+    require(set(phase6).issubset(phase7), "Phase 7 dropped Phase 6 capability keys")
+    require(all(phase7[key] == value for key, value in phase6.items()), "Phase 7 changed a historical Phase 6 capability")
+    require(set(phase7) - set(phase6) == PHASE7_KEYS, "Phase 7 successor capability key drift")
+    require(all(phase7[key] is True for key in PHASE7_KEYS), "Phase 7 Assembly capability missing")
+    require(rust_claims() == phase7, "Rust current claims disagree with Phase 7 successor")
 
 
 def validate_contract_and_snapshots() -> None:
@@ -151,8 +164,8 @@ def validate_surfaces() -> None:
     ai = load("README4AI.md")
     require(ai.get("phase5_status") == "historical_qsol_adapter_gate_preserved", "README4AI Phase 5 historical status drift")
     require(ai.get("phase5c_status") == "historical_oracle_live_transport_gate_preserved", "README4AI Phase 5C historical status missing")
-    require(ai.get("current_claim_manifest") == "claims/phase6.json", "README4AI Phase 6 current manifest drift")
-    require(ai.get("current_claims") == load("claims/phase6.json")["capabilities"], "README4AI Phase 6 claim drift")
+    require(ai.get("current_claim_manifest") == "claims/phase7.json", "README4AI Phase 7 current manifest drift")
+    require(ai.get("current_claims") == load("claims/phase7.json")["capabilities"], "README4AI Phase 7 claim drift")
     live = ai.get("phase5c_oracle_live", {})
     require(live.get("historical") is True, "README4AI Phase 5C history marker missing")
     require(live.get("oracle_pinned_commit") == ORACLE_COMMIT and live.get("oracle_release_fingerprint_sha256") == ORACLE_RELEASE, "README4AI ORACLE pin drift")
@@ -171,7 +184,7 @@ def main() -> None:
     validate_contract_and_snapshots()
     validate_rust_and_ci()
     validate_surfaces()
-    print("phase5c historical ORACLE live gate OK: donor fingerprint recomputed, staged runtime re-attested, bounded isolated local JSONL process verified, oracle-event provenance preserved, and transport remains non-authoritative under Phase 6")
+    print("phase5c historical ORACLE live gate OK: donor fingerprint recomputed, staged runtime re-attested, bounded isolated local JSONL process verified, oracle-event provenance preserved, and the non-authority transport survives the Phase 7 successor unchanged")
 
 
 if __name__ == "__main__":

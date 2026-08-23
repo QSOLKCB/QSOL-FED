@@ -1,14 +1,15 @@
 #![forbid(unsafe_code)]
 
 //! QSOL-FED constitutional, canonical wire, cryptographic identity, opt-in HTTP,
-//! durable federation-state, sandboxed synthetic-world, adapter, and governance-neutral SDK core.
+//! durable federation-state, sandboxed synthetic-world, adapter, SDK, and Assembly core.
 //!
 //! Persistence, import, peering, trust, capability policy, simulation, evidence
 //! observation, Council reports, archival presence, live-local adapter transport,
-//! and SDK conformance remain separate from truth, authority, constitutional admission,
-//! governance membership, and real execution effects.
+//! SDK conformance, and Assembly governance remain separate from truth, member-local
+//! authority, constitutional admission, and real execution effects.
 
 pub mod api;
+pub mod assembly;
 pub mod bundle;
 pub mod canonical;
 pub mod claims;
@@ -30,6 +31,18 @@ pub use api::{
     API_MAX_EXPORT_OBJECTS, API_MAX_LIFECYCLE_RECORDS, API_POSTS_PER_MINUTE,
     API_REQUESTS_PER_MINUTE, PEER_HELLO_SCHEMA_V1, RATE_LIMIT_CLIENT_IP_HEADER,
 };
+pub use assembly::{
+    assess_charter_gate, validate_proposal_record_semantics, AdvisorySourceKind,
+    AssemblyAdvisoryReport, AssemblyError, AssemblyGovernanceReceipt, AssemblyMemberApplication,
+    AssemblyMemberRecord, AssemblyMemberStatus, AssemblyProposalDraft, AssemblyProposalKind,
+    AssemblyProposalRecord, AssemblyProposalStatus, CharterGateAssessment,
+    CharterGateDisposition, FederationAssembly, GovernanceOutcome, ProposalEffectDeclaration,
+    ProtocolCompatibility, VersionPath, VoteChoice, ANTI_SYBIL_ASSUMPTION,
+    ASSEMBLY_ADVISORY_SCHEMA_V1, ASSEMBLY_CHARTER_GATE_V1, ASSEMBLY_ELECTORATE_DOMAIN_V1,
+    ASSEMBLY_MEMBER_SCHEMA_V1, ASSEMBLY_PROPOSAL_SCHEMA_V1, ASSEMBLY_RECEIPT_SCHEMA_V1,
+    ASSEMBLY_REPRESENTATION_V1, MAX_ASSEMBLY_ADVISORIES, MAX_ASSEMBLY_MEMBERS,
+    MAX_ASSEMBLY_PROPOSALS, MAX_PROPOSAL_SUMMARY_BYTES, MAX_PROPOSAL_TITLE_BYTES,
+};
 pub use bundle::{
     export_bundle, import_bundle, verify_bundle, BundleError, BundleImportReceipt, BundleObject,
     BundlePeer, BundleVerificationReport, PortableFederationBundle, FEDERATION_BUNDLE_SCHEMA_V1,
@@ -42,7 +55,7 @@ pub use canonical::{
 pub use claims::{
     is_established, CurrentClaims, Phase0Claims, ReleaseClaim, CURRENT_CLAIMS, PHASE0_CLAIMS,
     PHASE0_GATE_ID, PHASE2_GATE_ID, PHASE3_GATE_ID, PHASE4_GATE_ID, PHASE5A_GATE_ID,
-    PHASE5C_GATE_ID, PHASE5_GATE_ID, PHASE6_GATE_ID,
+    PHASE5C_GATE_ID, PHASE5_GATE_ID, PHASE6_GATE_ID, PHASE7_GATE_ID,
 };
 pub use crypto::{
     create_identity_document, derive_key_id, derive_node_id, sign_envelope,

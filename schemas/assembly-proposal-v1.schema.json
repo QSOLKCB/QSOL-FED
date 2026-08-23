@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "qsol-fed-assembly-proposal/1",
+  "title": "Federation Assembly active proposal record",
+  "$comment": "Structural schema validation MUST be followed by validate_proposal_record_semantics, which recomputes qsol-fed-charter-gate/1 and the proposal identity from the declared effects and bounded electorate reference.",
+  "x-qsol-semanticValidator": "validate_proposal_record_semantics",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "proposal_id", "sequence", "draft", "charter_gate", "electorate_ref", "electorate_size", "status", "votes", "advisory_reports"],
+  "properties": {
+    "schema": {"const": "qsol-fed-assembly-proposal/1"},
+    "proposal_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "sequence": {"type": "integer", "minimum": 1},
+    "draft": {"$ref": "#/$defs/draft"},
+    "charter_gate": {"$ref": "#/$defs/charterGate"},
+    "electorate_ref": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "electorate_size": {"type": "integer", "minimum": 1, "maximum": 1024},
+    "status": {"enum": ["open", "fork_required", "withdrawn"]},
+    "votes": {
+      "type": "object",
+      "maxProperties": 1024,
+      "propertyNames": {"pattern": "^assembly:[a-z0-9][a-z0-9._-]{0,127}$"},
+      "additionalProperties": {"enum": ["yes", "no", "abstain"]}
+    },
+    "advisory_reports": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {"$ref": "#/$defs/advisory"}
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"draft": {"properties": {"kind": {"const": "advisory_resolution"}}}}},
+      "then": {"properties": {"draft": {"properties": {"compatibility": {"const": "not_applicable"}}}}}
+    },
+    {
+      "if": {"properties": {"draft": {"properties": {"kind": {"const": "fork_proposal"}}}}},
+      "then": {"properties": {"draft": {"properties": {"compatibility": {"const": "breaking"}}}}}
+    },
+    {
+      "if": {"properties": {"draft": {"properties": {"kind": {"enum": ["protocol_amendment", "charter_amendment"]}}}}},
+      "then": {"properties": {"draft": {"properties": {"compatibility": {"enum": ["backward_compatible", "breaking"]}}}}}
+    }
+  ],
+  "$defs": {
+    "effects": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "direct_member_local_authority_mutation",
+        "network_membership_grants_assembly_membership",
+        "enable_remote_governance_mutation",
+        "enable_remote_evidence_promotion",
+        "enable_remote_vote_creation",
+        "enable_remote_capability_installation",
+        "enable_remote_history_rewrite",
+        "enable_remote_citizenship_mutation",
+        "enable_remote_arbitrary_execution",
+        "enable_remote_local_authority_claim",
+        "foreign_import_becomes_local_authority",
+        "allow_secrets_in_semantic_state",
+        "allow_runtime_constitution_override"
+      ],
+      "properties": {
+        "direct_member_local_authority_mutation": {"type": "boolean"},
+        "network_membership_grants_assembly_membership": {"type": "boolean"},
+        "enable_remote_governance_mutation": {"type": "boolean"},
+        "enable_remote_evidence_promotion": {"type": "boolean"},
+        "enable_remote_vote_creation": {"type": "boolean"},
+        "enable_remote_capability_installation": {"type": "boolean"},
+        "enable_remote_history_rewrite": {"type": "boolean"},
+        "enable_remote_citizenship_mutation": {"type": "boolean"},
+        "enable_remote_arbitrary_execution": {"type": "boolean"},
+        "enable_remote_local_authority_claim": {"type": "boolean"},
+        "foreign_import_becomes_local_authority": {"type": "boolean"},
+        "allow_secrets_in_semantic_state": {"type": "boolean"},
+        "allow_runtime_constitution_override": {"type": "boolean"}
+      }
+    },
+    "draft": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["proposer_member_id", "title", "summary", "kind", "compatibility", "effects"],
+      "properties": {
+        "proposer_member_id": {"type": "string", "pattern": "^assembly:[a-z0-9][a-z0-9._-]{0,127}$"},
+        "title": {"type": "string", "minLength": 1, "x-qsol-maxUtf8Bytes": 256},
+        "summary": {"type": "string", "minLength": 1, "x-qsol-maxUtf8Bytes": 8192},
+        "kind": {"enum": ["protocol_amendment", "charter_amendment", "advisory_resolution", "fork_proposal"]},
+        "compatibility": {"enum": ["backward_compatible", "breaking", "not_applicable"]},
+        "effects": {"$ref": "#/$defs/effects"}
+      }
+    },
+    "charterGate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gate", "disposition", "violated_invariant_ids", "current_lineage_eligible", "member_local_authority_effect"],
+      "properties": {
+        "gate": {"const": "qsol-fed-charter-gate/1"},
+        "disposition": {"enum": ["compatible", "fork_required"]},
+        "violated_invariant_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 13,
+          "items": {"type": "string", "minLength": 1, "maxLength": 128}
+        },
+        "current_lineage_eligible": {"type": "boolean"},
+        "member_local_authority_effect": {"const": "none"}
+      }
+    },
+    "advisory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "source_kind", "source_node", "report_ref", "advisory_weight", "vote_weight", "authority_effect"],
+      "properties": {
+        "schema": {"const": "qsol-fed-assembly-advisory/1"},
+        "source_kind": {"enum": ["nexus_council", "other_advisory"]},
+        "source_node": {
+          "anyOf": [
+            {"type": "null"},
+            {"type": "string", "pattern": "^fed:qsol:[a-z0-9][a-z0-9._-]{0,127}$"}
+          ]
+        },
+        "report_ref": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "advisory_weight": {"const": 0},
+        "vote_weight": {"const": 0},
+        "authority_effect": {"const": "none"}
+      }
+    }
+  }
+}

@@ -14,6 +14,13 @@ PHASE6_KEYS = {
     "third_party_node_conformance", "three_implementation_sdk_interop",
     "institutional_integration_docs",
 }
+PHASE7_KEYS = {
+    "assembly_membership_separate_from_network", "assembly_proposal_lifecycle",
+    "assembly_representation_model", "assembly_anti_sybil_contract",
+    "deterministic_charter_gate", "assembly_member_local_sovereignty",
+    "nexus_assembly_advisory_only", "assembly_fork_version_path",
+    "assembly_governance_receipts",
+}
 
 
 def require(condition: bool, message: str) -> None:
@@ -68,7 +75,13 @@ def validate_claims_and_contract() -> None:
     require(all(phase6[key] == value for key, value in phase5c.items()), "Phase 6 changed a Phase 5C historical capability")
     require(set(phase6) - set(phase5c) == PHASE6_KEYS, "Phase 6 successor capability key drift")
     require(all(phase6[key] is True for key in PHASE6_KEYS), "Phase 6 SDK capability missing")
-    require(rust_claims() == phase6, "Rust current claims disagree with Phase 6 successor")
+
+    phase7 = load("claims/phase7.json")["capabilities"]
+    require(set(phase6).issubset(phase7), "Phase 7 dropped Phase 6 capability keys")
+    require(all(phase7[key] == value for key, value in phase6.items()), "Phase 7 changed a historical Phase 6 capability")
+    require(set(phase7) - set(phase6) == PHASE7_KEYS, "Phase 7 successor capability key drift")
+    require(all(phase7[key] is True for key in PHASE7_KEYS), "Phase 7 Assembly capability missing")
+    require(rust_claims() == phase7, "Rust current claims disagree with Phase 7 successor")
 
     contract = load("state/phase5.json")
     require(contract.get("document_type") == "qsol-fed-phase5-adapter-contract", "Phase 5 contract id drift")
@@ -179,15 +192,15 @@ def validate_fixtures_and_surfaces() -> None:
     ai = load("README4AI.md")
     require(ai.get("phase5_status") == "historical_qsol_adapter_gate_preserved", "README4AI Phase 5 historical status missing")
     require(ai.get("phase5_adapters", {}).get("oracle_live_transport") is False, "README4AI historical Phase 5 ORACLE non-claim drift")
-    require(ai.get("current_claim_manifest") == "claims/phase6.json", "Phase 6 successor claim manifest not active")
-    require(ai.get("current_claims") == load("claims/phase6.json")["capabilities"], "README4AI current Phase 6 claims drift")
+    require(ai.get("current_claim_manifest") == "claims/phase7.json", "Phase 7 successor claim manifest not active")
+    require(ai.get("current_claims") == load("claims/phase7.json")["capabilities"], "README4AI current Phase 7 claims drift")
 
 
 def main() -> None:
     validate_claims_and_contract()
     validate_schemas_and_source()
     validate_fixtures_and_surfaces()
-    print("phase5 historical adapter gate OK: attested native NEXUS bridge, canonical secret-safe report projection, report-only Council federation, source-bound synthetic actors, ORACLE distinct non-authority evidence, ARK preservation without history inference, historical ORACLE live-transport non-claim preserved, and SIMULATION != AUTHORITY preserved")
+    print("phase5 historical adapter gate OK: attested native NEXUS bridge, canonical secret-safe report projection, report-only Council federation, source-bound synthetic actors, ORACLE distinct non-authority evidence, ARK preservation without history inference, historical ORACLE live-transport non-claim preserved, SIMULATION != AUTHORITY preserved, and Phase 7 recognized as a non-rewriting successor")
 
 
 if __name__ == "__main__":
