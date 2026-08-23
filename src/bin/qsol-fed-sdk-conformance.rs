@@ -9,7 +9,7 @@ fn main() {
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let fixture = include_str!("../../fixtures/phase6/conformance.json");
-    let result = phase6_conformance_from_fixture(fixture, "rust")?;
+    let result = phase6_conformance_from_fixture(fixture, "language-neutral")?;
     println!("{}", serde_json::to_string(&result)?);
     Ok(())
 }
