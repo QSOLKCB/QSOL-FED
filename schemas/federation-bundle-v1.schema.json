@@ -19,12 +19,16 @@
         "required": ["node_id", "identity_hex", "lifecycle_hex", "capability_advertisement_hex", "exported_state"],
         "properties": {
           "node_id": {"type": "string", "pattern": "^fed:qsol:[a-z0-9][a-z0-9._-]{0,127}$"},
-          "identity_hex": {"type": "string", "pattern": "^[0-9a-f]+$"},
-          "lifecycle_hex": {"type": "array", "maxItems": 512, "items": {"type": "string", "pattern": "^[0-9a-f]+$"}},
+          "identity_hex": {"type": "string", "minLength": 2, "maxLength": 8192, "pattern": "^(?:[0-9a-f]{2})+$"},
+          "lifecycle_hex": {
+            "type": "array",
+            "maxItems": 512,
+            "items": {"type": "string", "minLength": 2, "maxLength": 8192, "pattern": "^(?:[0-9a-f]{2})+$"}
+          },
           "capability_advertisement_hex": {
             "oneOf": [
               {"type": "null"},
-              {"type": "string", "pattern": "^[0-9a-f]+$"}
+              {"type": "string", "minLength": 2, "maxLength": 8192, "pattern": "^(?:[0-9a-f]{2})+$"}
             ]
           },
           "exported_state": {"enum": ["introduced", "admitted", "quarantined", "revoked", "disconnected"]}
@@ -33,7 +37,7 @@
     },
     "objects": {
       "type": "array",
-      "maxItems": 4096,
+      "maxItems": 1024,
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -42,7 +46,7 @@
           "object_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
           "source_node": {"type": "string", "pattern": "^fed:qsol:[a-z0-9][a-z0-9._-]{0,127}$"},
           "exported_namespace": {"enum": ["foreign", "quarantine"]},
-          "object_hex": {"type": "string", "pattern": "^[0-9a-f]+$"},
+          "object_hex": {"type": "string", "minLength": 2, "maxLength": 8192, "pattern": "^(?:[0-9a-f]{2})+$"},
           "provenance_id": {
             "oneOf": [
               {"type": "null"},
@@ -52,7 +56,7 @@
           "provenance_hex": {
             "oneOf": [
               {"type": "null"},
-              {"type": "string", "pattern": "^[0-9a-f]+$"}
+              {"type": "string", "minLength": 2, "maxLength": 8192, "pattern": "^(?:[0-9a-f]{2})+$"}
             ]
           }
         }
