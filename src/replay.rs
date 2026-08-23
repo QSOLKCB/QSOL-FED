@@ -93,6 +93,10 @@ fn parse_replay_timestamp(value: &str) -> Result<i64, ReplayError> {
         .map_err(|_| ReplayError("replay_timestamp_invalid_calendar".into()))
 }
 
+fn valid_replay_timestamp(value: &str) -> bool {
+    parse_replay_timestamp(value).is_ok()
+}
+
 fn format_replay_timestamp(timestamp: i64) -> Result<String, ReplayError> {
     DateTime::<Utc>::from_timestamp(timestamp, 0)
         .map(|value| value.format("%Y-%m-%dT%H:%M:%SZ").to_string())
@@ -121,11 +125,11 @@ fn sync_parent_directory(_path: &Path) -> Result<(), ReplayError> {
 
 /// Single-process durable replay store.
 ///
-/// Records are retained for the complete interval in which a signed Phase 2
-/// message could still pass the frozen lifetime/skew policy. Older records are
-/// safely pruned because authentication rejects those messages before replay
-/// admission. The append log is atomically compacted and fsynced before it can
-/// approach the hard 64 MiB ceiling.
+/// Records are retained for the full interval in which a signed Phase 2 message
+/// could still pass the frozen lifetime/skew policy. Older records are safely
+/// pruned because authentication rejects those messages before replay admission.
+/// The append log is atomically compacted and fsynced before it approaches the
+/// hard 64 MiB ceiling.
 pub struct DurableReplayStore {
     path: PathBuf,
     file: File,
@@ -169,14 +173,17 @@ impl DurableReplayStore {
                     index + 1
                 )));
             };
-            if message_id.contains('\t') || seen_at.contains('\t') || !is_sha256_ref(message_id) {
+            if message_id.contains('\t')
+                || seen_at.contains('\t')
+                || !is_sha256_ref(message_id)
+                || !valid_replay_timestamp(seen_at)
+            {
                 return Err(ReplayError(format!(
                     "replay_log_invalid_line:{}",
                     index + 1
                 )));
             }
-            let unix = parse_replay_timestamp(seen_at)
-                .map_err(|_| ReplayError(format!("replay_log_invalid_line:{}", index + 1)))?;
+            let unix = parse_replay_timestamp(seen_at)?;
             if seen
                 .insert(
                     message_id.to_owned(),
@@ -257,7 +264,7 @@ impl DurableReplayStore {
         message_id: &str,
         seen_at: &str,
     ) -> Result<ReplayDecision, ReplayError> {
-        if !is_sha256_ref(message_id) {
+        if !is_sha256_ref(message_id) || !valid_replay_timestamp(seen_at) {
             return Err(ReplayError("replay_record_invalid".into()));
         }
         let now_unix = parse_replay_timestamp(seen_at)?;
@@ -397,11 +404,10 @@ mod tests {
         let path = temp_path("compaction");
         let old_id = format!("sha256:{}", "e".repeat(64));
         let fresh_id = format!("sha256:{}", "f".repeat(64));
-        let filler = format!("sha256:{}\t2026-08-22T20:00:00Z\n", "1".repeat(64));
         let mut contents = String::new();
         contents.push_str(&format!("{old_id}\t2026-08-22T20:00:00Z\n"));
         while contents.len() < REPLAY_COMPACTION_THRESHOLD_BYTES as usize {
-            let index = contents.len() / filler.len();
+            let index = contents.len() / 94;
             let digest = format!("{index:064x}");
             contents.push_str(&format!("sha256:{digest}\t2026-08-22T20:00:00Z\n"));
         }
