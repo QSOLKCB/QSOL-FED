@@ -6,12 +6,28 @@
 
 QSOL-FED now includes the first Phase 5 QSOL-NEXUS adapter slice: a **sandboxed synthetic-world kernel** that derives reproducible AI Holodeck world plans from locally NEXUS-verified WorldStore export identities without giving the simulation any real Federation, network, tool, credential, or source-world mutation capability.
 
-## Historical claim gates
+## Historical Phase 0 claim gate
 
-Historical release-claim baselines remain immutable:
+<!-- PHASE0_CLAIM_BOUNDARY:BEGIN -->
+At Phase 0 the repository was deliberately constrained to the bootstrap claim boundary:
+
+- constitutional model: **established and tested**;
+- machine contracts: **established and tested**;
+- fail-closed admission skeleton: **established and tested**;
+- tested constitutional core: **established and tested**;
+- production networking: **not established**;
+- cryptographic identity: **not established**;
+- remote execution: **not established and forbidden by the current protocol posture**;
+- interoperable federation: **not established**.
+<!-- PHASE0_CLAIM_BOUNDARY:END -->
+
+[`claims/phase0.json`](claims/phase0.json) remains the immutable historical Phase 0 release-claim baseline.
+
+## Later historical claim gates
+
+Historical successor baselines also remain immutable:
 
 ```text
-claims/phase0.json   constitutional bootstrap
 claims/phase2.json   cryptographic identity
 claims/phase3.json   bounded reference API
 claims/phase4.json   durable federation state
