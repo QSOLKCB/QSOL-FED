@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use std::fs;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 
 use qsol_fed::{build_router, ApiState, NodeIdentityDocument};
@@ -15,13 +15,17 @@ struct Args {
     capabilities: Vec<String>,
     allow_public_listen: bool,
     tls_terminated_upstream: bool,
+    trusted_proxy: Option<IpAddr>,
 }
 
 fn usage() -> &'static str {
-    "qsol-fed --identity FILE [--listen ADDR] [--replay-log FILE] [--audit-log FILE] [--capability ID ...] [--allow-public-listen --tls-terminated-upstream]\n\nDefault listen address: 127.0.0.1:8787\nNon-loopback binding is refused unless BOTH --allow-public-listen and --tls-terminated-upstream are supplied."
+    "qsol-fed --identity FILE [--listen ADDR] [--replay-log FILE] [--audit-log FILE] [--capability ID ...] [--allow-public-listen --tls-terminated-upstream --trusted-proxy IP]\n\nDefault listen address: 127.0.0.1:8787"
 }
 
-fn parse_args() -> Result<Args, String> {
+fn parse_args_from<I>(values: I) -> Result<Args, String>
+where
+    I: IntoIterator<Item = String>,
+{
     let mut listen: SocketAddr = "127.0.0.1:8787".parse().unwrap();
     let mut identity = None;
     let mut replay_log = PathBuf::from("qsol-fed-replay.log");
@@ -29,29 +33,22 @@ fn parse_args() -> Result<Args, String> {
     let mut capabilities = vec!["federation.api/1".to_owned()];
     let mut allow_public_listen = false;
     let mut tls_terminated_upstream = false;
+    let mut trusted_proxy = None;
 
-    let mut args = std::env::args().skip(1);
+    let mut args = values.into_iter();
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--listen" => {
                 let value = args.next().ok_or("--listen requires a value")?;
-                listen = value
-                    .parse()
-                    .map_err(|_| format!("invalid listen address: {value}"))?;
+                listen = value.parse().map_err(|_| format!("invalid listen address: {value}"))?;
             }
-            "--identity" => {
-                identity = Some(PathBuf::from(
-                    args.next().ok_or("--identity requires a value")?,
-                ));
-            }
-            "--replay-log" => {
-                replay_log = PathBuf::from(args.next().ok_or("--replay-log requires a value")?);
-            }
-            "--audit-log" => {
-                audit_log = PathBuf::from(args.next().ok_or("--audit-log requires a value")?);
-            }
-            "--capability" => {
-                capabilities.push(args.next().ok_or("--capability requires a value")?);
+            "--identity" => identity = Some(PathBuf::from(args.next().ok_or("--identity requires a value")?)),
+            "--replay-log" => replay_log = PathBuf::from(args.next().ok_or("--replay-log requires a value")?),
+            "--audit-log" => audit_log = PathBuf::from(args.next().ok_or("--audit-log requires a value")?),
+            "--capability" => capabilities.push(args.next().ok_or("--capability requires a value")?),
+            "--trusted-proxy" => {
+                let value = args.next().ok_or("--trusted-proxy requires a value")?;
+                trusted_proxy = Some(value.parse().map_err(|_| format!("invalid trusted proxy IP: {value}"))?);
             }
             "--allow-public-listen" => allow_public_listen = true,
             "--tls-terminated-upstream" => tls_terminated_upstream = true,
@@ -61,11 +58,8 @@ fn parse_args() -> Result<Args, String> {
     }
 
     let identity = identity.ok_or_else(|| format!("--identity is required\n\n{}", usage()))?;
-    if !listen.ip().is_loopback() && !(allow_public_listen && tls_terminated_upstream) {
-        return Err(
-            "non-loopback listening requires --allow-public-listen AND --tls-terminated-upstream"
-                .into(),
-        );
+    if !listen.ip().is_loopback() && !(allow_public_listen && tls_terminated_upstream && trusted_proxy.is_some()) {
+        return Err("non-loopback listening requires --allow-public-listen, --tls-terminated-upstream, and --trusted-proxy IP".into());
     }
 
     capabilities.sort();
@@ -78,7 +72,12 @@ fn parse_args() -> Result<Args, String> {
         capabilities,
         allow_public_listen,
         tls_terminated_upstream,
+        trusted_proxy,
     })
+}
+
+fn parse_args() -> Result<Args, String> {
+    parse_args_from(std::env::args().skip(1))
 }
 
 #[tokio::main]
@@ -105,11 +104,12 @@ async fn main() {
             std::process::exit(2);
         }
     };
-    let state = match ApiState::new(
+    let state = match ApiState::new_with_trusted_proxy(
         identity,
         args.capabilities,
         &args.replay_log,
         Some(&args.audit_log),
+        args.trusted_proxy,
     ) {
         Ok(state) => state,
         Err(error) => {
@@ -126,8 +126,8 @@ async fn main() {
     };
 
     eprintln!(
-        "qsol-fed reference API listening on {} (public_opt_in={}, tls_terminated_upstream={})",
-        args.listen, args.allow_public_listen, args.tls_terminated_upstream
+        "qsol-fed reference API listening on {} (public_opt_in={}, tls_terminated_upstream={}, trusted_proxy={:?})",
+        args.listen, args.allow_public_listen, args.tls_terminated_upstream, args.trusted_proxy
     );
 
     let service = build_router(state).into_make_service_with_connect_info::<SocketAddr>();
@@ -146,11 +146,37 @@ async fn main() {
 mod tests {
     use super::*;
 
+    fn base_args() -> Vec<String> {
+        vec!["--identity".into(), "node.json".into()]
+    }
+
     #[test]
-    fn public_listen_requires_explicit_tls_assertion() {
-        let public: SocketAddr = "0.0.0.0:8787".parse().unwrap();
-        assert!(!public.ip().is_loopback());
-        let loopback: SocketAddr = "127.0.0.1:8787".parse().unwrap();
-        assert!(loopback.ip().is_loopback());
+    fn loopback_remains_default() {
+        let parsed = parse_args_from(base_args()).unwrap();
+        assert!(parsed.listen.ip().is_loopback());
+        assert!(parsed.trusted_proxy.is_none());
+    }
+
+    #[test]
+    fn public_listen_requires_tls_and_trusted_proxy() {
+        let mut incomplete = base_args();
+        incomplete.extend([
+            "--listen".into(),
+            "0.0.0.0:8787".into(),
+            "--allow-public-listen".into(),
+            "--tls-terminated-upstream".into(),
+        ]);
+        assert!(parse_args_from(incomplete).is_err());
+
+        let mut complete = base_args();
+        complete.extend([
+            "--listen".into(),
+            "0.0.0.0:8787".into(),
+            "--allow-public-listen".into(),
+            "--tls-terminated-upstream".into(),
+            "--trusted-proxy".into(),
+            "127.0.0.1".into(),
+        ]);
+        assert!(parse_args_from(complete).is_ok());
     }
 }
