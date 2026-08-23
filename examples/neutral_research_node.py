@@ -12,10 +12,10 @@ sys.path.insert(0, str(SDK))
 
 from qsol_fed_sdk import (
     build_node_manifest,
+    build_provenance,
     build_unsigned_envelope,
     canonicalize,
     object_id,
-    validate_provenance,
     validate_third_party_profile,
 )
 
@@ -41,15 +41,13 @@ def build_participation() -> dict:
         "note": "Neutral laboratory result available",
     }
     payload_ref = object_id(payload)
-    provenance = {
-        "schema": "qsol-fed-provenance/1",
-        "source_node": manifest["node_id"],
-        "source_object": payload_ref,
-        "relation": "observed",
-        "parents": [],
-        "created_at": "2026-08-23T00:00:00Z",
-    }
-    validate_provenance(provenance)
+    provenance = build_provenance(
+        manifest["node_id"],
+        payload_ref,
+        "observed",
+        [],
+        "2026-08-23T00:00:00Z",
+    )
 
     hello = build_unsigned_envelope({
         "sender": manifest["node_id"],
