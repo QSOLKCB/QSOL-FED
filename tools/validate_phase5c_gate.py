@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Enforce the Phase 5C attested live-local QSOL-ORACLE transport boundary."""
+"""Preserve the Phase 5C attested live-local QSOL-ORACLE transport boundary."""
 from __future__ import annotations
 
 import json
@@ -9,6 +9,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 ORACLE_COMMIT = "043e864b3c25dfeca3ce1752b3110479479071b1"
 ORACLE_RELEASE = "7b0eff4dfa9b0caa84f14920d21f6a5446114535d82706cb62e34773c39818d2"
+PHASE6_KEYS = {
+    "minimal_protocol_sdk_contract", "rust_protocol_sdk", "python_protocol_sdk",
+    "typescript_protocol_sdk", "language_neutral_sdk_conformance",
+    "third_party_node_conformance", "three_implementation_sdk_interop",
+    "institutional_integration_docs",
+}
 
 
 def require(condition: bool, message: str) -> None:
@@ -36,23 +42,26 @@ def rust_claims() -> dict[str, bool]:
 
 def validate_claim_delta() -> None:
     previous = load("claims/phase5.json")
-    current = load("claims/phase5c.json")
-    require(current.get("document_type") == "qsol-fed-phase5c-oracle-live-claims", "Phase 5C claim id drift")
-    require(current.get("gate_id") == "qsol-fed-phase5c-oracle-live-gate/1", "Phase 5C gate id drift")
-    require(current.get("gate_status") == "enforced", "Phase 5C gate not enforced")
-    require(current.get("runtime_override_allowed") is False, "Phase 5C claim became runtime-configurable")
+    historical = load("claims/phase5c.json")
+    require(historical.get("document_type") == "qsol-fed-phase5c-oracle-live-claims", "Phase 5C claim id drift")
+    require(historical.get("gate_id") == "qsol-fed-phase5c-oracle-live-gate/1", "Phase 5C gate id drift")
+    require(historical.get("gate_status") == "enforced", "Phase 5C gate not enforced")
+    require(historical.get("runtime_override_allowed") is False, "Phase 5C claim became runtime-configurable")
     old_caps = previous["capabilities"]
-    caps = current["capabilities"]
+    caps = historical["capabilities"]
     require(set(old_caps) == set(caps), "Phase 5C capability key set drift")
     changed = {key for key in caps if caps[key] != old_caps[key]}
     require(changed == {"oracle_live_transport"}, f"Phase 5C changed unexpected claims: {sorted(changed)}")
     require(old_caps["oracle_live_transport"] is False and caps["oracle_live_transport"] is True, "ORACLE live transport promotion drift")
-    for key in (
-        "oracle_holodeck_synthetic_admission", "host_level_sandbox", "production_networking",
-        "remote_execution", "interoperable_federation",
-    ):
+    for key in ("oracle_holodeck_synthetic_admission", "host_level_sandbox", "production_networking", "remote_execution", "interoperable_federation"):
         require(caps[key] is False, f"Phase 5C premature claim enabled: {key}")
-    require(rust_claims() == caps, "Rust current claims disagree with Phase 5C")
+
+    current = load("claims/phase6.json")["capabilities"]
+    require(set(caps).issubset(current), "Phase 6 dropped Phase 5C capability keys")
+    require(all(current[key] == value for key, value in caps.items()), "Phase 6 changed a historical Phase 5C capability")
+    require(set(current) - set(caps) == PHASE6_KEYS, "Phase 6 successor capability key drift")
+    require(all(current[key] is True for key in PHASE6_KEYS), "Phase 6 SDK capability missing")
+    require(rust_claims() == current, "Rust current claims disagree with Phase 6 successor")
 
 
 def validate_contract_and_snapshots() -> None:
@@ -86,8 +95,7 @@ def validate_contract_and_snapshots() -> None:
     require(oracle["synthetic_input"] is False and oracle["truth_claim"] is False and oracle["evidence_promotion"] is False and oracle["authority_effect"] == "none", "ORACLE observation boundary drift")
     require(oracle["holodeck_synthetic_admission"] is False, "Holodeck-to-ORACLE admission enabled")
     require(oracle["network_transport_claimed"] is False and oracle["remote_execution_claimed"] is False, "ORACLE local process transport overclaimed")
-    prime = state["prime_directive"]
-    require(all(value is False for value in prime.values()), "Phase 5C transport gained forbidden Prime Directive effect")
+    require(all(value is False for value in state["prime_directive"].values()), "Phase 5C transport gained forbidden Prime Directive effect")
 
     donor = load("contracts/oracle-fed-membrane-v1.json")
     require(donor["protocol"] == "QSOL-ORACLE-FED/1", "local ORACLE donor contract protocol drift")
@@ -132,32 +140,23 @@ def validate_rust_and_ci() -> None:
     for forbidden in ("Command::new(request", "TcpStream", "reqwest", "hyper::client", "wait_with_output"):
         require(forbidden not in source, f"Phase 5C live adapter gained forbidden generic/network/unbounded process capability: {forbidden}")
     binary = (ROOT / "src/bin/qsol-fed-oracle.rs").read_text(encoding="utf-8")
-    for marker in (
-        "OracleLiveAdapter::open", "phase5c-conformance",
-        "ORACLE_PINNED_COMMIT", "ORACLE_RELEASE_FINGERPRINT_SHA256",
-    ):
+    for marker in ("OracleLiveAdapter::open", "phase5c-conformance", "ORACLE_PINNED_COMMIT", "ORACLE_RELEASE_FINGERPRINT_SHA256"):
         require(marker in binary, f"ORACLE live probe marker missing: {marker}")
-
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-    for marker in (
-        "QSOLKCB/QSOL-ORACLE", ORACLE_COMMIT, ".deps/QSOL-ORACLE",
-        "oracle-fed-membrane-v1.json", "oracle-transport-request-v1.schema.json",
-        "oracle-transport-response-v1.schema.json", "qsol-fed-oracle",
-        "forged fingerprint self-claim", "validate_phase5c_gate.py",
-    ):
+    for marker in ("QSOLKCB/QSOL-ORACLE", ORACLE_COMMIT, ".deps/QSOL-ORACLE", "oracle-fed-membrane-v1.json", "oracle-transport-request-v1.schema.json", "oracle-transport-response-v1.schema.json", "qsol-fed-oracle", "forged fingerprint self-claim", "validate_phase5c_gate.py"):
         require(marker.lower() in workflow.lower(), f"CI Phase 5C marker missing: {marker}")
 
 
 def validate_surfaces() -> None:
     ai = load("README4AI.md")
     require(ai.get("phase5_status") == "historical_qsol_adapter_gate_preserved", "README4AI Phase 5 historical status drift")
-    require(ai.get("phase5c_status") == "oracle_live_transport_gate_enforced", "README4AI Phase 5C status missing")
-    require(ai.get("current_claim_manifest") == "claims/phase5c.json", "README4AI Phase 5C current manifest drift")
-    require(ai.get("current_claims") == load("claims/phase5c.json")["capabilities"], "README4AI Phase 5C claim drift")
+    require(ai.get("phase5c_status") == "historical_oracle_live_transport_gate_preserved", "README4AI Phase 5C historical status missing")
+    require(ai.get("current_claim_manifest") == "claims/phase6.json", "README4AI Phase 6 current manifest drift")
+    require(ai.get("current_claims") == load("claims/phase6.json")["capabilities"], "README4AI Phase 6 claim drift")
     live = ai.get("phase5c_oracle_live", {})
+    require(live.get("historical") is True, "README4AI Phase 5C history marker missing")
     require(live.get("oracle_pinned_commit") == ORACLE_COMMIT and live.get("oracle_release_fingerprint_sha256") == ORACLE_RELEASE, "README4AI ORACLE pin drift")
     require(live.get("oracle_holodeck_synthetic_admission") is False, "README4AI Holodeck admission drift")
-
     roadmap = (ROOT / "ROADMAP.md").read_text(encoding="utf-8")
     require("Phase 5C — QSOL-ORACLE live transport" in roadmap, "ROADMAP Phase 5C missing")
     require("oracle_live_transport" in roadmap and ORACLE_COMMIT in roadmap, "ROADMAP ORACLE promotion/pin missing")
@@ -172,7 +171,7 @@ def main() -> None:
     validate_contract_and_snapshots()
     validate_rust_and_ci()
     validate_surfaces()
-    print("phase5c ORACLE live gate OK: donor fingerprint recomputed, staged runtime re-attested, bounded isolated local JSONL process verified, oracle-event provenance preserved, and transport promoted without synthetic/authority/network claims")
+    print("phase5c historical ORACLE live gate OK: donor fingerprint recomputed, staged runtime re-attested, bounded isolated local JSONL process verified, oracle-event provenance preserved, and transport remains non-authoritative under Phase 6")
 
 
 if __name__ == "__main__":
