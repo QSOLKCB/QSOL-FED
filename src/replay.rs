@@ -1,14 +1,18 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
-use chrono::DateTime;
+use chrono::{DateTime, Utc};
 
 use crate::wire::{is_sha256_ref, is_wire_timestamp};
+use crate::{MAX_CLOCK_SKEW_SECONDS, MAX_SIGNED_MESSAGE_LIFETIME_SECONDS};
 
 pub const MAX_REPLAY_LOG_BYTES: u64 = 64 * 1024 * 1024;
+pub const REPLAY_COMPACTION_THRESHOLD_BYTES: u64 = 1024 * 1024;
+pub const REPLAY_RETENTION_SECONDS: i64 =
+    MAX_SIGNED_MESSAGE_LIFETIME_SECONDS + (2 * MAX_CLOCK_SKEW_SECONDS);
 
 static OPEN_REPLAY_PATHS: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
 
@@ -27,6 +31,12 @@ impl std::error::Error for ReplayError {}
 pub enum ReplayDecision {
     FreshRecorded,
     Replay,
+}
+
+#[derive(Debug, Clone)]
+struct SeenRecord {
+    seen_at: String,
+    unix: i64,
 }
 
 struct ReplayPathClaim {
@@ -74,8 +84,19 @@ fn replay_path_key(path: &Path) -> Result<PathBuf, ReplayError> {
     Ok(canonical_parent.join(file_name))
 }
 
-fn valid_replay_timestamp(value: &str) -> bool {
-    is_wire_timestamp(value) && DateTime::parse_from_rfc3339(value).is_ok()
+fn parse_replay_timestamp(value: &str) -> Result<i64, ReplayError> {
+    if !is_wire_timestamp(value) {
+        return Err(ReplayError("replay_timestamp_invalid_syntax".into()));
+    }
+    DateTime::parse_from_rfc3339(value)
+        .map(|value| value.timestamp())
+        .map_err(|_| ReplayError("replay_timestamp_invalid_calendar".into()))
+}
+
+fn format_replay_timestamp(timestamp: i64) -> Result<String, ReplayError> {
+    DateTime::<Utc>::from_timestamp(timestamp, 0)
+        .map(|value| value.format("%Y-%m-%dT%H:%M:%SZ").to_string())
+        .ok_or_else(|| ReplayError("replay_timestamp_out_of_range".into()))
 }
 
 #[cfg(unix)]
@@ -98,18 +119,17 @@ fn sync_parent_directory(_path: &Path) -> Result<(), ReplayError> {
     ))
 }
 
-/// Single-process durable replay store for Phase 2.
+/// Single-process durable replay store.
 ///
-/// Each accepted message is appended as `<message_id>\t<seen_at>\n`, flushed,
-/// and fsynced before `FreshRecorded` is returned. New replay-log directory
-/// entries are fsynced before the store can report freshness. A malformed,
-/// duplicate, or partial existing log fails closed on open. Exactly one live
-/// store handle per canonical path is allowed in a process. This type deliberately
-/// makes no multi-process locking claim; network-service concurrency belongs to Phase 3.
+/// Records are retained for the complete interval in which a signed Phase 2
+/// message could still pass the frozen lifetime/skew policy. Older records are
+/// safely pruned because authentication rejects those messages before replay
+/// admission. The append log is atomically compacted and fsynced before it can
+/// approach the hard 64 MiB ceiling.
 pub struct DurableReplayStore {
     path: PathBuf,
     file: File,
-    seen: HashSet<String>,
+    seen: HashMap<String, SeenRecord>,
     _path_claim: ReplayPathClaim,
 }
 
@@ -141,7 +161,7 @@ impl DurableReplayStore {
         }
         let text = std::str::from_utf8(&bytes)
             .map_err(|_| ReplayError("replay_log_invalid_utf8".into()))?;
-        let mut seen = HashSet::new();
+        let mut seen = HashMap::new();
         for (index, line) in text.lines().enumerate() {
             let Some((message_id, seen_at)) = line.split_once('\t') else {
                 return Err(ReplayError(format!(
@@ -149,17 +169,24 @@ impl DurableReplayStore {
                     index + 1
                 )));
             };
-            if message_id.contains('\t')
-                || seen_at.contains('\t')
-                || !is_sha256_ref(message_id)
-                || !valid_replay_timestamp(seen_at)
-            {
+            if message_id.contains('\t') || seen_at.contains('\t') || !is_sha256_ref(message_id) {
                 return Err(ReplayError(format!(
                     "replay_log_invalid_line:{}",
                     index + 1
                 )));
             }
-            if !seen.insert(message_id.to_owned()) {
+            let unix = parse_replay_timestamp(seen_at)
+                .map_err(|_| ReplayError(format!("replay_log_invalid_line:{}", index + 1)))?;
+            if seen
+                .insert(
+                    message_id.to_owned(),
+                    SeenRecord {
+                        seen_at: seen_at.to_owned(),
+                        unix,
+                    },
+                )
+                .is_some()
+            {
                 return Err(ReplayError(format!("replay_log_duplicate:{}", index + 1)));
             }
         }
@@ -176,7 +203,53 @@ impl DurableReplayStore {
     }
 
     pub fn contains(&self, message_id: &str) -> bool {
-        self.seen.contains(message_id)
+        self.seen.contains_key(message_id)
+    }
+
+    fn prune_memory(&mut self, now_unix: i64) {
+        let cutoff = now_unix.saturating_sub(REPLAY_RETENTION_SECONDS);
+        self.seen.retain(|_, record| record.unix >= cutoff);
+    }
+
+    fn compact(&mut self, now_unix: i64) -> Result<(), ReplayError> {
+        self.prune_memory(now_unix);
+        let mut entries: Vec<_> = self.seen.iter().collect();
+        entries.sort_by(|left, right| left.0.cmp(right.0));
+
+        let file_name = self
+            .path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .ok_or_else(|| ReplayError("replay_compaction_filename_invalid".into()))?;
+        let temporary = self.path.with_file_name(format!(".{file_name}.compact.tmp"));
+        let _ = fs::remove_file(&temporary);
+        let mut compacted = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+            .map_err(|error| ReplayError(format!("replay_compaction_open:{error}")))?;
+        for (message_id, record) in entries {
+            compacted
+                .write_all(format!("{message_id}\t{}\n", record.seen_at).as_bytes())
+                .map_err(|error| ReplayError(format!("replay_compaction_write:{error}")))?;
+        }
+        compacted
+            .flush()
+            .map_err(|error| ReplayError(format!("replay_compaction_flush:{error}")))?;
+        compacted
+            .sync_all()
+            .map_err(|error| ReplayError(format!("replay_compaction_fsync:{error}")))?;
+        drop(compacted);
+
+        fs::rename(&temporary, &self.path)
+            .map_err(|error| ReplayError(format!("replay_compaction_rename:{error}")))?;
+        sync_parent_directory(&self.path)?;
+        self.file = OpenOptions::new()
+            .read(true)
+            .append(true)
+            .open(&self.path)
+            .map_err(|error| ReplayError(format!("replay_compaction_reopen:{error}")))?;
+        Ok(())
     }
 
     pub fn check_and_record(
@@ -184,21 +257,35 @@ impl DurableReplayStore {
         message_id: &str,
         seen_at: &str,
     ) -> Result<ReplayDecision, ReplayError> {
-        if !is_sha256_ref(message_id) || !valid_replay_timestamp(seen_at) {
+        if !is_sha256_ref(message_id) {
             return Err(ReplayError("replay_record_invalid".into()));
         }
-        if self.seen.contains(message_id) {
+        let now_unix = parse_replay_timestamp(seen_at)?;
+        self.prune_memory(now_unix);
+        if self.seen.contains_key(message_id) {
             return Ok(ReplayDecision::Replay);
         }
+
         let record = format!("{message_id}\t{seen_at}\n");
-        let current = self
+        let mut current = self
             .file
             .metadata()
             .map_err(|error| ReplayError(format!("replay_metadata:{error}")))?
             .len();
-        if current.saturating_add(record.len() as u64) > MAX_REPLAY_LOG_BYTES {
-            return Err(ReplayError("replay_log_too_large".into()));
+        if current >= REPLAY_COMPACTION_THRESHOLD_BYTES
+            || current.saturating_add(record.len() as u64) > MAX_REPLAY_LOG_BYTES
+        {
+            self.compact(now_unix)?;
+            current = self
+                .file
+                .metadata()
+                .map_err(|error| ReplayError(format!("replay_metadata:{error}")))?
+                .len();
         }
+        if current.saturating_add(record.len() as u64) > MAX_REPLAY_LOG_BYTES {
+            return Err(ReplayError("replay_active_window_too_large".into()));
+        }
+
         self.file
             .write_all(record.as_bytes())
             .map_err(|error| ReplayError(format!("replay_write:{error}")))?;
@@ -208,7 +295,13 @@ impl DurableReplayStore {
         self.file
             .sync_all()
             .map_err(|error| ReplayError(format!("replay_fsync:{error}")))?;
-        self.seen.insert(message_id.to_owned());
+        self.seen.insert(
+            message_id.to_owned(),
+            SeenRecord {
+                seen_at: format_replay_timestamp(now_unix)?,
+                unix: now_unix,
+            },
+        );
         Ok(ReplayDecision::FreshRecorded)
     }
 }
@@ -216,7 +309,6 @@ impl DurableReplayStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_path(label: &str) -> PathBuf {
@@ -262,7 +354,7 @@ mod tests {
     }
 
     #[test]
-    fn partial_or_duplicate_log_fails_closed() {
+    fn partial_duplicate_and_impossible_timestamps_fail_closed() {
         let partial = temp_path("partial");
         fs::write(
             &partial,
@@ -277,25 +369,15 @@ mod tests {
         fs::write(&duplicate, format!("{line}{line}")).unwrap();
         assert!(DurableReplayStore::open(&duplicate).is_err());
         let _ = fs::remove_file(duplicate);
-    }
 
-    #[test]
-    fn impossible_calendar_timestamps_fail_closed() {
-        let path = temp_path("calendar");
-        let message_id = format!("sha256:{}", "d".repeat(64));
-        {
-            let mut store = DurableReplayStore::open(&path).unwrap();
-            assert!(store
-                .check_and_record(&message_id, "2026-99-99T99:99:99Z")
-                .is_err());
-        }
+        let calendar = temp_path("calendar");
         fs::write(
-            &path,
-            format!("{message_id}\t2026-99-99T99:99:99Z\n"),
+            &calendar,
+            format!("sha256:{}\t2026-99-99T99:99:99Z\n", "d".repeat(64)),
         )
         .unwrap();
-        assert!(DurableReplayStore::open(&path).is_err());
-        let _ = fs::remove_file(path);
+        assert!(DurableReplayStore::open(&calendar).is_err());
+        let _ = fs::remove_file(calendar);
     }
 
     #[test]
@@ -307,6 +389,37 @@ mod tests {
         drop(first);
         let reopened = DurableReplayStore::open(&path).unwrap();
         drop(reopened);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn expired_replay_records_are_pruned_and_compacted_durably() {
+        let path = temp_path("compaction");
+        let old_id = format!("sha256:{}", "e".repeat(64));
+        let fresh_id = format!("sha256:{}", "f".repeat(64));
+        let filler = format!("sha256:{}\t2026-08-22T20:00:00Z\n", "1".repeat(64));
+        let mut contents = String::new();
+        contents.push_str(&format!("{old_id}\t2026-08-22T20:00:00Z\n"));
+        while contents.len() < REPLAY_COMPACTION_THRESHOLD_BYTES as usize {
+            let index = contents.len() / filler.len();
+            let digest = format!("{index:064x}");
+            contents.push_str(&format!("sha256:{digest}\t2026-08-22T20:00:00Z\n"));
+        }
+        fs::write(&path, contents).unwrap();
+        {
+            let mut store = DurableReplayStore::open(&path).unwrap();
+            assert_eq!(
+                store
+                    .check_and_record(&fresh_id, "2026-08-23T00:00:00Z")
+                    .unwrap(),
+                ReplayDecision::FreshRecorded
+            );
+            assert!(!store.contains(&old_id));
+        }
+        let compacted = fs::read_to_string(&path).unwrap();
+        assert!(compacted.contains(&fresh_id));
+        assert!(!compacted.contains(&old_id));
+        assert!(compacted.len() < REPLAY_COMPACTION_THRESHOLD_BYTES as usize);
         let _ = fs::remove_file(path);
     }
 }
