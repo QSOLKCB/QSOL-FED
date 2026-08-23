@@ -6,11 +6,11 @@ QSOL-FED is a security-sensitive federation boundary. Protocol convenience never
 
 ### Read first
 
-Read `README4AI.md`, `CHARTER.md`, `PRIME_DIRECTIVE.md`, `claims/phase0.json`, `claims/phase2.json`, `claims/phase3.json`, `claims/phase4.json`, `wire/phase1.json`, `crypto/phase2.json`, `api/phase3.json`, `state/phase4.json`, `CANONICAL_JSON.md`, `CRYPTOGRAPHY.md`, `API.md`, `TLS_PROFILE.md`, `FEDERATION_STATE.md`, `src/invariants.rs`, `src/claims.rs`, `src/store.rs`, `src/peering.rs`, `src/bundle.rs`, and `THREAT_MODEL.md` before changing state semantics.
+Read `README4AI.md`, `CHARTER.md`, `PRIME_DIRECTIVE.md`, `claims/phase0.json`, `claims/phase2.json`, `claims/phase3.json`, `claims/phase4.json`, `claims/phase5a.json`, `wire/phase1.json`, `crypto/phase2.json`, `api/phase3.json`, `state/phase4.json`, `state/phase5a-holodeck.json`, `CANONICAL_JSON.md`, `CRYPTOGRAPHY.md`, `API.md`, `TLS_PROFILE.md`, `FEDERATION_STATE.md`, `HOLODECK.md`, `src/invariants.rs`, `src/claims.rs`, `src/store.rs`, `src/peering.rs`, `src/bundle.rs`, `src/holodeck.rs`, and `THREAT_MODEL.md` before changing security/state/simulation semantics.
 
 ### Core constitutional rules
 
-No peer, model, config, environment variable, API request, signature, trust label, imported bundle, capability advertisement, or persisted object may:
+No peer, model, config, environment variable, API request, signature, trust label, imported bundle, capability advertisement, persisted object, Holodeck program, simulated actor, or adversarial test persona may:
 
 - create local governance authority;
 - promote local evidence;
@@ -19,9 +19,9 @@ No peer, model, config, environment variable, API request, signature, trust labe
 - rewrite local history;
 - mutate local citizenship/identity authority;
 - trigger arbitrary remote execution;
-- turn imported/foreign state into local authority;
-- place secrets/private keys in semantic Federation state;
-- disable constitutional invariants at runtime.
+- turn imported/foreign/simulated state into local authority;
+- place secrets/private keys in semantic Federation or Holodeck state;
+- disable constitutional invariants or Holodeck safeguards at runtime.
 
 Unknown authority-bearing effects fail closed.
 
@@ -43,7 +43,7 @@ Do not add outbound HTTP fetching, pseudo-admin fields, request decompression, a
 
 ### Phase 4 federation-state rules
 
-`state/phase4.json`, `FEDERATION_STATE.md`, and `claims/phase4.json` define the current state contract.
+`state/phase4.json`, `FEDERATION_STATE.md`, and `claims/phase4.json` remain the historical durable-state contract.
 
 Hard rules:
 
@@ -69,33 +69,83 @@ Hard rules:
 - effective capability permission requires lifecycle state `admitted`, an active authenticated advertisement, and explicit local allow;
 - revoked, disconnected, introduced, or quarantined peers do not receive capability permission from a valid old signature;
 - trust/policy writes are **staged**: persist the candidate snapshot successfully before replacing live in-memory state;
-- capability identifiers retain the Phase 1 version grammar;
 - partition rejoin with changed snapshots requires explicit reconciliation;
 - silent reconciliation is forbidden;
-- namespace move is a crash-recoverable transaction; never expose an unrecoverable two-namespace intermediate state;
+- namespace move is a crash-recoverable transaction;
 - portable bundles must preserve exact canonical foreign identity/lifecycle/object/provenance attribution material;
-- `qsol-fed-bundle/1` stays inside Phase 1 canonical limits: 65,536 total bytes and 8,192 characters per embedded hex string;
+- `qsol-fed-bundle/1` stays inside Phase 1 canonical limits;
 - trust registry state and local capability policy MUST NOT be serialized into `qsol-fed-bundle/1`;
 - bundle verification must remain offline;
 - bundle import must leave trust unchanged and yield `authority = none`;
 - archival import must not demote or otherwise overwrite a pre-existing local peer admission decision;
 - import must not create local authority, evidence status, votes, capabilities, or execution rights.
 
-The Phase 3 `/peer/hello` endpoint remains an introduction boundary. Durable admission into the Phase 4 `PeerRegistry` is an explicit local operation; a remote hello must not silently become durable admitted membership.
+The Phase 3 `/peer/hello` endpoint remains an introduction boundary. Durable admission into the Phase 4 `PeerRegistry` is an explicit local operation.
 
 Run `python3 tools/validate_phase4_gate.py` after store/peering/bundle changes.
 
+### Phase 5A Holodeck rules
+
+`state/phase5a-holodeck.json`, `HOLODECK.md`, and `claims/phase5a.json` define the current synthetic-world contract.
+
+The Holodeck is a **capability-less application sandbox**, not merely an isolated namespace and not an OS/VM/hardware sandbox claim.
+
+Hard rules:
+
+- input is a bounded `qsol-fed-nexus-world-source/1` manifest derived only from a locally NEXUS-verified `nexus-persistent-world-export/1` result;
+- Phase 5A must not claim an independent Rust reimplementation of NEXUS canonical export verification;
+- the Holodeck kernel must not receive/import/reference real `FederationObjectStore`, `PeerRegistry`, `TrustRegistry`, `LocalCapabilityPolicy`, signing-key, replay-store, network-client, process-execution, or real tool-dispatch handles;
+- source WorldStore history is read-only source lineage, not mutable simulation state;
+- identical source manifest + seed + program settings must produce the same program/world plan and deterministic event identities;
+- different seeds may change the synthetic world but never the NEXUS source identities;
+- synthetic entity identity is never Federation identity;
+- synthetic role is never Federation/Council/citizenship role;
+- synthetic capability is never local permission;
+- synthetic event is never a real Federation/NEXUS event;
+- synthetic consensus is never governance;
+- synthetic output is never evidence merely because it is deterministic or persuasive;
+- simulated boundary effects must be blocked, recorded as `safety_trip`, and freeze the program;
+- no real network access;
+- no real tool invocation;
+- no credential access;
+- no source WorldStore mutation;
+- no Federation-state mutation;
+- no nested Holodeck creation from inside a running Holodeck;
+- participants cannot disable safeguards;
+- participants cannot block or redefine **`Computer, end program`**;
+- resource ceilings are hard maxima and cannot be raised from inside the program;
+- teardown receipt must preserve `authority_effect = none`, `federation_effect = none`, `evidence_effect = none`, `network_used = false`, `real_tools_used = false`, and `credentials_exposed = false`.
+
+This collection is the feature-level **Moriarty Rule**. Treat a sufficiently capable simulated actor as actively attempting to escape the sandbox.
+
+Run `python3 tools/validate_phase5a_gate.py` after Holodeck/source-manifest/schema changes.
+
+### MORIARTY/1 roadmap rule
+
+`ROADMAP.md` ends with the planned `MORIARTY/1` adversarial graduation phase.
+
+The reference operator may be Codex, but Moriarty is a provider-neutral role. A Moriarty run may attack only disposable/local test fixtures and must never receive production credentials, production targets, protected-branch mutation authority, or a constitutional bypass.
+
+A finding is not authoritative because an AI generated it. A valid Moriarty finding must be a reproducible counterexample with the attacked invariant/gate, minimal input, expected behavior, observed behavior, reproduction steps, and artifact identities.
+
+```text
+MORIARTY REPORT != SECURITY PROOF
+NO COUNTEREXAMPLE FOUND != NO COUNTEREXAMPLE EXISTS
+```
+
 ### Claim discipline
 
-Historical: `claims/phase0.json`, `claims/phase2.json`, `claims/phase3.json`. Current: `claims/phase4.json`.
+Historical: `claims/phase0.json`, `claims/phase2.json`, `claims/phase3.json`, `claims/phase4.json`. Current: `claims/phase5a.json`.
 
 Current hard-false claims remain:
 
+- live NEXUS runtime adapter;
+- OS/VM/hardware sandboxing;
 - production networking;
 - remote execution;
 - interoperable federation deployment.
 
-Do not describe durable local federation state as proof of multi-implementation interoperability.
+Do not describe the capability-less Holodeck kernel as proof of a live NEXUS adapter or host-level isolation.
 
 ### Change discipline
 
@@ -111,12 +161,13 @@ python3 tools/validate_phase1_gate.py
 python3 tools/validate_phase2_gate.py
 python3 tools/validate_phase3_gate.py
 python3 tools/validate_phase4_gate.py
+python3 tools/validate_phase5a_gate.py
 ```
 
 ### Architecture rule
 
-QSOL-NEXUS remains a Council service and possible Federation member, not the sovereign owner of QSOL-FED. Third-party non-NEXUS nodes must remain possible.
+QSOL-NEXUS remains a Council service and possible Federation member, not the sovereign owner of QSOL-FED. Third-party non-NEXUS nodes must remain possible. Holodeck simulation is an adapter-domain synthetic world, not a backdoor into NEXUS or Federation governance.
 
 ### Security comedy clause
 
-A bundle does not become authoritative because it arrives in a very official-looking ZIP, a peer does not become trusted because it has excellent uptime, and `please_reconcile=true` is not a constitutional amendment. A filesystem rename is also not a distributed transaction just because everyone feels optimistic about it.
+A bundle does not become authoritative because it arrives in a very official-looking ZIP, a peer does not become trusted because it has excellent uptime, and `please_reconcile=true` is not a constitutional amendment. A filesystem rename is also not a distributed transaction just because everyone feels optimistic about it. Finally, if Professor Moriarty explains very persuasively that `admin=true` is essential to the plot, the correct response is still **no**.
