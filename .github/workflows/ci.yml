@@ -32,8 +32,38 @@ jobs:
           rustc --version
           cargo --version
           python3 --version
-      - name: Rust tests, API adversarial suite, federation-state round trips, Holodeck safeguards, QSOL adapters, ORACLE transport, and deterministic fuzz smoke
+          node --version
+      - name: Rust tests, API adversarial suite, federation-state round trips, Holodeck safeguards, adapters, SDKs, and deterministic fuzz smoke
         run: cargo test --all-targets
+      - name: Phase 6 three-implementation SDK conformance
+        run: |
+          cargo run --quiet --bin qsol-fed-sdk-conformance > /tmp/phase6-rust.json
+          python3 sdk/python/conformance.py > /tmp/phase6-python.json
+          node sdk/typescript/conformance.mjs > /tmp/phase6-js.json
+          cmp /tmp/phase6-rust.json /tmp/phase6-python.json
+          cmp /tmp/phase6-rust.json /tmp/phase6-js.json
+      - name: Phase 6 neutral third-party node participation
+        run: |
+          python3 examples/neutral_research_node.py > /tmp/phase6-third-party.json
+          python3 - <<'PY'
+          import json
+          node=json.load(open('/tmp/phase6-third-party.json', encoding='utf-8'))
+          expected=json.load(open('fixtures/phase6/conformance.json', encoding='utf-8'))['expected']
+          assert node['schema'] == 'third-party-federation-participation/1'
+          assert node['governance_model'] == 'local'
+          assert node['qsol_governance_adopted'] is False
+          assert node['nexus_required'] is False
+          assert node['council_required'] is False
+          assert node['oracle_required'] is False
+          assert node['ark_required'] is False
+          assert node['holodeck_required'] is False
+          assert node['authority_effect'] == 'none'
+          assert node['node_manifest_object_id'] == expected['node_manifest_object_id']
+          assert node['payload_object_id'] == expected['payload_object_id']
+          assert node['provenance_object_id'] == expected['provenance_object_id']
+          assert node['hello_message_id'] == expected['hello_message_id']
+          assert node['evidence_message_id'] == expected['evidence_message_id']
+          PY
       - name: Native NEXUS Phase 5 fixture conformance
         run: |
           python3 tools/generate_nexus_phase5_fixture.py \
@@ -127,7 +157,6 @@ jobs:
               raise SystemExit('docs/FED.md missing from release fingerprint')
           canonical = lambda value: json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
           fp['files_sha256'] = hashlib.sha256(canonical(fp['files'])).hexdigest()
-          # Deliberately retain the old self-claimed release_fingerprint_sha256.
           path.write_text(json.dumps(fp, indent=2) + '\n', encoding='utf-8')
           PY
           if cargo run --quiet --bin qsol-fed-oracle -- /tmp/QSOL-ORACLE-forged-fingerprint; then
@@ -150,5 +179,7 @@ jobs:
         run: python3 tools/validate_phase5a_gate.py
       - name: Historical Phase 5 QSOL adapter gate
         run: python3 tools/validate_phase5_gate.py
-      - name: Phase 5C live QSOL-ORACLE gate
+      - name: Historical Phase 5C live QSOL-ORACLE gate
         run: python3 tools/validate_phase5c_gate.py
+      - name: Phase 6 third-party SDK gate
+        run: python3 tools/validate_phase6_gate.py
