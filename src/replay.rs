@@ -406,10 +406,11 @@ mod tests {
         let fresh_id = format!("sha256:{}", "f".repeat(64));
         let mut contents = String::new();
         contents.push_str(&format!("{old_id}\t2026-08-22T20:00:00Z\n"));
+        let mut index = 0u64;
         while contents.len() < REPLAY_COMPACTION_THRESHOLD_BYTES as usize {
-            let index = contents.len() / 94;
             let digest = format!("{index:064x}");
             contents.push_str(&format!("sha256:{digest}\t2026-08-22T20:00:00Z\n"));
+            index += 1;
         }
         fs::write(&path, contents).unwrap();
         {
