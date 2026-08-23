@@ -42,6 +42,10 @@ jobs:
           node sdk/typescript/conformance.mjs > /tmp/phase6-js.json
           cmp /tmp/phase6-rust.json /tmp/phase6-python.json
           cmp /tmp/phase6-rust.json /tmp/phase6-js.json
+      - name: Phase 6 hostile SDK parser and wire regressions
+        run: |
+          PYTHONPATH=sdk/python python3 -m unittest sdk/python/test_sdk.py -v
+          node sdk/typescript/adversarial.mjs
       - name: Phase 6 neutral third-party node participation
         run: |
           python3 examples/neutral_research_node.py > /tmp/phase6-third-party.json
