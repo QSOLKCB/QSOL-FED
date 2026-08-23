@@ -1,0 +1,68 @@
+{
+  "document_type": "qsol-fed-phase6-sdk-contract",
+  "schema_version": 1,
+  "wire_protocol": "qsol-fed/1",
+  "canonical_profile": "qsol-fed-canonical-json/1",
+  "sdk_contract": "qsol-fed-sdk/1",
+  "minimal_surface": [
+    "canonicalize",
+    "object_id",
+    "derive_message_id",
+    "classify_protocol",
+    "validate_capability_id",
+    "build_node_manifest",
+    "validate_node_manifest",
+    "build_unsigned_envelope",
+    "validate_unsigned_envelope",
+    "build_provenance",
+    "validate_provenance"
+  ],
+  "implementations": {
+    "rust": "src/sdk.rs",
+    "python": "sdk/python/qsol_fed_sdk.py",
+    "typescript": "sdk/typescript/qsol_fed_sdk.ts",
+    "javascript_runtime": "sdk/typescript/qsol_fed_sdk.mjs"
+  },
+  "conformance": {
+    "fixture": "fixtures/phase6/conformance.json",
+    "rust_runner": "src/bin/qsol-fed-sdk-conformance.rs",
+    "python_runner": "sdk/python/conformance.py",
+    "javascript_runner": "sdk/typescript/conformance.mjs",
+    "required_implementations": 3,
+    "byte_identical_results": true
+  },
+  "third_party_node": {
+    "implementation": "examples/neutral_research_node.py",
+    "profile_schema": "third-party-node-profile/1",
+    "governance_model": "local",
+    "qsol_governance_adopted": false,
+    "nexus_required": false,
+    "council_required": false,
+    "oracle_required": false,
+    "ark_required": false,
+    "holodeck_required": false,
+    "wire_namespace_implies_governance": false,
+    "note": "The frozen qsol-fed/1 node-id grammar retains the fed:qsol: wire namespace. Phase 6 treats that prefix as protocol syntax only, not governance membership."
+  },
+  "authority_boundary": {
+    "sdk_creates_trust": false,
+    "sdk_creates_authority": false,
+    "sdk_promotes_evidence": false,
+    "sdk_installs_capabilities": false,
+    "sdk_creates_votes": false,
+    "sdk_mutates_governance": false,
+    "sdk_requires_qsol_governance": false,
+    "sdk_requires_nexus": false,
+    "sdk_requires_oracle": false,
+    "sdk_requires_ark": false,
+    "sdk_requires_holodeck": false
+  },
+  "deployment_claims": {
+    "language_neutral_sdk_interop": true,
+    "third_party_node_conformance": true,
+    "deployed_interoperable_federation": false,
+    "production_networking": false,
+    "remote_execution": false
+  },
+  "phase6_gate": "a non-NEXUS, non-QSOL-specific node must construct and validate the same canonical hello/evidence transcript through the public SDK contract without adopting QSOL internal governance; Rust, Python, and TypeScript/JavaScript reference implementations must produce byte-identical conformance results"
+}
