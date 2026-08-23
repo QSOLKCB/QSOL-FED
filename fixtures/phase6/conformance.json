@@ -1,0 +1,63 @@
+{
+  "schema": "qsol-fed-sdk-conformance/1",
+  "wire_protocol": "qsol-fed/1",
+  "node_manifest": {
+    "protocol": "qsol-fed/0",
+    "node_id": "fed:qsol:neutral-lab-01",
+    "capabilities": ["evidence.exchange/1", "federation.sdk/1"],
+    "authority_claim": "none"
+  },
+  "third_party_profile": {
+    "schema": "third-party-node-profile/1",
+    "implementation": "neutral-research-node",
+    "governance_model": "local",
+    "qsol_governance_adopted": false,
+    "nexus_required": false,
+    "council_required": false
+  },
+  "payload": {
+    "schema": "third-party-payload/1",
+    "kind": "research.notice",
+    "note": "Neutral laboratory result available"
+  },
+  "provenance": {
+    "schema": "qsol-fed-provenance/1",
+    "source_node": "fed:qsol:neutral-lab-01",
+    "source_object": "sha256:76c341cf34445d25d16c8eeea43a64b8744cae6d18081c07a904f94324957bcd",
+    "relation": "observed",
+    "parents": [],
+    "created_at": "2026-08-23T00:00:00Z"
+  },
+  "hello": {
+    "sender": "fed:qsol:neutral-lab-01",
+    "recipient": "fed:qsol:reference-node",
+    "message_class": "hello",
+    "payload_ref": "sha256:1c33ecd73cbf0730659079c66ea67ef4d126c4e0d6f3e38d16be6b805ca8b012",
+    "provenance_ref": null,
+    "issued_at": "2026-08-23T00:00:00Z",
+    "expires_at": null
+  },
+  "evidence_offer": {
+    "sender": "fed:qsol:neutral-lab-01",
+    "recipient": "fed:qsol:reference-node",
+    "message_class": "evidence.offer",
+    "payload_ref": "sha256:76c341cf34445d25d16c8eeea43a64b8744cae6d18081c07a904f94324957bcd",
+    "provenance_ref": "sha256:4804a87605a0bbe276abaeade2eb29793863eb41cedc91df4804aaac4ff2f4b8",
+    "issued_at": "2026-08-23T00:00:01Z",
+    "expires_at": null
+  },
+  "expected": {
+    "node_manifest_canonical": "{\"authority_claim\":\"none\",\"capabilities\":[\"evidence.exchange/1\",\"federation.sdk/1\"],\"node_id\":\"fed:qsol:neutral-lab-01\",\"protocol\":\"qsol-fed/0\"}",
+    "node_manifest_object_id": "sha256:1c33ecd73cbf0730659079c66ea67ef4d126c4e0d6f3e38d16be6b805ca8b012",
+    "profile_canonical": "{\"council_required\":false,\"governance_model\":\"local\",\"implementation\":\"neutral-research-node\",\"nexus_required\":false,\"qsol_governance_adopted\":false,\"schema\":\"third-party-node-profile/1\"}",
+    "profile_object_id": "sha256:a780b6bdd37ac1f1fee5699982dffa9099a7d5c44649c9bf9733e7f3abd63b19",
+    "payload_canonical": "{\"kind\":\"research.notice\",\"note\":\"Neutral laboratory result available\",\"schema\":\"third-party-payload/1\"}",
+    "payload_object_id": "sha256:76c341cf34445d25d16c8eeea43a64b8744cae6d18081c07a904f94324957bcd",
+    "provenance_canonical": "{\"created_at\":\"2026-08-23T00:00:00Z\",\"parents\":[],\"relation\":\"observed\",\"schema\":\"qsol-fed-provenance/1\",\"source_node\":\"fed:qsol:neutral-lab-01\",\"source_object\":\"sha256:76c341cf34445d25d16c8eeea43a64b8744cae6d18081c07a904f94324957bcd\"}",
+    "provenance_object_id": "sha256:4804a87605a0bbe276abaeade2eb29793863eb41cedc91df4804aaac4ff2f4b8",
+    "hello_canonical": "{\"authority_claim\":\"none\",\"expires_at\":null,\"issued_at\":\"2026-08-23T00:00:00Z\",\"message_class\":\"hello\",\"message_id\":\"sha256:dc7527b2ba5551a0d6462f583161e1d55d565552698a1771740fe6978c2206cb\",\"payload_ref\":\"sha256:1c33ecd73cbf0730659079c66ea67ef4d126c4e0d6f3e38d16be6b805ca8b012\",\"protocol\":\"qsol-fed/1\",\"provenance_ref\":null,\"recipient\":\"fed:qsol:reference-node\",\"sender\":\"fed:qsol:neutral-lab-01\",\"signature\":null}",
+    "hello_message_id": "sha256:dc7527b2ba5551a0d6462f583161e1d55d565552698a1771740fe6978c2206cb",
+    "evidence_canonical": "{\"authority_claim\":\"none\",\"expires_at\":null,\"issued_at\":\"2026-08-23T00:00:01Z\",\"message_class\":\"evidence.offer\",\"message_id\":\"sha256:b3d2de3605bf001f945ff1fc9b14127fca321cbb5cac2edde6c79f659390d7f1\",\"payload_ref\":\"sha256:76c341cf34445d25d16c8eeea43a64b8744cae6d18081c07a904f94324957bcd\",\"protocol\":\"qsol-fed/1\",\"provenance_ref\":\"sha256:4804a87605a0bbe276abaeade2eb29793863eb41cedc91df4804aaac4ff2f4b8\",\"recipient\":\"fed:qsol:reference-node\",\"sender\":\"fed:qsol:neutral-lab-01\",\"signature\":null}",
+    "evidence_message_id": "sha256:b3d2de3605bf001f945ff1fc9b14127fca321cbb5cac2edde6c79f659390d7f1"
+  }
+}
