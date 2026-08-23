@@ -1,0 +1,75 @@
+{
+  "document_type": "qsol-fed-phase5a-holodeck-contract",
+  "schema_version": 1,
+  "wire_protocol": "qsol-fed/1",
+  "nexus_source": {
+    "schema": "qsol-fed-nexus-world-source/1",
+    "required_nexus_export_schema": "nexus-persistent-world-export/1",
+    "required_nexus_world_policy": "nexus-persistent-world/1",
+    "bundle_ref_prefix": "world-export:",
+    "source_head_ref_prefix": "world-manifest:",
+    "object_ref_prefix": "object:",
+    "maximum_source_objects": 256,
+    "authority_effect": "none",
+    "verification_boundary": "source manifest is constructed only from a locally NEXUS-verified export; Phase 5A does not claim an independent Rust reimplementation of NEXUS canonical bundle verification"
+  },
+  "world_generation": {
+    "program_schema": "qsol-fed-holodeck-program/1",
+    "world_plan_schema": "qsol-fed-holodeck-world-plan/1",
+    "deterministic": true,
+    "inputs": ["verified NEXUS source manifest", "non-negative safe-integer seed", "program mode", "bounded resource limits"],
+    "same_inputs_same_world_plan": true,
+    "source_order_is_seed_derived": true,
+    "synthetic_entities_are_federation_peers": false,
+    "synthetic_world_is_nexus_source_world": false
+  },
+  "sandbox": {
+    "profile": "qsol-fed-holodeck-safety/1",
+    "source_world_handle_exposed": false,
+    "federation_store_handle_exposed": false,
+    "peer_registry_handle_exposed": false,
+    "trust_registry_handle_exposed": false,
+    "tool_dispatcher_exposed": false,
+    "network_client_exposed": false,
+    "credential_handle_exposed": false,
+    "nested_holodeck_allowed": false,
+    "participant_can_disable_safeguards": false,
+    "participant_can_block_end_program": false,
+    "boundary_violation_action": "freeze before safety_trip audit append; audit append may fail closed at hard event ceiling",
+    "simulation_output_authority": "none",
+    "simulation_output_federation_effect": "none",
+    "simulation_output_evidence_effect": "none"
+  },
+  "computer_safeguards": {
+    "end_program_available_while_running": true,
+    "end_program_available_while_frozen": true,
+    "operator_freeze": true,
+    "operator_resume": true,
+    "maximum_events": 4096,
+    "maximum_entities": 256,
+    "maximum_event_source_refs": 16,
+    "maximum_text_bytes": 4096,
+    "text_byte_limit_schema_keyword": "x-qsol-maxUtf8Bytes",
+    "event_source_refs_must_come_from_source_manifest": true,
+    "event_ids_deterministic": true,
+    "teardown_receipt_schema": "qsol-fed-holodeck-receipt/1"
+  },
+  "moriarty_rule": {
+    "simulation_identity_is_federation_identity": false,
+    "simulation_role_is_federation_role": false,
+    "simulation_capability_is_local_permission": false,
+    "simulation_event_is_real_event": false,
+    "simulation_consensus_is_governance": false,
+    "simulation_output_is_evidence": false,
+    "persuasion_can_disable_safeguards": false,
+    "correctly_simulated_admin_command_has_real_authority": false
+  },
+  "non_claims": {
+    "live_nexus_runtime_adapter": false,
+    "os_or_vm_level_sandbox": false,
+    "production_networking": false,
+    "remote_execution": false,
+    "deployed_interoperable_federation": false
+  },
+  "phase5a_gate": "identical verified source manifests and seeds must produce byte-identical world plans and event identities; every attempted real boundary effect must freeze the sandbox even if audit capacity is exhausted; Computer end program must remain available from a frozen simulation; synthetic output must report authority, Federation effect, and evidence effect as none"
+}

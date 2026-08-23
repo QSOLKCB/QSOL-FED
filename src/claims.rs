@@ -1,13 +1,14 @@
 //! Release-claim boundaries.
 //!
-//! Phase 0, Phase 2, and Phase 3 manifests remain historical baselines.
-//! `CURRENT_CLAIMS` is the current Phase 4 release surface. None of these are
-//! runtime configuration.
+//! Phase 0, Phase 2, Phase 3, and Phase 4 manifests remain historical baselines.
+//! `CURRENT_CLAIMS` is the current Phase 5A Holodeck release surface. None of these
+//! are runtime configuration.
 
 pub const PHASE0_GATE_ID: &str = "qsol-fed-phase0-claim-gate/1";
 pub const PHASE2_GATE_ID: &str = "qsol-fed-phase2-claim-gate/1";
 pub const PHASE3_GATE_ID: &str = "qsol-fed-phase3-claim-gate/1";
 pub const PHASE4_GATE_ID: &str = "qsol-fed-phase4-claim-gate/1";
+pub const PHASE5A_GATE_ID: &str = "qsol-fed-phase5a-holodeck-gate/1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Phase0Claims {
@@ -59,6 +60,13 @@ pub struct CurrentClaims {
     pub partition_rejoin_control: bool,
     pub portable_federation_bundle: bool,
     pub offline_bundle_verification: bool,
+    pub nexus_world_source_contract: bool,
+    pub sandboxed_synthetic_world_kernel: bool,
+    pub deterministic_holodeck_world_plan: bool,
+    pub holodeck_computer_safeguards: bool,
+    pub holodeck_teardown_receipts: bool,
+    pub live_nexus_runtime_adapter: bool,
+    pub host_level_sandbox: bool,
     pub production_networking: bool,
     pub remote_execution: bool,
     pub interoperable_federation: bool,
@@ -90,6 +98,13 @@ pub const CURRENT_CLAIMS: CurrentClaims = CurrentClaims {
     partition_rejoin_control: true,
     portable_federation_bundle: true,
     offline_bundle_verification: true,
+    nexus_world_source_contract: true,
+    sandboxed_synthetic_world_kernel: true,
+    deterministic_holodeck_world_plan: true,
+    holodeck_computer_safeguards: true,
+    holodeck_teardown_receipts: true,
+    live_nexus_runtime_adapter: false,
+    host_level_sandbox: false,
     production_networking: false,
     remote_execution: false,
     interoperable_federation: false,
@@ -122,6 +137,13 @@ pub enum ReleaseClaim {
     PartitionRejoinControl,
     PortableFederationBundle,
     OfflineBundleVerification,
+    NexusWorldSourceContract,
+    SandboxedSyntheticWorldKernel,
+    DeterministicHolodeckWorldPlan,
+    HolodeckComputerSafeguards,
+    HolodeckTeardownReceipts,
+    LiveNexusRuntimeAdapter,
+    HostLevelSandbox,
     ProductionNetworking,
     RemoteExecution,
     InteroperableFederation,
@@ -154,6 +176,13 @@ pub const fn is_established(claim: ReleaseClaim) -> bool {
         ReleaseClaim::PartitionRejoinControl => CURRENT_CLAIMS.partition_rejoin_control,
         ReleaseClaim::PortableFederationBundle => CURRENT_CLAIMS.portable_federation_bundle,
         ReleaseClaim::OfflineBundleVerification => CURRENT_CLAIMS.offline_bundle_verification,
+        ReleaseClaim::NexusWorldSourceContract => CURRENT_CLAIMS.nexus_world_source_contract,
+        ReleaseClaim::SandboxedSyntheticWorldKernel => CURRENT_CLAIMS.sandboxed_synthetic_world_kernel,
+        ReleaseClaim::DeterministicHolodeckWorldPlan => CURRENT_CLAIMS.deterministic_holodeck_world_plan,
+        ReleaseClaim::HolodeckComputerSafeguards => CURRENT_CLAIMS.holodeck_computer_safeguards,
+        ReleaseClaim::HolodeckTeardownReceipts => CURRENT_CLAIMS.holodeck_teardown_receipts,
+        ReleaseClaim::LiveNexusRuntimeAdapter => CURRENT_CLAIMS.live_nexus_runtime_adapter,
+        ReleaseClaim::HostLevelSandbox => CURRENT_CLAIMS.host_level_sandbox,
         ReleaseClaim::ProductionNetworking => CURRENT_CLAIMS.production_networking,
         ReleaseClaim::RemoteExecution => CURRENT_CLAIMS.remote_execution,
         ReleaseClaim::InteroperableFederation => CURRENT_CLAIMS.interoperable_federation,
@@ -175,7 +204,7 @@ mod tests {
     }
 
     #[test]
-    fn phase4_promotes_only_reviewed_state_capabilities() {
+    fn phase5a_promotes_only_reviewed_holodeck_capabilities() {
         for claim in [
             ReleaseClaim::ConstitutionalModel,
             ReleaseClaim::MachineContracts,
@@ -202,20 +231,32 @@ mod tests {
             ReleaseClaim::PartitionRejoinControl,
             ReleaseClaim::PortableFederationBundle,
             ReleaseClaim::OfflineBundleVerification,
+            ReleaseClaim::NexusWorldSourceContract,
+            ReleaseClaim::SandboxedSyntheticWorldKernel,
+            ReleaseClaim::DeterministicHolodeckWorldPlan,
+            ReleaseClaim::HolodeckComputerSafeguards,
+            ReleaseClaim::HolodeckTeardownReceipts,
         ] {
-            assert!(is_established(claim), "reviewed Phase 4 claim unexpectedly disabled: {claim:?}");
+            assert!(is_established(claim), "reviewed Phase 5A claim unexpectedly disabled: {claim:?}");
         }
-        for claim in [ReleaseClaim::ProductionNetworking, ReleaseClaim::RemoteExecution, ReleaseClaim::InteroperableFederation] {
-            assert!(!is_established(claim), "premature deployment claim enabled: {claim:?}");
+        for claim in [
+            ReleaseClaim::LiveNexusRuntimeAdapter,
+            ReleaseClaim::HostLevelSandbox,
+            ReleaseClaim::ProductionNetworking,
+            ReleaseClaim::RemoteExecution,
+            ReleaseClaim::InteroperableFederation,
+        ] {
+            assert!(!is_established(claim), "premature capability/deployment claim enabled: {claim:?}");
         }
     }
 
     #[test]
     fn current_claim_gate_is_not_runtime_configurable() {
-        assert_eq!(PHASE4_GATE_ID, "qsol-fed-phase4-claim-gate/1");
-        assert!(CURRENT_CLAIMS.foreign_object_store);
-        assert!(CURRENT_CLAIMS.durable_peer_registry);
-        assert!(CURRENT_CLAIMS.portable_federation_bundle);
+        assert_eq!(PHASE5A_GATE_ID, "qsol-fed-phase5a-holodeck-gate/1");
+        assert!(CURRENT_CLAIMS.sandboxed_synthetic_world_kernel);
+        assert!(CURRENT_CLAIMS.holodeck_computer_safeguards);
+        assert!(!CURRENT_CLAIMS.live_nexus_runtime_adapter);
+        assert!(!CURRENT_CLAIMS.host_level_sandbox);
         assert!(!CURRENT_CLAIMS.production_networking);
         assert!(!CURRENT_CLAIMS.remote_execution);
         assert!(!CURRENT_CLAIMS.interoperable_federation);
