@@ -1,10 +1,11 @@
 #![forbid(unsafe_code)]
 
-//! QSOL-FED constitutional, canonical wire, and Phase 2 cryptographic identity core.
+//! QSOL-FED constitutional, canonical wire, cryptographic identity, and opt-in HTTP API core.
 //!
-//! This crate still exposes no production network listener or remote execution.
-//! Cryptographic validity remains separate from trust, authority, and admission.
+//! The reference listener is opt-in and remains separate from production-networking claims.
+//! Cryptographic validity remains separate from trust, authority, evidence, and admission.
 
+pub mod api;
 pub mod canonical;
 pub mod claims;
 mod crypto;
@@ -13,13 +14,18 @@ pub mod invariants;
 pub mod replay;
 pub mod wire;
 
+pub use api::{
+    build_router, ApiBuildError, ApiState, AuditRecord, PeerHello, API_MAX_BODY_BYTES,
+    API_MAX_CAPABILITIES, API_MAX_EXPORT_OBJECTS, API_POSTS_PER_MINUTE,
+    API_REQUESTS_PER_MINUTE, PEER_HELLO_SCHEMA_V1,
+};
 pub use canonical::{
     canonicalize, derive_message_id, object_id, parse_canonical_value, serialize_canonical,
     sha256_ref, CanonicalError, CanonicalValue, CANONICAL_PROFILE,
 };
 pub use claims::{
     is_established, CurrentClaims, Phase0Claims, ReleaseClaim, CURRENT_CLAIMS, PHASE0_CLAIMS,
-    PHASE0_GATE_ID, PHASE2_GATE_ID,
+    PHASE0_GATE_ID, PHASE2_GATE_ID, PHASE3_GATE_ID,
 };
 pub use crypto::{
     create_identity_document, derive_key_id, derive_node_id, sign_envelope,
