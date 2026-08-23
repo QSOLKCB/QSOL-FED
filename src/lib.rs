@@ -15,9 +15,10 @@ pub mod replay;
 pub mod wire;
 
 pub use api::{
-    build_router, ApiBuildError, ApiState, AuditRecord, PeerHello, API_MAX_BODY_BYTES,
-    API_MAX_CAPABILITIES, API_MAX_EXPORT_OBJECTS, API_POSTS_PER_MINUTE,
-    API_REQUESTS_PER_MINUTE, PEER_HELLO_SCHEMA_V1,
+    build_router, ApiBuildError, ApiState, AuditRecord, PeerHello, PeerLifecycleRecord,
+    API_MAX_BODY_BYTES, API_MAX_CAPABILITIES, API_MAX_EXPORT_OBJECTS,
+    API_MAX_LIFECYCLE_RECORDS, API_POSTS_PER_MINUTE, API_REQUESTS_PER_MINUTE,
+    PEER_HELLO_SCHEMA_V1, RATE_LIMIT_CLIENT_IP_HEADER,
 };
 pub use canonical::{
     canonicalize, derive_message_id, object_id, parse_canonical_value, serialize_canonical,
@@ -42,7 +43,10 @@ pub use invariants::{
     admit_effect, AdmissionDecision, FederationEffect, HardInvariant, CHARTER_ID,
     HARD_INVARIANTS, PRIME_DIRECTIVE_ID, PROTOCOL_ID,
 };
-pub use replay::{DurableReplayStore, ReplayDecision, ReplayError, MAX_REPLAY_LOG_BYTES};
+pub use replay::{
+    DurableReplayStore, ReplayDecision, ReplayError, MAX_REPLAY_LOG_BYTES,
+    REPLAY_COMPACTION_THRESHOLD_BYTES, REPLAY_RETENTION_SECONDS,
+};
 pub use wire::{
     classify_protocol, is_capability_id, is_node_id, is_sha256_ref, is_wire_timestamp,
     ProtocolDisposition, ProtocolErrorCode, ProtocolErrorEnvelope, ProvenanceObject,
