@@ -49,10 +49,10 @@ impl ReplayPathClaim {
 
 impl Drop for ReplayPathClaim {
     fn drop(&mut self) {
-        if let Some(registry) = OPEN_REPLAY_PATHS.get()
-            && let Ok(mut open_paths) = registry.lock()
-        {
-            open_paths.remove(&self.key);
+        if let Some(registry) = OPEN_REPLAY_PATHS.get() {
+            if let Ok(mut open_paths) = registry.lock() {
+                open_paths.remove(&self.key);
+            }
         }
     }
 }
@@ -62,7 +62,10 @@ fn replay_path_key(path: &Path) -> Result<PathBuf, ReplayError> {
         return fs::canonicalize(path)
             .map_err(|error| ReplayError(format!("replay_path_canonicalize:{error}")));
     }
-    let parent = path.parent().filter(|value| !value.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
+    let parent = path
+        .parent()
+        .filter(|value| !value.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
     let canonical_parent = fs::canonicalize(parent)
         .map_err(|error| ReplayError(format!("replay_parent_canonicalize:{error}")))?;
     let file_name = path
@@ -77,7 +80,10 @@ fn valid_replay_timestamp(value: &str) -> bool {
 
 #[cfg(unix)]
 fn sync_parent_directory(path: &Path) -> Result<(), ReplayError> {
-    let parent = path.parent().filter(|value| !value.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
+    let parent = path
+        .parent()
+        .filter(|value| !value.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
     let directory = File::open(parent)
         .map_err(|error| ReplayError(format!("replay_parent_open:{error}")))?;
     directory
@@ -296,7 +302,7 @@ mod tests {
     fn only_one_store_handle_per_path_is_allowed() {
         let path = temp_path("single-handle");
         let first = DurableReplayStore::open(&path).unwrap();
-        let second = DurableReplayStore::open(&path).unwrap_err();
+        let second = DurableReplayStore::open(&path).err().unwrap();
         assert_eq!(second.0, "replay_store_already_open");
         drop(first);
         let reopened = DurableReplayStore::open(&path).unwrap();
