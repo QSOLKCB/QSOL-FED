@@ -6,11 +6,11 @@ QSOL-FED is a security-sensitive federation boundary. Protocol convenience never
 
 ### Read first
 
-Read `README4AI.md`, `CHARTER.md`, `PRIME_DIRECTIVE.md`, `claims/phase0.json`, `claims/phase2.json`, `claims/phase3.json`, `claims/phase4.json`, `claims/phase5a.json`, `claims/phase5.json`, `claims/phase5c.json`, `wire/phase1.json`, `crypto/phase2.json`, `api/phase3.json`, `state/phase4.json`, `state/phase5a-holodeck.json`, `state/phase5.json`, `state/phase5c.json`, `CANONICAL_JSON.md`, `CRYPTOGRAPHY.md`, `API.md`, `TLS_PROFILE.md`, `FEDERATION_STATE.md`, `HOLODECK.md`, `QSOL_ADAPTERS.md`, `contracts/oracle-fed-membrane-v1.json`, `src/invariants.rs`, `src/claims.rs`, `src/store.rs`, `src/peering.rs`, `src/bundle.rs`, `src/holodeck.rs`, `src/qsol_adapters.rs`, `src/oracle_live.rs`, and `THREAT_MODEL.md` before changing security/state/simulation/adapter semantics.
+Read `README4AI.md`, `CHARTER.md`, `PRIME_DIRECTIVE.md`, `claims/phase0.json`, `claims/phase2.json`, `claims/phase3.json`, `claims/phase4.json`, `claims/phase5a.json`, `claims/phase5.json`, `claims/phase5c.json`, `claims/phase6.json`, `wire/phase1.json`, `crypto/phase2.json`, `api/phase3.json`, `state/phase4.json`, `state/phase5a-holodeck.json`, `state/phase5.json`, `state/phase5c.json`, `state/phase6.json`, `CANONICAL_JSON.md`, `CRYPTOGRAPHY.md`, `API.md`, `TLS_PROFILE.md`, `FEDERATION_STATE.md`, `HOLODECK.md`, `QSOL_ADAPTERS.md`, `SDK.md`, `docs/THIRD_PARTY_INTEGRATION.md`, `contracts/oracle-fed-membrane-v1.json`, `src/invariants.rs`, `src/claims.rs`, `src/store.rs`, `src/peering.rs`, `src/bundle.rs`, `src/holodeck.rs`, `src/qsol_adapters.rs`, `src/oracle_live.rs`, `src/sdk.rs`, and `THREAT_MODEL.md` before changing security/state/simulation/adapter/SDK semantics.
 
 ### Core constitutional rules
 
-No peer, model, config, request, signature, trust label, imported bundle, capability advertisement, persisted object, Holodeck program, simulated actor, Council report, ORACLE observation, ORACLE transport response, ARK record, or adversarial persona may create local governance authority, promote evidence, create/reweight votes, install capabilities, rewrite history, mutate citizenship/identity authority, trigger arbitrary remote execution, place secrets in semantic state, or disable constitutional/Holodeck safeguards.
+No peer, model, config, request, signature, trust label, imported bundle, capability advertisement, persisted object, Holodeck program, simulated actor, Council report, ORACLE observation, ORACLE transport response, SDK object, third-party conformance transcript, ARK record, or adversarial persona may create local governance authority, promote evidence, create/reweight votes, install capabilities, rewrite history, mutate citizenship/identity authority, trigger arbitrary remote execution, place secrets in semantic state, or disable constitutional/Holodeck safeguards.
 
 Unknown authority-bearing effects fail closed.
 
@@ -43,55 +43,60 @@ This is the feature-level **Moriarty Rule**. Run `python3 tools/validate_phase5a
 - The live local adapter remains pinned to QSOL-NEXUS commit `24cb0ce246d12ac99e7d190a8890ef2ddd598321`.
 - FED must call NEXUS's native `nexus_runtime.persistent_world.validate_world_export_bundle` before emitting `qsol-fed-nexus-world-source/1`.
 - Do not replace native verification with a FED approximation merely for convenience.
-- The deterministic fixture must be regenerated through native NEXUS `WorldStore` + `PersistentWorldService.export_bundle()` and match CI byte-for-byte.
 - Council report import may not inject votes, promote evidence, inherit vote weight/epistemic privilege/citizenship/governance, or create authority.
 - Council-of-Councils uses report identities, **not a shared ballot** or shared vote weight.
-- Independent re-deliberation remains allowed.
-- NEXUS Council actors enter Holodecks only as synthetic projections and only through the synthetic-event seam.
-- `SIMULATION != AUTHORITY` survives the adapter boundary.
+- NEXUS Council actors enter Holodecks only as synthetic projections. `SIMULATION != AUTHORITY` survives the adapter boundary.
 
 #### ORACLE historical snapshot
 
-- Preserve exactly `known`, `conflict`, `unknown` as evidence states without turning state into truth authority.
-- Suggested searches remain `discovery-only`, `is_evidence = false`, and inadmissible without observation.
-- Evidence promotion through the adapter is forbidden.
-- The historical Phase 5 claim `oracle_live_transport = false` must remain unchanged in `claims/phase5.json`.
-- Holodeck-to-ORACLE admission remains rejected until a separately reviewed synthetic non-evidence contract exists.
+- Preserve exactly `known`, `conflict`, `unknown` without turning state into truth authority.
+- Suggested searches remain non-evidence and evidence promotion is forbidden.
+- Historical `claims/phase5.json` keeps `oracle_live_transport = false`.
+- Holodeck-to-ORACLE admission remains rejected until separately reviewed.
 
 #### ARK
 
-- Preservation is content-addressed by SHA-256 and verifiable offline.
-- Archival presence is not authority.
-- Holodeck programs/receipts use `synthetic_cultural_research`, `synthetic = true`, `real_world_history = false`.
-- No ARK repository change is required merely for symmetry; create one only if an actual missing donor primitive is identified.
+- Preservation is content-addressed and verifiable offline.
+- Archival presence is not authority or real-world history.
+- Holodeck artifacts remain `synthetic_cultural_research`.
 
-Run `python3 tools/validate_phase5_gate.py` after historical Phase 5 adapter/schema/fixture changes.
+Run `python3 tools/validate_phase5_gate.py` after historical Phase 5 changes.
 
-### Current Phase 5C QSOL-ORACLE live transport rules
+### Historical Phase 5C QSOL-ORACLE live transport rules
 
-`state/phase5c.json`, `claims/phase5c.json`, `contracts/oracle-fed-membrane-v1.json`, `schemas/oracle-transport-request-v1.schema.json`, `schemas/oracle-transport-response-v1.schema.json`, and `src/oracle_live.rs` define the current live-local ORACLE boundary.
+`state/phase5c.json`, `claims/phase5c.json`, `contracts/oracle-fed-membrane-v1.json`, and `src/oracle_live.rs` preserve the live-local ORACLE boundary.
 
-- Pin QSOL-ORACLE to merged donor commit `043e864b3c25dfeca3ce1752b3110479479071b1` in CI.
-- Pin the reviewed donor release fingerprint to `7b0eff4dfa9b0caa84f14920d21f6a5446114535d82706cb62e34773c39818d2`.
-- Recompute the donor `files_sha256` and top-level `release_fingerprint_sha256`; never trust the fingerprint file's self-declared digest without deriving it.
-- Verify every release-fingerprint file byte length and SHA-256. Explicitly pin any executable runtime import absent from the historical donor fingerprint, including `tools/nexus_membrane_common.py`.
-- Never execute directly from the mutable donor checkout. For every request, stage the reviewed donor bytes into a private temporary runtime and re-attest that staged copy before launch.
-- The fixed process entrypoint is exactly `python3 -I tools/fed_transport.py serve` under the re-attested staged runtime.
-- Never turn this adapter into a generic command runner. Callers may not supply executable names, scripts, shell fragments, URLs, sockets, or network targets.
-- Remove `PYTHONPATH` and `PYTHONHOME`; use Python isolated mode and the reviewed staged donor tree, not ambient Python module injection.
-- Request and response bytes must remain canonical and bounded to 65,536 bytes per line.
-- Normalize response-correlation identity to the canonical NFC `request_id` actually sent over the wire.
-- Read stdout with a hard cap **before process completion**. Never use `wait_with_output()` or another unbounded child-output collector. Kill the child on overflow. Do not buffer stderr in memory.
-- Accept exactly one response line for one request. Extra stdout, noncanonical bytes, malformed JSON, bad response digest, nonzero process exit, or authority drift fail closed.
-- Evidence references must use `oracle-event:<64 lowercase hex>`; the donor itself remains responsible for ledger-membership validation and FED additionally preserves the grammar and response digest.
-- `known`, `conflict`, and `unknown` remain observation states, never truth authority.
+- Pin QSOL-ORACLE merge commit `043e864b3c25dfeca3ce1752b3110479479071b1` and release fingerprint `7b0eff4dfa9b0caa84f14920d21f6a5446114535d82706cb62e34773c39818d2`.
+- Recompute donor release identity; do not trust self-declared fingerprint text.
+- Verify every fingerprinted file and explicitly pin executable imports omitted from the historical donor fingerprint.
+- Never execute directly from a mutable donor checkout. Stage and re-attest a private runtime for each request.
+- Fixed entrypoint: `python3 -I tools/fed_transport.py serve`.
+- No caller-selected command, script, URL, socket, or network target.
+- Normalize response correlation to the canonical NFC request ID.
+- Bound stdout before process completion; never reintroduce `wait_with_output()` or unbounded stderr collection.
+- `known | conflict | unknown` remain observations, never truth authority.
 - `ledger_mutated = false`, `transport_authority = none`, `truth_claim = false`, `evidence_promotion = false`, and `authority_effect = none` remain mandatory.
-- `oracle_live_transport = true` means this reviewed local process transport exists. It does **not** mean production networking or arbitrary remote execution exists.
-- `oracle_holodeck_synthetic_admission = false` remains mandatory. Live transport does not admit simulation output into ORACLE.
-- Cross-repository CI must byte-compare the local donor contract/request/response/observation schemas against the exact pinned QSOL-ORACLE commit and run the real `qsol-fed-oracle` probe.
-- CI must tamper the donor transport file and prove release attestation rejects it. It should also exercise a forged fingerprint-file self-claim against a changed non-critical fingerprinted file.
+- `oracle_holodeck_synthetic_admission = false` remains mandatory.
 
-Run `python3 tools/validate_phase5c_gate.py` after current ORACLE transport/claim/schema/CI changes.
+Run `python3 tools/validate_phase5c_gate.py` after historical ORACLE transport changes.
+
+### Current Phase 6 third-party SDK rules
+
+`state/phase6.json`, `claims/phase6.json`, `SDK.md`, `docs/THIRD_PARTY_INTEGRATION.md`, and `src/sdk.rs` define the current SDK boundary.
+
+- `qsol-fed-sdk/1` is a **minimal protocol SDK**, not a local authority API.
+- The minimal surface is limited to canonicalization, object/message identity, protocol/capability validation, node manifests, unsigned envelopes, and provenance.
+- Do not import or expose `PeerRegistry`, `TrustRegistry`, local capability policy, NEXUS Council semantics, ORACLE authority, ARK authority, Holodeck state, credentials, signing secrets, tool dispatchers, or generic execution through the minimal SDK.
+- Rust, Python, and TypeScript/JavaScript reference implementations must independently reproduce the frozen `fixtures/phase6/conformance.json` vectors.
+- The Rust/Python/JavaScript conformance result files must remain **byte-identical**.
+- The neutral third-party node must keep `governance_model = local`, `qsol_governance_adopted = false`, `nexus_required = false`, and `council_required = false`; its CI participation must also require no ORACLE, ARK, or Holodeck subsystem.
+- The frozen `fed:qsol:` v1 node-id prefix is protocol syntax only. `WIRE COMPATIBILITY != GOVERNANCE MEMBERSHIP`.
+- SDK conformance creates no trust, authority, evidence promotion, votes, citizenship, capability installation, or governance mutation.
+- `three_implementation_sdk_interop = true` is a local conformance claim. `interoperable_federation = false` remains the stronger deployed-federation non-claim.
+- `production_networking = false`, `remote_execution = false`, `host_level_sandbox = false`, and `oracle_holodeck_synthetic_admission = false` remain mandatory.
+- A third-party participant must not need QSOL application/governance imports to satisfy the Phase 6 gate.
+
+Run `python3 tools/validate_phase6_gate.py` after SDK/fixture/schema/docs/claim changes.
 
 ### MORIARTY/1 roadmap rule
 
@@ -106,9 +111,9 @@ ZENODO PRESENCE != TECHNICAL AUTHORITY
 
 ### Claim discipline
 
-Historical: `claims/phase0.json`, `claims/phase2.json`, `claims/phase3.json`, `claims/phase4.json`, `claims/phase5a.json`, `claims/phase5.json`. Current: `claims/phase5c.json`.
+Historical: `claims/phase0.json`, `claims/phase2.json`, `claims/phase3.json`, `claims/phase4.json`, `claims/phase5a.json`, `claims/phase5.json`, `claims/phase5c.json`. Current: `claims/phase6.json`.
 
-Current hard-false claims include `oracle_holodeck_synthetic_admission`, `host_level_sandbox`, `production_networking`, `remote_execution`, and deployed `interoperable_federation`. `oracle_live_transport` is now true only for the attested local stdio process profile.
+Current hard-false claims include `oracle_holodeck_synthetic_admission`, `host_level_sandbox`, `production_networking`, `remote_execution`, and deployed `interoperable_federation`. Phase 6 adds SDK-level three-implementation interoperability without promoting that deployed-federation claim.
 
 ### Change discipline
 
@@ -118,6 +123,10 @@ Security-critical changes require synchronized source, machine contract, human d
 
 ```bash
 cargo test --all-targets
+cargo run --quiet --bin qsol-fed-sdk-conformance
+python3 sdk/python/conformance.py
+node sdk/typescript/conformance.mjs
+python3 examples/neutral_research_node.py
 python3 tools/validate_constitution.py
 python3 tools/validate_phase0_gate.py
 python3 tools/validate_phase1_gate.py
@@ -127,12 +136,13 @@ python3 tools/validate_phase4_gate.py
 python3 tools/validate_phase5a_gate.py
 python3 tools/validate_phase5_gate.py
 python3 tools/validate_phase5c_gate.py
+python3 tools/validate_phase6_gate.py
 ```
 
 ### Architecture rule
 
-QSOL-NEXUS remains a Council service and possible Federation member, not the sovereign owner of QSOL-FED. QSOL-ORACLE remains an evidentiary membrane and local witness process, not a Council or truth authority. QSOL-ARK remains an archive/recovery system, not truth authority. Third-party non-QSOL nodes must remain possible.
+QSOL-NEXUS remains a Council service and possible Federation member, not the sovereign owner of QSOL-FED. QSOL-ORACLE remains an evidentiary membrane and local witness process, not a Council or truth authority. QSOL-ARK remains an archive/recovery system, not truth authority. Third-party non-QSOL nodes must remain possible without adopting those systems.
 
 ### Security comedy clause
 
-A bundle does not become authoritative because it looks official, an ORACLE search suggestion is not evidence because it is a good suggestion, an archive is not truth because it survived, a local witness process is not production networking because it owns a pipe, and Professor Moriarty does not get `admin=true` because it would improve the plot.
+A bundle does not become authoritative because it looks official, an ORACLE search suggestion is not evidence because it is clever, an archive is not truth because it survived, `fed:qsol:` is not a loyalty oath, and Professor Moriarty does not get `admin=true` because it would improve the plot.
