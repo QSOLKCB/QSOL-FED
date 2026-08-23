@@ -1,0 +1,97 @@
+{
+  "document_type": "qsol-fed-phase7-assembly-contract",
+  "schema_version": 1,
+  "protocol": "qsol-fed/0",
+  "wire_protocol": "qsol-fed/1",
+  "assembly_contract": "qsol-fed-assembly/1",
+  "charter_gate": "qsol-fed-charter-gate/1",
+  "representation_model": "one-member-one-vote/1",
+  "membership": {
+    "assembly_membership_separate_from_network_membership": true,
+    "network_membership_grants_assembly_membership": false,
+    "network_membership_required": false,
+    "explicit_local_opt_in_required": true,
+    "qsol_governance_required": false,
+    "maximum_members": 1024,
+    "normalized_representation_subject_unique_while_active": true,
+    "real_world_principal_uniqueness_proven_by_protocol": false,
+    "anti_sybil_assumption": "real-world principal uniqueness is an external admission assumption; protocol enforces one active normalized representation subject per Assembly registry"
+  },
+  "representation": {
+    "member_vote_weight": 1,
+    "one_vote_per_member_per_proposal": true,
+    "electorate_snapshotted_when_proposal_opens": true,
+    "mid_vote_membership_change_reweights_electorate": false,
+    "quorum": "ceil(2/3 of electorate snapshot)",
+    "approval": "ceil(2/3 of non-abstaining votes) with at least one yes"
+  },
+  "proposal_lifecycle": {
+    "states": ["open", "fork_required", "withdrawn", "accepted", "rejected", "fork_endorsed"],
+    "kinds": ["protocol_amendment", "charter_amendment", "advisory_resolution", "fork_proposal"],
+    "proposal_identity": "sha256 over canonical immutable proposal identity projection",
+    "duplicate_vote_replacement": false,
+    "proposer_may_withdraw_before_finalization": true,
+    "accepted_proposal_executes_source_change": false,
+    "accepted_proposal_changes_running_protocol": false
+  },
+  "charter_gate_policy": {
+    "deterministic": true,
+    "uses_existing_invariant_ids": true,
+    "ordinary_proposal_can_weaken_current_constitution": false,
+    "conflicting_current_lineage_proposal": "fork_required",
+    "fork_proposal_may_record_incompatible_direction": true,
+    "fork_endorsement_mutates_current_lineage": false,
+    "member_local_authority_effect": "none"
+  },
+  "nexus_advisory": {
+    "nexus_is_assembly_sovereign": false,
+    "nexus_is_voting_member_by_default": false,
+    "nexus_reports_may_be_attached_as_advisory": true,
+    "advisory_weight": 0,
+    "vote_weight": 0,
+    "authority_effect": "none"
+  },
+  "version_and_fork_path": {
+    "advisory_resolution": "no_protocol_change",
+    "backward_compatible_protocol_amendment": "compatible_source_change_required",
+    "breaking_protocol_amendment": "new_major_required",
+    "charter_amendment": "new_major_required",
+    "constitutional_conflict": "fork_required",
+    "fork_endorsement": "fork_required",
+    "source_change_required_for_effective_protocol_change": true,
+    "automatic_tag_or_release": false,
+    "automatic_member_upgrade": false
+  },
+  "governance_receipts": {
+    "schema": "qsol-fed-governance-receipt/1",
+    "deterministic_identity": true,
+    "records_charter_gate": true,
+    "records_electorate_and_tally": true,
+    "records_version_path": true,
+    "protocol_changed_automatically": false,
+    "member_local_authority_mutated": false,
+    "authority_effect": "none"
+  },
+  "authority_boundary": {
+    "assembly_may_mutate_peer_registry": false,
+    "assembly_may_mutate_trust_registry": false,
+    "assembly_may_install_capability": false,
+    "assembly_may_promote_evidence": false,
+    "assembly_may_rewrite_history": false,
+    "assembly_may_mutate_citizenship": false,
+    "assembly_may_execute_tools": false,
+    "assembly_may_access_credentials": false,
+    "assembly_may_mutate_member_local_governance": false,
+    "assembly_consensus_is_truth": false,
+    "assembly_consensus_is_member_local_authority": false
+  },
+  "schemas": {
+    "member": "schemas/assembly-member-v1.schema.json",
+    "proposal": "schemas/assembly-proposal-v1.schema.json",
+    "receipt": "schemas/governance-receipt-v1.schema.json"
+  },
+  "reference_implementation": "src/assembly.rs",
+  "documentation": "ASSEMBLY.md",
+  "gate_validator": "tools/validate_phase7_gate.py",
+  "phase7_gate": "No Assembly mechanism may directly mutate member-local authority. Network membership remains separate from Assembly membership; NEXUS remains advisory-only; accepted proposals emit deterministic governance receipts and explicit source/version/fork requirements instead of executing member or protocol changes."
+}
