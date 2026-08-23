@@ -42,11 +42,15 @@ EXPECTED_CRYPTO = {
         "max_signed_message_lifetime_seconds": 3600,
         "signed_envelope_expiry_required": True,
         "max_rotation_overlap_seconds": 86400,
+        "public_verifier_policy": "frozen maxima are enforced internally and cannot be widened by callers",
     },
     "replay_policy": {
         "store": "durable append-only local replay log",
         "key": "message_id",
         "write_order": "validate signature and clock, fsync replay record, then expose fresh decision",
+        "creation_durability": "fsync the parent directory entry when creating a replay log before any FreshRecorded decision",
+        "timestamp_validation": "UTC second-resolution syntax plus real Gregorian calendar validation",
+        "single_process_handle_policy": "at most one live replay-store handle per canonical path within a process",
         "corruption_policy": "fail_closed",
         "multi_process_claim": False,
     },
@@ -179,8 +183,24 @@ def validate_repository_surface() -> None:
     ):
         require(marker in crypto_source, f"Rust crypto contract marker missing: {marker}")
 
+    lib_source = (ROOT / "src/lib.rs").read_text(encoding="utf-8")
+    require("mod crypto;" in lib_source, "crypto implementation module must remain private")
+    require("crypto::DEFAULT_CLOCK_POLICY" in lib_source, "public verifier must use frozen default clock policy")
+    export_block = lib_source.split("pub use crypto::{", 1)[1].split("};", 1)[0]
+    require("ClockPolicy" not in export_block, "caller-configurable ClockPolicy must not be publicly re-exported")
+    require("DEFAULT_CLOCK_POLICY" not in export_block, "caller-configurable default clock policy must remain internal")
+
     replay_source = (ROOT / "src/replay.rs").read_text(encoding="utf-8")
-    for marker in ("sync_all()", "replay_log_partial_tail", "ReplayDecision::Replay", "multi-process"):
+    for marker in (
+        "sync_all()",
+        "sync_parent_directory",
+        "OPEN_REPLAY_PATHS",
+        "valid_replay_timestamp",
+        "replay_store_already_open",
+        "replay_log_partial_tail",
+        "ReplayDecision::Replay",
+        "multi-process",
+    ):
         require(marker in replay_source, f"replay contract marker missing: {marker}")
 
     roadmap = (ROOT / "ROADMAP.md").read_text(encoding="utf-8")
@@ -204,6 +224,7 @@ def validate_repository_surface() -> None:
     require(ai.get("status") == "phase2_gate_enforced", "README4AI current status drift")
     require(ai.get("phase0_status") == "historical_gate_preserved", "README4AI historical Phase 0 status missing")
     require(ai.get("current_claim_manifest") == "claims/phase2.json", "README4AI current claim manifest drift")
+    require(ai.get("current_claims") == claims["capabilities"], "README4AI current_claims disagree with canonical Phase 2 claim manifest")
     require(ai.get("phase2_crypto", {}).get("contract") == "crypto/phase2.json", "README4AI Phase 2 crypto map missing")
     require(ai.get("claim_disagreement_policy") == "fail_closed", "claim disagreement must remain fail closed")
 
@@ -220,7 +241,7 @@ def main() -> None:
     validate_schemas()
     validate_vectors()
     validate_repository_surface()
-    print("phase2 crypto gate OK: Ed25519 identity, detached signatures, key lifecycle, clock policy, durable replay, and Prime Directive separation enforced")
+    print("phase2 crypto gate OK: Ed25519 identity, detached signatures, key lifecycle, frozen clock policy, durable replay, and Prime Directive separation enforced")
 
 
 if __name__ == "__main__":
