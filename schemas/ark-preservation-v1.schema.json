@@ -11,14 +11,19 @@
     "content_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
     "artifact_class": {"enum": ["preservation_object", "synthetic_cultural_research"]},
     "synthetic": {"type": "boolean"},
-    "real_world_history": {"type": "boolean"},
+    "real_world_history": {"const": false},
     "archival_presence_is_authority": {"const": false},
     "authority_effect": {"const": "none"}
   },
   "allOf": [
     {
       "if": {"properties": {"artifact_class": {"const": "synthetic_cultural_research"}}},
-      "then": {"properties": {"synthetic": {"const": true}, "real_world_history": {"const": false}}}
+      "then": {"properties": {"synthetic": {"const": true}}}
+    },
+    {
+      "if": {"properties": {"artifact_class": {"const": "preservation_object"}}},
+      "then": {"properties": {"synthetic": {"const": false}}}
     }
-  ]
+  ],
+  "$comment": "Archival presence establishes preservation only. It never proves real-world historicity. Known Holodeck schemas must use synthetic_cultural_research; the Rust verifier enforces that content-sensitive rule."
 }
