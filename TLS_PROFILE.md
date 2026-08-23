@@ -4,8 +4,6 @@ Phase 3 implements an opt-in HTTP reference service. It does **not** claim a nat
 
 ## Required public-exposure pattern
 
-The preferred deployment shape is:
-
 ```text
 Internet / private WAN
         |
@@ -13,21 +11,26 @@ Internet / private WAN
         |
 reviewed TLS terminator
         |
-loopback / protected local transport
+protected transport
         |
 qsol-fed reference service
 ```
 
 The Rust reference binary binds `127.0.0.1:8787` by default.
 
-A non-loopback bind is rejected unless the operator supplies **both**:
+A non-loopback bind is rejected unless the operator supplies all three:
 
 ```text
 --allow-public-listen
 --tls-terminated-upstream
+--trusted-proxy <IP>
 ```
 
-Those flags do not make the service production-safe. They are explicit acknowledgements that the listener is being exposed outside the default loopback posture and that TLS terminates in infrastructure outside this binary.
+The direct socket IP of the terminator must equal the configured `--trusted-proxy` value. Requests received from that exact socket peer must carry one `x-qsol-client-ip` header containing a single parseable IP address. That value is used only to select the per-client rate-limit bucket and to record rate-source audit metadata. It does **not** create Federation identity, trust, authority, evidence status, or admission.
+
+A forwarded client-IP header received from any socket peer other than the configured trusted proxy is rejected. This avoids collapsing all external clients into one proxy-wide rate bucket without turning generic forwarding headers into an authentication mechanism.
+
+Those flags do not make the service production-safe. They acknowledge that TLS terminates outside this binary and that the operator has explicitly pinned the terminator used for rate attribution.
 
 ## TLS requirements
 
@@ -41,7 +44,8 @@ For public or cross-host deployment:
 - the TLS terminator's request-body limit must be no larger than the service's `65536` byte limit;
 - request decompression must remain disabled before the Federation service;
 - the terminator must not synthesize Federation authority, trust, capability, or identity fields;
-- forwarded headers are not trusted by the Phase 3 reference service for identity or authority decisions.
+- the terminator may set only the dedicated `x-qsol-client-ip` rate-attribution header after stripping any client-supplied copy;
+- other forwarded headers are not trusted by the Phase 3 reference service for identity or authority decisions.
 
 ## No redirect dependency
 
@@ -63,15 +67,16 @@ A TLS terminator or reverse proxy should:
 - preserve exact request bodies;
 - disable request decompression;
 - enforce a body limit no larger than the service limit;
-- impose connection and request-rate limits appropriate to the deployment;
-- strip untrusted forwarding and pseudo-admin headers;
+- impose connection limits appropriate to the deployment;
+- strip all client-supplied copies of `x-qsol-client-ip`, then write exactly one validated client IP itself;
+- strip other untrusted forwarding and pseudo-admin headers;
 - avoid injecting credentials into Federation request bodies;
 - avoid caching POST responses;
 - avoid rewriting status codes or Federation JSON error bodies.
 
 ## Production non-claim
 
-Phase 3 proves the bounded reference service, opt-in listener behavior, authentication/replay/admission pipeline, and deployment contract. It does not claim:
+Phase 3 proves the bounded reference service, opt-in listener behavior, lifecycle-aware identity introduction, replay retention/compaction, per-client proxy-aware rate attribution, authentication/replay/admission pipeline, and deployment contract. It does not claim:
 
 - native TLS termination;
 - multi-process replay coordination;
