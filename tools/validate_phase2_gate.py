@@ -72,14 +72,16 @@ def validate_surfaces() -> None:
     require(ai.get("phase2_status") == "historical_crypto_gate_preserved", "README4AI must preserve Phase 2 historically")
     require(ai.get("phase2_crypto", {}).get("contract") == "crypto/phase2.json", "README4AI Phase 2 crypto map missing")
     require(ai.get("claim_disagreement_policy") == "fail_closed", "claim disagreement policy drift")
-    if (ROOT / "claims/phase5c.json").exists():
-        require(ai.get("current_claim_manifest") == "claims/phase5c.json", "Phase 5C successor claim manifest not active")
-    elif (ROOT / "claims/phase5.json").exists():
-        require(ai.get("current_claim_manifest") == "claims/phase5.json", "Phase 5 successor claim manifest not active")
-    elif (ROOT / "claims/phase5a.json").exists():
-        require(ai.get("current_claim_manifest") == "claims/phase5a.json", "Phase 5A successor claim manifest not active")
-    elif (ROOT / "claims/phase4.json").exists():
-        require(ai.get("current_claim_manifest") == "claims/phase4.json", "Phase 4 successor claim manifest not active")
+    for path, expected in (
+        ("claims/phase6.json", "claims/phase6.json"),
+        ("claims/phase5c.json", "claims/phase5c.json"),
+        ("claims/phase5.json", "claims/phase5.json"),
+        ("claims/phase5a.json", "claims/phase5a.json"),
+        ("claims/phase4.json", "claims/phase4.json"),
+    ):
+        if (ROOT / path).exists():
+            require(ai.get("current_claim_manifest") == expected, f"{expected} successor claim manifest not active")
+            break
     else:
         require(ai.get("current_claim_manifest") == "claims/phase2.json", "Phase 2 current claim manifest drift")
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
