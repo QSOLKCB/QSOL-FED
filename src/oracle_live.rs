@@ -1,14 +1,16 @@
 //! Phase 5C live-local QSOL-ORACLE transport consumer.
 //!
-//! The adapter runs only the reviewed donor `tools/fed_transport.py serve` entrypoint
-//! from a release-fingerprint-attested local QSOL-ORACLE tree. It accepts no caller-
-//! supplied command, URL, socket, tool, or shell fragment.
+//! FED never executes directly from the mutable donor checkout. Each request
+//! derives and verifies the pinned ORACLE release identity, stages only the
+//! reviewed bytes into a private temporary runtime, re-attests that staged
+//! runtime, and then invokes the fixed donor entrypoint with bounded stdio.
 
 use std::collections::HashSet;
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -40,6 +42,13 @@ const ORACLE_RESPONSE_SCHEMA_SHA256: &str =
     "16c07a3bb8767bb4d08294d12d1f1367ae04d6bd3c9205b70d504da971c3e747";
 const ORACLE_OBSERVATION_SCHEMA_SHA256: &str =
     "9f7a3c40d73d9c1f39f869831f250f483eaf1137c2169ff65b5f29d4108bb497";
+// `fed_transport.py` imports this helper, but ORACLE PR #5's historical release
+// fingerprint did not include it. FED therefore pins the reviewed helper bytes
+// explicitly as an additional executable dependency.
+const ORACLE_NEXUS_MEMBRANE_COMMON_SHA256: &str =
+    "4e4c749b67688678f03692d9533adb64760a3b448b3b804acb9f7f95e986c381";
+const ORACLE_NEXUS_MEMBRANE_COMMON_PATH: &str = "tools/nexus_membrane_common.py";
+static STAGE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OracleLiveError(pub String);
@@ -240,7 +249,7 @@ impl OracleTransportResponse {
             .as_object_mut()
             .ok_or_else(|| OracleLiveError("oracle_transport_response_not_object".into()))?;
         object.remove("response_sha256");
-        let digest = sha256_hex(&canonical_json_value(&payload)?);
+        let digest = sha256_hex(&oracle_canonical_json(&payload)?);
         if digest != self.response_sha256 {
             return Err(OracleLiveError("oracle_transport_response_digest_mismatch".into()));
         }
@@ -249,19 +258,22 @@ impl OracleTransportResponse {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct ReleaseFileRecord {
     bytes: u64,
     path: String,
     sha256: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct OracleReleaseFingerprint {
     authority: String,
     files: Vec<ReleaseFileRecord>,
-    release_fingerprint_sha256: String,
+    files_sha256: String,
+    ledger_checkpoint_sha256: String,
     protocol: String,
+    release_fingerprint_sha256: String,
+    scope: String,
     truth_claim: bool,
 }
 
@@ -272,7 +284,8 @@ pub struct OracleLiveAdapter {
 
 impl OracleLiveAdapter {
     pub fn open(oracle_root: impl AsRef<Path>) -> Result<Self, OracleLiveError> {
-        let oracle_root = oracle_root.as_ref().to_path_buf();
+        let oracle_root = fs::canonicalize(oracle_root.as_ref())
+            .map_err(|_| OracleLiveError("oracle_root_unavailable".into()))?;
         attest_oracle_release(&oracle_root)?;
         Ok(Self { oracle_root })
     }
@@ -286,18 +299,23 @@ impl OracleLiveAdapter {
         if request_bytes.len() > ORACLE_TRANSPORT_MAX_LINE_BYTES {
             return Err(OracleLiveError("oracle_transport_request_too_large".into()));
         }
+        let canonical_request_id: String = request.request_id.nfc().collect();
 
+        // Re-attest the mutable source, stage the reviewed bytes, then re-attest
+        // the private staged runtime. Execution never uses the mutable checkout.
+        let staged = stage_attested_runtime(&self.oracle_root)?;
         let mut child = Command::new("python3")
+            .arg("-I")
             .arg("tools/fed_transport.py")
             .arg("serve")
-            .current_dir(&self.oracle_root)
+            .current_dir(&staged.root)
             .env_remove("PYTHONPATH")
             .env_remove("PYTHONHOME")
             .env("PYTHONNOUSERSITE", "1")
             .env("PYTHONSAFEPATH", "1")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::null())
             .spawn()
             .map_err(|_| OracleLiveError("oracle_transport_spawn_failed".into()))?;
 
@@ -313,19 +331,30 @@ impl OracleLiveAdapter {
         }
         drop(child.stdin.take());
 
-        let output = child
-            .wait_with_output()
+        let mut stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| OracleLiveError("oracle_transport_stdout_unavailable".into()))?;
+        let mut limited = (&mut stdout).take((ORACLE_TRANSPORT_MAX_LINE_BYTES + 2) as u64);
+        let mut output = Vec::with_capacity(4_096);
+        limited
+            .read_to_end(&mut output)
+            .map_err(|_| OracleLiveError("oracle_transport_stdout_read_failed".into()))?;
+        if output.len() > ORACLE_TRANSPORT_MAX_LINE_BYTES + 1 {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(OracleLiveError("oracle_transport_stdout_limit_exceeded".into()));
+        }
+        let status = child
+            .wait()
             .map_err(|_| OracleLiveError("oracle_transport_wait_failed".into()))?;
-        if !output.status.success() {
+        if !status.success() {
             return Err(OracleLiveError("oracle_transport_process_rejected_request".into()));
         }
-        if output.stdout.is_empty()
-            || output.stdout.len() > ORACLE_TRANSPORT_MAX_LINE_BYTES + 1
-            || !output.stdout.ends_with(b"\n")
-        {
+        if output.is_empty() || !output.ends_with(b"\n") {
             return Err(OracleLiveError("oracle_transport_stdout_framing_invalid".into()));
         }
-        let raw = &output.stdout[..output.stdout.len() - 1];
+        let raw = &output[..output.len() - 1];
         if raw.contains(&b'\n')
             || canonicalize(raw)
                 .map_err(|_| OracleLiveError("oracle_transport_noncanonical_response".into()))?
@@ -335,26 +364,97 @@ impl OracleLiveAdapter {
         }
         let response: OracleTransportResponse = serde_json::from_slice(raw)
             .map_err(|_| OracleLiveError("oracle_transport_response_parse_failed".into()))?;
-        response.validate_for_request(&request.request_id)?;
+        response.validate_for_request(&canonical_request_id)?;
         Ok(response)
     }
 }
 
+struct StagedOracleRuntime {
+    root: PathBuf,
+}
+
+impl Drop for StagedOracleRuntime {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.root);
+    }
+}
+
+fn stage_attested_runtime(source_root: &Path) -> Result<StagedOracleRuntime, OracleLiveError> {
+    let fingerprint = validated_release_fingerprint(source_root)?;
+    let ordinal = STAGE_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let root = std::env::temp_dir().join(format!(
+        "qsol-fed-oracle-{}-{ordinal}",
+        std::process::id()
+    ));
+    if root.exists() {
+        fs::remove_dir_all(&root)
+            .map_err(|_| OracleLiveError("oracle_stage_cleanup_failed".into()))?;
+    }
+    fs::create_dir_all(&root).map_err(|_| OracleLiveError("oracle_stage_create_failed".into()))?;
+    let staged = StagedOracleRuntime { root };
+
+    copy_relative(source_root, &staged.root, Path::new("release/fingerprint.json"))?;
+    for record in &fingerprint.files {
+        copy_relative(source_root, &staged.root, Path::new(&record.path))?;
+    }
+    copy_relative(
+        source_root,
+        &staged.root,
+        Path::new(ORACLE_NEXUS_MEMBRANE_COMMON_PATH),
+    )?;
+    attest_oracle_release(&staged.root)?;
+    Ok(staged)
+}
+
+fn copy_relative(source: &Path, destination: &Path, relative: &Path) -> Result<(), OracleLiveError> {
+    if !safe_relative_path(relative) {
+        return Err(OracleLiveError("oracle_stage_path_invalid".into()));
+    }
+    let target = destination.join(relative);
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|_| OracleLiveError("oracle_stage_parent_create_failed".into()))?;
+    }
+    let bytes = fs::read(source.join(relative))
+        .map_err(|_| OracleLiveError("oracle_stage_source_missing".into()))?;
+    fs::write(target, bytes).map_err(|_| OracleLiveError("oracle_stage_write_failed".into()))
+}
+
 pub fn attest_oracle_release(root: &Path) -> Result<(), OracleLiveError> {
-    let fingerprint_path = root.join("release/fingerprint.json");
-    let raw = fs::read(&fingerprint_path)
+    validated_release_fingerprint(root).map(|_| ())
+}
+
+fn validated_release_fingerprint(root: &Path) -> Result<OracleReleaseFingerprint, OracleLiveError> {
+    let raw = fs::read(root.join("release/fingerprint.json"))
         .map_err(|_| OracleLiveError("oracle_release_fingerprint_missing".into()))?;
     let fingerprint: OracleReleaseFingerprint = serde_json::from_slice(&raw)
         .map_err(|_| OracleLiveError("oracle_release_fingerprint_invalid".into()))?;
     if fingerprint.protocol != "QSOL-ORACLE-RELEASE/1"
         || fingerprint.authority != "integrity-only"
         || fingerprint.truth_claim
-        || fingerprint.release_fingerprint_sha256 != ORACLE_RELEASE_FINGERPRINT_SHA256
+        || !is_lower_sha256(&fingerprint.files_sha256)
+        || !is_lower_sha256(&fingerprint.ledger_checkpoint_sha256)
+        || !is_lower_sha256(&fingerprint.release_fingerprint_sha256)
+        || fingerprint.files.is_empty()
     {
         return Err(OracleLiveError("oracle_release_fingerprint_identity_drift".into()));
     }
-    if fingerprint.files.is_empty() {
-        return Err(OracleLiveError("oracle_release_fingerprint_empty".into()));
+
+    let computed_files = sha256_hex(&oracle_canonical_serialize(&fingerprint.files)?);
+    if computed_files != fingerprint.files_sha256 {
+        return Err(OracleLiveError("oracle_release_files_digest_mismatch".into()));
+    }
+    let mut fingerprint_value = serde_json::to_value(&fingerprint)
+        .map_err(|_| OracleLiveError("oracle_release_fingerprint_serialize_failed".into()))?;
+    fingerprint_value
+        .as_object_mut()
+        .ok_or_else(|| OracleLiveError("oracle_release_fingerprint_not_object".into()))?
+        .remove("release_fingerprint_sha256");
+    let computed_release = sha256_hex(&oracle_canonical_json(&fingerprint_value)?);
+    if computed_release != fingerprint.release_fingerprint_sha256
+        || computed_release != ORACLE_RELEASE_FINGERPRINT_SHA256
+    {
+        return Err(OracleLiveError("oracle_release_fingerprint_digest_mismatch".into()));
     }
 
     let mut critical = HashSet::new();
@@ -397,6 +497,12 @@ pub fn attest_oracle_release(root: &Path) -> Result<(), OracleLiveError> {
         return Err(OracleLiveError("oracle_release_critical_pin_missing".into()));
     }
 
+    let helper = fs::read(root.join(ORACLE_NEXUS_MEMBRANE_COMMON_PATH))
+        .map_err(|_| OracleLiveError("oracle_runtime_helper_missing".into()))?;
+    if sha256_hex(&helper) != ORACLE_NEXUS_MEMBRANE_COMMON_SHA256 {
+        return Err(OracleLiveError("oracle_runtime_helper_mismatch".into()));
+    }
+
     let contract: serde_json::Value = serde_json::from_slice(
         &fs::read(root.join("contracts/fed-membrane.json"))
             .map_err(|_| OracleLiveError("oracle_membrane_contract_missing".into()))?,
@@ -427,7 +533,7 @@ pub fn attest_oracle_release(root: &Path) -> Result<(), OracleLiveError> {
     {
         return Err(OracleLiveError("oracle_membrane_contract_boundary_drift".into()));
     }
-    Ok(())
+    Ok(fingerprint)
 }
 
 fn canonical_struct<T: Serialize>(value: &T) -> Result<Vec<u8>, OracleLiveError> {
@@ -436,10 +542,20 @@ fn canonical_struct<T: Serialize>(value: &T) -> Result<Vec<u8>, OracleLiveError>
     canonicalize(&raw).map_err(|_| OracleLiveError("oracle_transport_canonicalization_failed".into()))
 }
 
-fn canonical_json_value(value: &serde_json::Value) -> Result<Vec<u8>, OracleLiveError> {
+// ORACLE's release-fingerprint canonicalizer is sorted-key, compact JSON with
+// UTF-8 text. The fingerprint values are ASCII protocol/path/hash metadata, so
+// FED's frozen canonical JSON produces the same bytes while also failing closed
+// on malformed structure.
+fn oracle_canonical_json(value: &serde_json::Value) -> Result<Vec<u8>, OracleLiveError> {
     let raw = serde_json::to_vec(value)
         .map_err(|_| OracleLiveError("oracle_transport_serialize_failed".into()))?;
     canonicalize(&raw).map_err(|_| OracleLiveError("oracle_transport_canonicalization_failed".into()))
+}
+
+fn oracle_canonical_serialize<T: Serialize>(value: &T) -> Result<Vec<u8>, OracleLiveError> {
+    let value = serde_json::to_value(value)
+        .map_err(|_| OracleLiveError("oracle_release_fingerprint_serialize_failed".into()))?;
+    oracle_canonical_json(&value)
 }
 
 fn bounded_chars(value: &str, maximum: usize) -> bool {
@@ -510,6 +626,16 @@ mod tests {
             }],
         });
         request.validate().unwrap();
+    }
+
+    #[test]
+    fn request_id_correlation_uses_canonical_nfc_identity() {
+        let decomposed = "e\u{301}";
+        let normalized: String = decomposed.nfc().collect();
+        assert_eq!(normalized, "é");
+        let request = OracleTransportRequest::new(decomposed, OracleTransportQuery::default());
+        request.validate().unwrap();
+        assert!(canonical_struct(&request).unwrap().windows("é".len()).any(|w| w == "é".as_bytes()));
     }
 
     #[test]
