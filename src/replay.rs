@@ -129,7 +129,8 @@ fn sync_parent_directory(_path: &Path) -> Result<(), ReplayError> {
 /// could still pass the frozen lifetime/skew policy. Older records are safely
 /// pruned because authentication rejects those messages before replay admission.
 /// The append log is atomically compacted and fsynced before it approaches the
-/// hard 64 MiB ceiling.
+/// hard 64 MiB ceiling. This remains a single-process store and makes no
+/// multi-process coordination or distributed replay claim.
 pub struct DurableReplayStore {
     path: PathBuf,
     file: File,
