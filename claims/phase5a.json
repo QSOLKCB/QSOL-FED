@@ -45,13 +45,15 @@
     "holodeck_computer_safeguards": true,
     "holodeck_teardown_receipts": true,
     "live_nexus_runtime_adapter": false,
+    "host_level_sandbox": false,
     "production_networking": false,
     "remote_execution": false,
     "interoperable_federation": false
   },
-  "claim_rule": "Only true capabilities may be described as established. A Holodeck world, entity, event, narrative, consensus, role, capability, or simulated action is synthetic state only and cannot create Federation authority, trust, evidence, citizenship, network access, tool access, credentials, or real WorldStore mutation.",
+  "claim_rule": "Only true capabilities may be described as established. A Holodeck world, entity, event, narrative, consensus, role, capability, or simulated action is synthetic state only and cannot create Federation authority, trust, evidence, citizenship, network access, tool access, credentials, or real WorldStore mutation. The Phase 5A sandbox is application-level capability isolation only; no OS, VM, container, hypervisor, or hardware sandbox is claimed.",
   "promotion_requirements": {
     "live_nexus_runtime_adapter": "requires a separately reviewed adapter that invokes the real QSOL-NEXUS persistent-world verification/export surface without weakening the Holodeck sandbox",
+    "host_level_sandbox": "requires a separately reviewed OS, VM, container, hypervisor, or hardware isolation profile with implementation and adversarial evidence",
     "production_networking": "requires a later production deployment profile with mature operational hardening and deployment evidence",
     "remote_execution": "not admitted by the current constitutional posture; Holodeck simulated execution is explicitly not real execution",
     "interoperable_federation": "requires Phase 6 multi-implementation interoperability evidence"
