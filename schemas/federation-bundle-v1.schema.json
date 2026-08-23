@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "qsol-fed-bundle/1",
+  "title": "QSOL-FED Portable Federation Bundle v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "protocol", "exporter_node", "created_at", "peers", "objects", "authority"],
+  "properties": {
+    "schema": {"const": "qsol-fed-bundle/1"},
+    "protocol": {"const": "qsol-fed/1"},
+    "exporter_node": {"type": "string", "pattern": "^fed:qsol:[a-z0-9][a-z0-9._-]{0,127}$"},
+    "created_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+    "peers": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["node_id", "identity_hex", "lifecycle_hex", "capability_advertisement_hex", "exported_state"],
+        "properties": {
+          "node_id": {"type": "string", "pattern": "^fed:qsol:[a-z0-9][a-z0-9._-]{0,127}$"},
+          "identity_hex": {"type": "string", "pattern": "^[0-9a-f]+$"},
+          "lifecycle_hex": {"type": "array", "maxItems": 512, "items": {"type": "string", "pattern": "^[0-9a-f]+$"}},
+          "capability_advertisement_hex": {
+            "oneOf": [
+              {"type": "null"},
+              {"type": "string", "pattern": "^[0-9a-f]+$"}
+            ]
+          },
+          "exported_state": {"enum": ["introduced", "admitted", "quarantined", "revoked", "disconnected"]}
+        }
+      }
+    },
+    "objects": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["object_id", "source_node", "exported_namespace", "object_hex", "provenance_id", "provenance_hex"],
+        "properties": {
+          "object_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+          "source_node": {"type": "string", "pattern": "^fed:qsol:[a-z0-9][a-z0-9._-]{0,127}$"},
+          "exported_namespace": {"enum": ["foreign", "quarantine"]},
+          "object_hex": {"type": "string", "pattern": "^[0-9a-f]+$"},
+          "provenance_id": {
+            "oneOf": [
+              {"type": "null"},
+              {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+            ]
+          },
+          "provenance_hex": {
+            "oneOf": [
+              {"type": "null"},
+              {"type": "string", "pattern": "^[0-9a-f]+$"}
+            ]
+          }
+        }
+      }
+    },
+    "authority": {"const": "none"}
+  }
+}
