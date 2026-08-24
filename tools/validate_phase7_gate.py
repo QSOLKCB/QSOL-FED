@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Enforce Phase 7 Federation Assembly sovereignty and governance-boundary claims."""
+"""Preserve the historical Phase 7 Federation Assembly sovereignty boundary."""
 from __future__ import annotations
 
 import json
@@ -17,6 +17,20 @@ NEW_CAPABILITIES = {
     "nexus_assembly_advisory_only",
     "assembly_fork_version_path",
     "assembly_governance_receipts",
+}
+PHASE8_CAPABILITIES = {
+    "bounded_transport_frame_contract",
+    "websocket_transport_profile",
+    "quic_transport_profile",
+    "unix_local_ipc_profile",
+    "offline_sneakernet_profile",
+    "store_forward_profile",
+    "nat_traversal_identity_binding",
+    "multi_relay_provenance",
+    "disaster_recovery_key_compromise_drills",
+    "long_lived_archive_compatibility",
+    "transport_resource_partition_drills",
+    "holodeck_transport_independence",
 }
 EXPECTED_AUTHORITY_KEYS = {
     "assembly_may_mutate_peer_registry",
@@ -91,8 +105,6 @@ def rust_claims() -> dict[str, bool]:
 
 
 def rust_use_statements(source: str) -> set[str]:
-    # Runtime capability analysis stops before the test module. Test-only imports such
-    # as `use super::*` are not part of the Assembly production capability surface.
     production = source.split("#[cfg(test)]", 1)[0]
     return {
         re.sub(r"\s+", "", match)
@@ -102,24 +114,29 @@ def rust_use_statements(source: str) -> set[str]:
 
 def validate_claims() -> None:
     previous = load("claims/phase6.json")
-    current = load("claims/phase7.json")
-    require(current.get("document_type") == "qsol-fed-phase7-assembly-claims", "Phase 7 claim id drift")
-    require(current.get("gate_id") == "qsol-fed-phase7-assembly-gate/1", "Phase 7 gate id drift")
-    require(current.get("gate_status") == "enforced", "Phase 7 gate not enforced")
-    require(current.get("runtime_override_allowed") is False, "Phase 7 claims became runtime configurable")
+    historical = load("claims/phase7.json")
+    require(historical.get("document_type") == "qsol-fed-phase7-assembly-claims", "Phase 7 claim id drift")
+    require(historical.get("gate_id") == "qsol-fed-phase7-assembly-gate/1", "Phase 7 gate id drift")
+    require(historical.get("gate_status") == "enforced", "Phase 7 gate not enforced")
+    require(historical.get("runtime_override_allowed") is False, "historical Phase 7 claims became runtime configurable")
     old = previous["capabilities"]
-    caps = current["capabilities"]
+    caps = historical["capabilities"]
     require(set(old).issubset(caps), "Phase 7 dropped a historical capability key")
     for key, value in old.items():
         require(caps[key] == value, f"Phase 7 changed historical capability: {key}")
     require(set(caps) - set(old) == NEW_CAPABILITIES, "Phase 7 capability delta drift")
     require(all(caps[key] is True for key in NEW_CAPABILITIES), "Phase 7 Assembly capability not established")
-    for key in (
-        "oracle_holodeck_synthetic_admission", "host_level_sandbox", "production_networking",
-        "remote_execution", "interoperable_federation",
-    ):
-        require(caps[key] is False, f"Phase 7 deployment/authority overclaim: {key}")
-    require(rust_claims() == caps, "Rust current claims disagree with Phase 7")
+    for key in ("oracle_holodeck_synthetic_admission", "host_level_sandbox", "production_networking", "remote_execution", "interoperable_federation"):
+        require(caps[key] is False, f"historical Phase 7 deployment/authority overclaim: {key}")
+
+    current = load("claims/phase8.json")["capabilities"]
+    require(set(caps).issubset(current), "Phase 8 dropped Phase 7 capability keys")
+    require(all(current[key] == value for key, value in caps.items()), "Phase 8 changed a historical Phase 7 capability")
+    require(set(current) - set(caps) == PHASE8_CAPABILITIES, "Phase 8 successor capability key drift")
+    require(all(current[key] is True for key in PHASE8_CAPABILITIES), "Phase 8 transport capability missing")
+    for key in ("oracle_holodeck_synthetic_admission", "host_level_sandbox", "production_networking", "remote_execution", "interoperable_federation"):
+        require(current[key] is False, f"Phase 8 successor deployment/authority overclaim: {key}")
+    require(rust_claims() == current, "Rust current claims disagree with Phase 8 successor")
 
 
 def validate_contract() -> None:
@@ -272,12 +289,13 @@ def validate_surfaces_and_ci() -> None:
         require(marker in agents, f"AGENTS Phase 7 marker missing: {marker}")
 
     ai = load("README4AI.md")
-    require(ai.get("phase7_status") == "federation_assembly_gate_enforced", "README4AI Phase 7 status missing")
-    require(ai.get("current_claim_manifest") == "claims/phase7.json", "README4AI current Phase 7 manifest drift")
-    require(ai.get("current_claims") == load("claims/phase7.json")["capabilities"], "README4AI Phase 7 claims drift")
+    require(ai.get("phase7_status") == "historical_federation_assembly_gate_preserved", "README4AI Phase 7 historical status missing")
+    require(ai.get("phase7_assembly", {}).get("historical") is True, "README4AI Phase 7 history marker missing")
+    require(ai.get("current_claim_manifest") == "claims/phase8.json", "README4AI current Phase 8 manifest drift")
+    require(ai.get("current_claims") == load("claims/phase8.json")["capabilities"], "README4AI current Phase 8 claims drift")
 
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-    require("python3 tools/validate_phase7_gate.py" in workflow, "CI missing Phase 7 gate")
+    require("python3 tools/validate_phase7_gate.py" in workflow, "CI missing historical Phase 7 gate")
     require("cargo test --all-targets" in workflow, "CI missing Assembly Rust regressions")
 
 
@@ -286,7 +304,7 @@ def main() -> None:
     validate_contract()
     validate_schemas_and_source()
     validate_surfaces_and_ci()
-    print("phase7 Assembly gate OK: separate opt-in membership, bounded electorate digests, immutable finalization, explicit anti-Sybil assumptions, deterministic Charter/fork routing, zero-weight NEXUS advice, semantic proposal validation, deterministic receipts, and no member-local authority mutation")
+    print("phase7 historical Assembly gate OK: separate opt-in membership, bounded electorate digests, immutable finalization, explicit anti-Sybil assumptions, deterministic Charter/fork routing, zero-weight NEXUS advice, semantic proposal validation, deterministic receipts, and no member-local authority mutation remain preserved under Phase 8")
 
 
 if __name__ == "__main__":
