@@ -14,8 +14,8 @@
     "message_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
     "payload_ref": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
     "provenance_ref": {"anyOf": [{"type": "null"}, {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}]},
-    "sequence": {"type": "integer", "minimum": 1},
+    "sequence": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
     "authority_effect": {"const": "none"}
   },
-  "$comment": "Transport framing is delivery metadata only. frame_id excludes frame_id itself; message_id, payload_ref and provenance_ref remain the original protocol identities. Transport profile MUST NOT alter authority or authenticated node identity. Canonical serialized frames are bounded to 65536 bytes by the Phase 8 semantic validator."
+  "$comment": "Transport framing is delivery metadata only. frame_id excludes frame_id itself; message_id, payload_ref and provenance_ref remain the original protocol identities. Transport profile MUST NOT alter authority or authenticated node identity. Integers use the frozen canonical safe range and canonical serialized frames are bounded to 65536 bytes by the Phase 8 semantic validator."
 }
