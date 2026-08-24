@@ -29,6 +29,20 @@ PHASE7_CAPABILITIES = {
     "assembly_fork_version_path",
     "assembly_governance_receipts",
 }
+PHASE8_CAPABILITIES = {
+    "bounded_transport_frame_contract",
+    "websocket_transport_profile",
+    "quic_transport_profile",
+    "unix_local_ipc_profile",
+    "offline_sneakernet_profile",
+    "store_forward_profile",
+    "nat_traversal_identity_binding",
+    "multi_relay_provenance",
+    "disaster_recovery_key_compromise_drills",
+    "long_lived_archive_compatibility",
+    "transport_resource_partition_drills",
+    "holodeck_transport_independence",
+}
 
 
 def require(condition: bool, message: str) -> None:
@@ -69,12 +83,20 @@ def validate_claims() -> None:
     for key in ("oracle_holodeck_synthetic_admission", "host_level_sandbox", "production_networking", "remote_execution", "interoperable_federation"):
         require(historical[key] is False, f"historical Phase 6 overclaim drift: {key}")
 
-    current = load("claims/phase7.json")["capabilities"]
-    require(set(historical).issubset(current), "Phase 7 dropped a Phase 6 capability key")
-    require(all(current[key] == value for key, value in historical.items()), "Phase 7 changed a historical Phase 6 capability")
-    require(set(current) - set(historical) == PHASE7_CAPABILITIES, "Phase 7 successor capability delta drift")
-    require(all(current[key] is True for key in PHASE7_CAPABILITIES), "Phase 7 Assembly capability missing")
-    require(rust_claims() == current, "Rust current claims disagree with Phase 7 successor")
+    phase7 = load("claims/phase7.json")["capabilities"]
+    require(set(historical).issubset(phase7), "Phase 7 dropped a Phase 6 capability key")
+    require(all(phase7[key] == value for key, value in historical.items()), "Phase 7 changed a historical Phase 6 capability")
+    require(set(phase7) - set(historical) == PHASE7_CAPABILITIES, "Phase 7 successor capability delta drift")
+    require(all(phase7[key] is True for key in PHASE7_CAPABILITIES), "Phase 7 Assembly capability missing")
+
+    current = load("claims/phase8.json")["capabilities"]
+    require(set(phase7).issubset(current), "Phase 8 dropped a Phase 7 capability key")
+    require(all(current[key] == value for key, value in phase7.items()), "Phase 8 changed a historical Phase 7 capability")
+    require(set(current) - set(phase7) == PHASE8_CAPABILITIES, "Phase 8 successor capability delta drift")
+    require(all(current[key] is True for key in PHASE8_CAPABILITIES), "Phase 8 transport capability missing")
+    for key in ("oracle_holodeck_synthetic_admission", "host_level_sandbox", "production_networking", "remote_execution", "interoperable_federation"):
+        require(current[key] is False, f"Phase 8 successor overclaim: {key}")
+    require(rust_claims() == current, "Rust current claims disagree with Phase 8 successor")
 
 
 def validate_contract_and_fixture() -> None:
@@ -186,8 +208,8 @@ def validate_surfaces_and_ci() -> None:
 
     ai = load("README4AI.md")
     require(ai.get("phase6_status") in {"third_party_sdk_gate_enforced", "historical_third_party_sdk_gate_preserved"}, "README4AI Phase 6 status missing")
-    require(ai.get("current_claim_manifest") == "claims/phase7.json", "README4AI Phase 7 successor manifest not active")
-    require(ai.get("current_claims") == load("claims/phase7.json")["capabilities"], "README4AI current Phase 7 claims drift")
+    require(ai.get("current_claim_manifest") == "claims/phase8.json", "README4AI Phase 8 successor manifest not active")
+    require(ai.get("current_claims") == load("claims/phase8.json")["capabilities"], "README4AI current Phase 8 claims drift")
 
 
 def main() -> None:
@@ -195,7 +217,7 @@ def main() -> None:
     validate_contract_and_fixture()
     validate_schemas_and_implementations()
     validate_surfaces_and_ci()
-    print("phase6 historical SDK gate OK: Rust/Python/TypeScript conformance, hostile parser parity, neutral third-party participation, and governance independence preserved under Phase 7 successor")
+    print("phase6 historical SDK gate OK: Rust/Python/TypeScript conformance, hostile parser parity, neutral third-party participation, and governance independence preserved under Phase 8 transport successor")
 
 
 if __name__ == "__main__":
