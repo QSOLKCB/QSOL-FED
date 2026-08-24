@@ -1,0 +1,154 @@
+{
+  "document_type": "qsol-fed-phase8-transport-resilience-contract",
+  "schema_version": 1,
+  "protocol": "qsol-fed/0",
+  "wire_protocol": "qsol-fed/1",
+  "transport_contract": "qsol-fed-transport/1",
+  "maximum_frame_bytes": 65536,
+  "maximum_queue_depth": 1024,
+  "maximum_relay_hops": 16,
+  "profiles": {
+    "web_socket": {
+      "framing": "one-canonical-frame-per-websocket-message",
+      "network_bearing": true,
+      "nat_traversal_supported": true,
+      "live_backend_claimed": false
+    },
+    "quic": {
+      "framing": "one-canonical-frame-per-unidirectional-stream",
+      "network_bearing": true,
+      "nat_traversal_supported": true,
+      "live_backend_claimed": false
+    },
+    "unix_ipc": {
+      "framing": "u32-be-length-prefixed-canonical-frame",
+      "network_bearing": false,
+      "nat_traversal_supported": false,
+      "live_backend_claimed": false
+    },
+    "offline_sneakernet": {
+      "framing": "canonical-offline-package",
+      "network_bearing": false,
+      "delayed_delivery_supported": true,
+      "live_backend_claimed": false
+    },
+    "store_forward": {
+      "framing": "bounded-canonical-spool-record",
+      "network_bearing": false,
+      "delayed_delivery_supported": true,
+      "live_backend_claimed": false
+    }
+  },
+  "identity_boundary": {
+    "identity_source": "phase2-authenticated-envelope-identity",
+    "transport_profile_may_replace_sender_identity": false,
+    "transport_route_may_create_trust": false,
+    "transport_route_may_create_authority": false,
+    "message_id_preserved_across_transports": true,
+    "payload_ref_preserved_across_transports": true,
+    "provenance_ref_preserved_across_transports": true,
+    "transport_acceptance_requires_signature_valid": true,
+    "transport_acceptance_requires_current_identity": true,
+    "transport_acceptance_requires_fresh_replay_state": true,
+    "transport_acceptance_requires_local_peer_admission": true
+  },
+  "nat_traversal": {
+    "profiles": ["web_socket", "quic"],
+    "maximum_candidates": 8,
+    "maximum_ticket_lifetime_seconds": 600,
+    "ticket_is_route_hint_only": true,
+    "ticket_node_must_match_authenticated_sender": true,
+    "ticket_grants_trust": false,
+    "ticket_grants_authority": false,
+    "candidate_may_embed_credentials": false,
+    "identity_weakening_allowed": false
+  },
+  "multi_relay_provenance": {
+    "maximum_hops": 16,
+    "every_hop_preserves_frame_id": true,
+    "every_hop_preserves_message_id": true,
+    "every_hop_preserves_payload_ref": true,
+    "every_hop_links_previous_receipt": true,
+    "relay_presence_is_trust": false,
+    "relay_presence_is_authority": false
+  },
+  "store_forward": {
+    "maximum_queue_depth": 1024,
+    "duplicate_frame_rejected": true,
+    "fifo_order_preserved": true,
+    "partition_backlog_bounded": true,
+    "dequeue_changes_frame_identity": false,
+    "physical_or_archival_presence_is_authority": false
+  },
+  "disaster_recovery": {
+    "compromised_or_noncurrent_identity_rejected_on_every_profile": true,
+    "transport_path_may_revive_compromised_key": false,
+    "phase2_key_lifecycle_remains_authoritative": true,
+    "transport_failover_may_skip_replay_checks": false,
+    "transport_failover_may_skip_local_admission": false
+  },
+  "archive_compatibility": {
+    "policy": "qsol-fed-archive-compatibility/1",
+    "canonical_profile": "qsol-fed-canonical-json/1",
+    "wire_protocol": "qsol-fed/1",
+    "preserve_canonical_bytes": true,
+    "preserve_object_identity": true,
+    "historical_receipts_reinterpreted": false,
+    "unknown_major_policy": "reject-until-explicit-migration-contract",
+    "migration_requires_new_artifact": true
+  },
+  "drill_matrix": {
+    "profiles": ["web_socket", "quic", "unix_ipc", "offline_sneakernet", "store_forward"],
+    "drills": ["resource_exhaustion", "partition_recovery", "key_compromise", "nat_traversal_identity", "multi_relay_provenance", "archive_compatibility", "holodeck_transport_independence"],
+    "every_profile_runs_resource_exhaustion": true,
+    "every_profile_runs_partition_recovery": true,
+    "every_profile_runs_key_compromise": true,
+    "every_profile_runs_multi_relay_provenance": true,
+    "every_profile_runs_archive_compatibility": true,
+    "every_profile_runs_holodeck_transport_independence": true
+  },
+  "holodeck_transport_independence": {
+    "invariant": "transport_does_not_enter_holodeck_sandbox",
+    "transport_outside_sandbox_may_relabel_sandbox_network_use": false,
+    "authority_effect": "none",
+    "federation_effect": "none",
+    "evidence_effect": "none",
+    "network_used": false,
+    "real_tools_used": false,
+    "credentials_exposed": false
+  },
+  "authority_boundary": {
+    "transport_may_mutate_peer_registry": false,
+    "transport_may_mutate_trust_registry": false,
+    "transport_may_install_capability": false,
+    "transport_may_promote_evidence": false,
+    "transport_may_create_assembly_vote": false,
+    "transport_may_mutate_citizenship": false,
+    "transport_may_rewrite_history": false,
+    "transport_may_claim_local_authority": false,
+    "nat_ticket_may_replace_identity": false,
+    "relay_chain_may_create_trust": false,
+    "offline_media_presence_may_create_authority": false,
+    "partition_recovery_may_silently_reconcile": false,
+    "transport_may_disable_holodeck_safeguards": false
+  },
+  "deployment_nonclaims": {
+    "production_networking": false,
+    "remote_execution": false,
+    "interoperable_federation": false,
+    "websocket_public_service_certified": false,
+    "quic_public_service_certified": false,
+    "nat_traversal_service_deployed": false
+  },
+  "schemas": {
+    "transport_frame": "schemas/transport-frame-v1.schema.json",
+    "nat_ticket": "schemas/nat-traversal-ticket-v1.schema.json",
+    "relay_receipt": "schemas/relay-receipt-v1.schema.json",
+    "offline_package": "schemas/offline-package-v1.schema.json",
+    "drill_report": "schemas/transport-drill-report-v1.schema.json"
+  },
+  "reference_implementation": "src/transport.rs",
+  "documentation": "TRANSPORTS.md",
+  "gate_validator": "tools/validate_phase8_gate.py",
+  "phase8_gate": "Every admitted transport must preserve Phase 2 identity, original message/payload/provenance identity, local admission, bounded resource use and Holodeck sandbox invariants. Route, relay, partition recovery, physical media and archive presence never create trust or authority."
+}
