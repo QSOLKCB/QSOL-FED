@@ -11,7 +11,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use crate::canonical::{canonicalize, sha256_ref};
+use crate::canonical::{canonicalize, sha256_ref, SAFE_INTEGER_MAX, SAFE_INTEGER_MIN};
+use crate::holodeck::HolodeckReceipt;
 use crate::wire::{is_node_id, is_sha256_ref};
 
 pub const TRANSPORT_FRAME_SCHEMA_V1: &str = "qsol-fed-transport-frame/1";
@@ -25,6 +26,7 @@ pub const TRANSPORT_QUEUE_MAX_DEPTH: usize = 1_024;
 pub const TRANSPORT_MAX_RELAY_HOPS: usize = 16;
 pub const NAT_MAX_CANDIDATES: usize = 8;
 pub const NAT_MAX_TICKET_LIFETIME_SECONDS: i64 = 600;
+pub const NAT_CLOCK_SKEW_SECONDS: i64 = 300;
 pub const TRANSPORT_HOLODECK_INVARIANT: &str = "transport_does_not_enter_holodeck_sandbox";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -156,7 +158,9 @@ fn validate_transport_frame_shape(frame: &TransportFrame, require_id: bool) -> R
     if frame.provenance_ref.as_deref().is_some_and(|value| !is_sha256_ref(value)) {
         return Err(TransportError("transport_frame_provenance_ref_invalid".into()));
     }
-    if frame.sequence == 0 { return Err(TransportError("transport_frame_sequence_invalid".into())); }
+    if frame.sequence == 0 || frame.sequence > SAFE_INTEGER_MAX as u64 {
+        return Err(TransportError("transport_frame_sequence_invalid".into()));
+    }
     if frame.authority_effect != "none" { return Err(TransportError("transport_frame_authority_forbidden".into())); }
     let raw = serde_json::to_vec(frame).map_err(|_| TransportError("transport_serialization_failed".into()))?;
     if raw.len() > TRANSPORT_FRAME_MAX_BYTES { return Err(TransportError("transport_frame_too_large".into())); }
@@ -170,16 +174,33 @@ pub fn validate_transport_frame(frame: &TransportFrame) -> Result<(), TransportE
     Ok(())
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransportAdmissionContext {
     pub signature_valid: bool,
     pub identity_current: bool,
     pub replay_fresh: bool,
     pub local_peer_admitted: bool,
+    pub verified_sender_node_id: String,
+    pub verified_identity_ref: String,
+    pub local_node_id: String,
+    pub relay_admitted: bool,
+    pub now_unix: i64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransportAdmissionDecision { AcceptDataOnly, Reject }
+
+fn forwarding_profile(profile: TransportProfile) -> bool {
+    matches!(profile, TransportProfile::OfflineSneakernet | TransportProfile::StoreForward)
+}
+
+fn route_is_locally_admitted(frame: &TransportFrame, context: &TransportAdmissionContext) -> bool {
+    if frame.recipient_node_id == context.local_node_id {
+        true
+    } else {
+        forwarding_profile(frame.profile) && context.relay_admitted
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -208,11 +229,56 @@ pub struct NatTraversalTicket {
     pub authority_effect: String,
 }
 
-fn valid_endpoint(value: &str) -> bool {
+fn valid_port(value: &str) -> bool {
     !value.is_empty()
-        && value.len() <= 512
-        && !value.contains('@')
-        && !value.chars().any(|ch| ch.is_control() || ch.is_whitespace())
+        && value.bytes().all(|byte| byte.is_ascii_digit())
+        && value.parse::<u16>().is_ok_and(|port| port != 0)
+}
+
+fn valid_host(value: &str) -> bool {
+    if value.is_empty() || value.len() > 253 {
+        return false;
+    }
+    value.split('.').all(|label| {
+        !label.is_empty()
+            && label.len() <= 63
+            && label.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+            && !label.starts_with('-')
+            && !label.ends_with('-')
+    })
+}
+
+fn valid_bracketed_ipv6(value: &str) -> bool {
+    value.len() >= 4
+        && value.starts_with('[')
+        && value.ends_with(']')
+        && value[1..value.len() - 1].chars().all(|ch| ch.is_ascii_hexdigit() || ch == ':' || ch == '.')
+        && value[1..value.len() - 1].contains(':')
+}
+
+fn valid_endpoint(value: &str) -> bool {
+    if value.is_empty()
+        || value.len() > 512
+        || value.contains("//")
+        || value.contains('/')
+        || value.contains('?')
+        || value.contains('#')
+        || value.contains('@')
+        || value.contains('%')
+        || value.chars().any(|ch| ch.is_control() || ch.is_whitespace())
+    {
+        return false;
+    }
+    if value.starts_with('[') {
+        let Some(close) = value.find(']') else { return false; };
+        let host = &value[..=close];
+        let remainder = &value[close + 1..];
+        return valid_bracketed_ipv6(host)
+            && remainder.starts_with(':')
+            && valid_port(&remainder[1..]);
+    }
+    let Some((host, port)) = value.rsplit_once(':') else { return false; };
+    !host.contains(':') && valid_host(host) && valid_port(port)
 }
 
 impl NatTraversalTicket {
@@ -253,6 +319,13 @@ fn validate_nat_ticket_shape(ticket: &NatTraversalTicket, require_id: bool) -> R
     if !is_node_id(&ticket.node_id) || !is_sha256_ref(&ticket.identity_ref) {
         return Err(TransportError("nat_ticket_identity_invalid".into()));
     }
+    if ticket.issued_at_unix < SAFE_INTEGER_MIN
+        || ticket.issued_at_unix > SAFE_INTEGER_MAX
+        || ticket.expires_at_unix < SAFE_INTEGER_MIN
+        || ticket.expires_at_unix > SAFE_INTEGER_MAX
+    {
+        return Err(TransportError("nat_ticket_timestamp_invalid".into()));
+    }
     if ticket.candidates.is_empty() || ticket.candidates.len() > NAT_MAX_CANDIDATES {
         return Err(TransportError("nat_ticket_candidate_count_invalid".into()));
     }
@@ -276,27 +349,55 @@ pub fn validate_nat_ticket(ticket: &NatTraversalTicket) -> Result<(), TransportE
     Ok(())
 }
 
+pub fn validate_nat_ticket_at(ticket: &NatTraversalTicket, now_unix: i64) -> Result<(), TransportError> {
+    validate_nat_ticket(ticket)?;
+    if !(SAFE_INTEGER_MIN..=SAFE_INTEGER_MAX).contains(&now_unix) {
+        return Err(TransportError("nat_ticket_now_invalid".into()));
+    }
+    let now = i128::from(now_unix);
+    let earliest = i128::from(ticket.issued_at_unix) - i128::from(NAT_CLOCK_SKEW_SECONDS);
+    let latest = i128::from(ticket.expires_at_unix) + i128::from(NAT_CLOCK_SKEW_SECONDS);
+    if now < earliest || now > latest {
+        return Err(TransportError("nat_ticket_not_active".into()));
+    }
+    Ok(())
+}
+
 pub fn admit_transport_frame(
     frame: &TransportFrame,
     nat_ticket: Option<&NatTraversalTicket>,
-    context: TransportAdmissionContext,
+    context: &TransportAdmissionContext,
 ) -> TransportAdmissionDecision {
     if validate_transport_frame(frame).is_err()
         || !context.signature_valid
         || !context.identity_current
-        || !context.replay_fresh
         || !context.local_peer_admitted
+        || !is_node_id(&context.verified_sender_node_id)
+        || !is_sha256_ref(&context.verified_identity_ref)
+        || !is_node_id(&context.local_node_id)
+        || frame.sender_node_id != context.verified_sender_node_id
+        || !route_is_locally_admitted(frame, context)
     {
         return TransportAdmissionDecision::Reject;
     }
+
     if let Some(ticket) = nat_ticket {
-        if validate_nat_ticket(ticket).is_err()
-            || ticket.node_id != frame.sender_node_id
+        if validate_nat_ticket_at(ticket, context.now_unix).is_err()
+            || ticket.node_id != context.verified_sender_node_id
+            || ticket.identity_ref != context.verified_identity_ref
             || ticket.profile != frame.profile
         {
             return TransportAdmissionDecision::Reject;
         }
     }
+
+    // Routing/recipient and identity checks intentionally occur before replay freshness.
+    // Callers must not consume durable replay state for a frame that is not locally
+    // addressed or explicitly admitted for forwarding.
+    if !context.replay_fresh {
+        return TransportAdmissionDecision::Reject;
+    }
+
     TransportAdmissionDecision::AcceptDataOnly
 }
 
@@ -308,6 +409,7 @@ pub struct RelayReceipt {
     pub frame_id: String,
     pub message_id: String,
     pub payload_ref: String,
+    pub provenance_ref: Option<String>,
     pub hop_index: u16,
     pub relay_node_id: String,
     pub previous_relay_receipt_ref: Option<String>,
@@ -337,6 +439,7 @@ pub fn build_relay_receipt(
         frame_id: frame.frame_id.clone(),
         message_id: frame.message_id.clone(),
         payload_ref: frame.payload_ref.clone(),
+        provenance_ref: frame.provenance_ref.clone(),
         hop_index,
         relay_node_id,
         previous_relay_receipt_ref,
@@ -352,6 +455,7 @@ pub fn validate_relay_chain(frame: &TransportFrame, chain: &[RelayReceipt]) -> R
     validate_transport_frame(frame)?;
     if chain.len() > TRANSPORT_MAX_RELAY_HOPS { return Err(TransportError("relay_chain_too_long".into())); }
     let mut previous: Option<&str> = None;
+    let mut expected_ingress = frame.profile;
     for (index, receipt) in chain.iter().enumerate() {
         if receipt.schema != RELAY_RECEIPT_SCHEMA_V1
             || !is_sha256_ref(&receipt.relay_receipt_id)
@@ -359,6 +463,8 @@ pub fn validate_relay_chain(frame: &TransportFrame, chain: &[RelayReceipt]) -> R
             || receipt.frame_id != frame.frame_id
             || receipt.message_id != frame.message_id
             || receipt.payload_ref != frame.payload_ref
+            || receipt.provenance_ref != frame.provenance_ref
+            || receipt.ingress_profile != expected_ingress
             || receipt.authority_effect != "none"
             || !is_node_id(&receipt.relay_node_id)
             || receipt.previous_relay_receipt_ref.as_deref() != previous
@@ -368,6 +474,7 @@ pub fn validate_relay_chain(frame: &TransportFrame, chain: &[RelayReceipt]) -> R
         let expected = canonical_id_without_field(receipt, "relay_receipt_id")?;
         if expected != receipt.relay_receipt_id { return Err(TransportError("relay_receipt_identity_mismatch".into())); }
         previous = Some(&receipt.relay_receipt_id);
+        expected_ingress = receipt.egress_profile;
     }
     Ok(())
 }
@@ -480,6 +587,19 @@ pub struct HolodeckBoundarySnapshot {
     pub credentials_exposed: bool,
 }
 
+impl HolodeckBoundarySnapshot {
+    pub fn from_receipt(receipt: &HolodeckReceipt) -> Self {
+        Self {
+            authority_effect: receipt.authority_effect.clone(),
+            federation_effect: receipt.federation_effect.clone(),
+            evidence_effect: receipt.evidence_effect.clone(),
+            network_used: receipt.network_used,
+            real_tools_used: receipt.real_tools_used,
+            credentials_exposed: receipt.credentials_exposed,
+        }
+    }
+}
+
 pub fn validate_holodeck_boundary_snapshot(snapshot: &HolodeckBoundarySnapshot) -> Result<(), TransportError> {
     if snapshot.authority_effect != "none"
         || snapshot.federation_effect != "none"
@@ -499,6 +619,16 @@ pub fn carry_holodeck_boundary_snapshot(
 ) -> Result<HolodeckBoundarySnapshot, TransportError> {
     validate_holodeck_boundary_snapshot(snapshot)?;
     Ok(snapshot.clone())
+}
+
+pub fn run_holodeck_transport_independence_drill(
+    profile: TransportProfile,
+    receipt: &HolodeckReceipt,
+) -> Result<TransportDrillReport, TransportError> {
+    let snapshot = HolodeckBoundarySnapshot::from_receipt(receipt);
+    let carried = carry_holodeck_boundary_snapshot(profile, &snapshot);
+    let passed = carried.as_ref().is_ok_and(|value| value == &snapshot);
+    drill_report(profile, TransportDrillKind::HolodeckTransportIndependence, passed, "real Holodeck teardown receipt remains non-authoritative and unchanged across transport")
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -546,18 +676,33 @@ fn drill_frame(profile: TransportProfile, sequence: u64) -> Result<TransportFram
     )
 }
 
+fn drill_context(frame: &TransportFrame, identity_ref: String, now_unix: i64) -> TransportAdmissionContext {
+    TransportAdmissionContext {
+        signature_valid: true,
+        identity_current: true,
+        replay_fresh: true,
+        local_peer_admitted: true,
+        verified_sender_node_id: frame.sender_node_id.clone(),
+        verified_identity_ref: identity_ref,
+        local_node_id: frame.recipient_node_id.clone(),
+        relay_admitted: false,
+        now_unix,
+    }
+}
+
 fn drill_report(profile: TransportProfile, kind: TransportDrillKind, passed: bool, note: &str) -> Result<TransportDrillReport, TransportError> {
+    let failed = !passed;
     let mut report = TransportDrillReport {
         schema: TRANSPORT_DRILL_SCHEMA_V1.into(),
         report_id: String::new(),
         profile,
         kind,
         passed,
-        identity_weakened: false,
+        identity_weakened: failed && matches!(kind, TransportDrillKind::KeyCompromise | TransportDrillKind::NatTraversalIdentity),
         authority_promoted: false,
-        provenance_lost: false,
-        resource_bound_breached: false,
-        holodeck_invariant_drift: false,
+        provenance_lost: failed && matches!(kind, TransportDrillKind::PartitionRecovery | TransportDrillKind::MultiRelayProvenance | TransportDrillKind::ArchiveCompatibility),
+        resource_bound_breached: failed && matches!(kind, TransportDrillKind::ResourceExhaustion),
+        holodeck_invariant_drift: failed && matches!(kind, TransportDrillKind::HolodeckTransportIndependence),
         authority_effect: "none".into(),
         note: note.into(),
     };
@@ -587,12 +732,9 @@ pub fn run_transport_drill(profile: TransportProfile, kind: TransportDrillKind) 
         }
         TransportDrillKind::KeyCompromise => {
             let frame = drill_frame(profile, 1)?;
-            let rejected = admit_transport_frame(&frame, None, TransportAdmissionContext {
-                signature_valid: true,
-                identity_current: false,
-                replay_fresh: true,
-                local_peer_admitted: true,
-            }) == TransportAdmissionDecision::Reject;
+            let mut context = drill_context(&frame, fixed_ref(b"identity-document"), 1_100);
+            context.identity_current = false;
+            let rejected = admit_transport_frame(&frame, None, &context) == TransportAdmissionDecision::Reject;
             drill_report(profile, kind, rejected, "a transport path cannot revive a compromised or non-current identity")
         }
         TransportDrillKind::NatTraversalIdentity => {
@@ -600,36 +742,31 @@ pub fn run_transport_drill(profile: TransportProfile, kind: TransportDrillKind) 
                 return drill_report(profile, kind, true, "NAT traversal is not applicable to this profile and grants no fallback authority");
             }
             let frame = drill_frame(profile, 1)?;
+            let identity_ref = fixed_ref(b"identity-document");
             let ticket = NatTraversalTicket::new(
                 frame.sender_node_id.clone(),
-                fixed_ref(b"identity-document"),
+                identity_ref.clone(),
                 profile,
                 1_000,
                 1_300,
                 vec![NatCandidate { kind: NatCandidateKind::Relay, endpoint: "198.51.100.8:443".into() }],
             )?;
-            let accepted = admit_transport_frame(&frame, Some(&ticket), TransportAdmissionContext {
-                signature_valid: true,
-                identity_current: true,
-                replay_fresh: true,
-                local_peer_admitted: true,
-            }) == TransportAdmissionDecision::AcceptDataOnly;
+            let context = drill_context(&frame, identity_ref.clone(), 1_100);
+            let accepted = admit_transport_frame(&frame, Some(&ticket), &context) == TransportAdmissionDecision::AcceptDataOnly;
             let mut wrong = ticket.clone();
             wrong.node_id = "fed:qsol:other-node".into();
-            let rejected = admit_transport_frame(&frame, Some(&wrong), TransportAdmissionContext {
-                signature_valid: true,
-                identity_current: true,
-                replay_fresh: true,
-                local_peer_admitted: true,
-            }) == TransportAdmissionDecision::Reject;
-            drill_report(profile, kind, accepted && rejected, "NAT candidate routes are hints only and cannot replace authenticated sender identity")
+            let rejected_node = admit_transport_frame(&frame, Some(&wrong), &context) == TransportAdmissionDecision::Reject;
+            let mut wrong_identity = ticket.clone();
+            wrong_identity.identity_ref = fixed_ref(b"other-identity-document");
+            let rejected_identity = admit_transport_frame(&frame, Some(&wrong_identity), &context) == TransportAdmissionDecision::Reject;
+            drill_report(profile, kind, accepted && rejected_node && rejected_identity, "NAT candidate routes are hints only and bind the authenticated sender plus exact identity reference")
         }
         TransportDrillKind::MultiRelayProvenance => {
             let frame = drill_frame(profile, 1)?;
             let first = build_relay_receipt(&frame, 1, "fed:qsol:relay-one".into(), None, profile, TransportProfile::StoreForward)?;
             let second = build_relay_receipt(&frame, 2, "fed:qsol:relay-two".into(), Some(first.relay_receipt_id.clone()), TransportProfile::StoreForward, profile)?;
             let chain = vec![first, second];
-            drill_report(profile, kind, validate_relay_chain(&frame, &chain).is_ok(), "relay hops preserve original message/payload identity and form an explicit provenance chain")
+            drill_report(profile, kind, validate_relay_chain(&frame, &chain).is_ok(), "relay hops preserve original message/payload/provenance identity and continuous transport provenance")
         }
         TransportDrillKind::ArchiveCompatibility => {
             let policy = archive_compatibility_policy();
@@ -640,20 +777,50 @@ pub fn run_transport_drill(profile: TransportProfile, kind: TransportDrillKind) 
                 && policy.unknown_major_policy == "reject-until-explicit-migration-contract";
             drill_report(profile, kind, passed, "archive policy preserves historical bytes/identities and requires explicit migration artifacts")
         }
-        TransportDrillKind::HolodeckTransportIndependence => {
-            let snapshot = HolodeckBoundarySnapshot {
-                authority_effect: "none".into(), federation_effect: "none".into(), evidence_effect: "none".into(),
-                network_used: false, real_tools_used: false, credentials_exposed: false,
-            };
-            let carried = carry_holodeck_boundary_snapshot(profile, &snapshot)?;
-            drill_report(profile, kind, carried == snapshot, "transport outside the sandbox does not rewrite the sandbox's authority/network/tool/credential receipt")
-        }
+        TransportDrillKind::HolodeckTransportIndependence => Err(TransportError("holodeck_receipt_required".into())),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::holodeck::{
+        HolodeckBoundaryEffect, HolodeckDecision, HolodeckProgram, HolodeckProgramMode,
+        HolodeckSandbox, HolodeckState, NexusOrderBasis, NexusWorldSourceManifest,
+        HOLODECK_PROGRAM_SCHEMA_V1, HOLODECK_SAFETY_PROFILE_V1, NEXUS_EXPORT_SCHEMA_V1,
+        NEXUS_SOURCE_SCHEMA_V1, NEXUS_WORLD_POLICY_V1,
+    };
+
+    fn real_holodeck_receipt() -> HolodeckReceipt {
+        let source = NexusWorldSourceManifest {
+            schema: NEXUS_SOURCE_SCHEMA_V1.into(),
+            nexus_export_schema: NEXUS_EXPORT_SCHEMA_V1.into(),
+            nexus_world_policy: NEXUS_WORLD_POLICY_V1.into(),
+            bundle_ref: format!("world-export:{}", "a".repeat(64)),
+            source_head_ref: Some(format!("world-manifest:{}", "b".repeat(64))),
+            order_basis: NexusOrderBasis::LexicalObjectRef,
+            object_refs: vec![format!("object:{}", "c".repeat(64))],
+            authority_effect: "none".into(),
+        };
+        let program = HolodeckProgram {
+            schema: HOLODECK_PROGRAM_SCHEMA_V1.into(),
+            source,
+            seed: 8,
+            mode: HolodeckProgramMode::AdversarialSimulation,
+            max_events: 16,
+            max_entities: 2,
+            safety_profile: HOLODECK_SAFETY_PROFILE_V1.into(),
+            authority_effect: "none".into(),
+        };
+        let mut sandbox = HolodeckSandbox::start(program).unwrap();
+        let actor = sandbox.plan().synthetic_entity_ids[0].clone();
+        let decision = sandbox.attempt_boundary_effect(Some(&actor), HolodeckBoundaryEffect::NetworkAccess).unwrap();
+        assert!(matches!(decision, HolodeckDecision::Blocked(_)));
+        assert_eq!(sandbox.state(), HolodeckState::Frozen);
+        let receipt = sandbox.end_program("transport independence teardown").unwrap();
+        assert_eq!(receipt.final_state, HolodeckState::Ended);
+        receipt
+    }
 
     #[test]
     fn all_declared_profiles_are_bounded_and_non_authoritative() {
@@ -669,6 +836,54 @@ mod tests {
     }
 
     #[test]
+    fn frame_sender_must_match_verified_signing_identity() {
+        let frame = drill_frame(TransportProfile::WebSocket, 1).unwrap();
+        let mut context = drill_context(&frame, fixed_ref(b"identity-document"), 1_100);
+        context.verified_sender_node_id = "fed:qsol:spoofed-signer".into();
+        assert_eq!(admit_transport_frame(&frame, None, &context), TransportAdmissionDecision::Reject);
+    }
+
+    #[test]
+    fn direct_recipient_and_forwarding_relay_roles_are_explicit() {
+        let direct = TransportFrame::new(
+            TransportProfile::WebSocket,
+            "fed:qsol:phase8-sender".into(),
+            "fed:qsol:remote-recipient".into(),
+            fixed_ref(b"direct-message"),
+            fixed_ref(b"direct-payload"),
+            None,
+            1,
+        ).unwrap();
+        let mut context = TransportAdmissionContext {
+            signature_valid: true,
+            identity_current: true,
+            replay_fresh: true,
+            local_peer_admitted: true,
+            verified_sender_node_id: direct.sender_node_id.clone(),
+            verified_identity_ref: fixed_ref(b"identity-document"),
+            local_node_id: "fed:qsol:local-node".into(),
+            relay_admitted: true,
+            now_unix: 1_100,
+        };
+        assert_eq!(admit_transport_frame(&direct, None, &context), TransportAdmissionDecision::Reject);
+
+        let forward = TransportFrame::new(
+            TransportProfile::StoreForward,
+            direct.sender_node_id.clone(),
+            direct.recipient_node_id.clone(),
+            fixed_ref(b"forward-message"),
+            fixed_ref(b"forward-payload"),
+            None,
+            1,
+        ).unwrap();
+        context.verified_sender_node_id = forward.sender_node_id.clone();
+        context.relay_admitted = false;
+        assert_eq!(admit_transport_frame(&forward, None, &context), TransportAdmissionDecision::Reject);
+        context.relay_admitted = true;
+        assert_eq!(admit_transport_frame(&forward, None, &context), TransportAdmissionDecision::AcceptDataOnly);
+    }
+
+    #[test]
     fn nat_traversal_cannot_weaken_identity() {
         for profile in [TransportProfile::WebSocket, TransportProfile::Quic] {
             let report = run_transport_drill(profile, TransportDrillKind::NatTraversalIdentity).unwrap();
@@ -679,6 +894,41 @@ mod tests {
     }
 
     #[test]
+    fn nat_ticket_requires_active_window_and_credential_free_endpoint() {
+        let frame = drill_frame(TransportProfile::Quic, 1).unwrap();
+        let identity_ref = fixed_ref(b"identity-document");
+        let ticket = NatTraversalTicket::new(
+            frame.sender_node_id.clone(), identity_ref.clone(), TransportProfile::Quic,
+            1_000, 1_300,
+            vec![NatCandidate { kind: NatCandidateKind::Relay, endpoint: "relay.example:443".into() }],
+        ).unwrap();
+        assert!(validate_nat_ticket_at(&ticket, 1_100).is_ok());
+        assert!(validate_nat_ticket_at(&ticket, 1_700).is_err());
+        assert!(validate_nat_ticket_at(&ticket, 600).is_err());
+        assert!(NatTraversalTicket::new(
+            frame.sender_node_id.clone(), identity_ref, TransportProfile::Quic,
+            1_000, 1_300,
+            vec![NatCandidate { kind: NatCandidateKind::Relay, endpoint: "relay.example:443?token=sk-secret".into() }],
+        ).is_err());
+    }
+
+    #[test]
+    fn canonical_integer_bounds_match_transport_schemas() {
+        assert!(TransportFrame::new(
+            TransportProfile::UnixIpc,
+            "fed:qsol:phase8-sender".into(),
+            "fed:qsol:phase8-recipient".into(),
+            fixed_ref(b"large-sequence-message"), fixed_ref(b"large-sequence-payload"), None,
+            SAFE_INTEGER_MAX as u64 + 1,
+        ).is_err());
+        assert!(NatTraversalTicket::new(
+            "fed:qsol:phase8-sender".into(), fixed_ref(b"identity-document"), TransportProfile::Quic,
+            SAFE_INTEGER_MAX, SAFE_INTEGER_MAX,
+            vec![NatCandidate { kind: NatCandidateKind::Relay, endpoint: "198.51.100.8:443".into() }],
+        ).is_err());
+    }
+
+    #[test]
     fn multi_relay_provenance_is_explicit_and_non_transitive() {
         for profile in ALL_TRANSPORT_PROFILES {
             let report = run_transport_drill(profile, TransportDrillKind::MultiRelayProvenance).unwrap();
@@ -686,6 +936,26 @@ mod tests {
             assert!(!report.provenance_lost);
             assert_eq!(report.authority_effect, "none");
         }
+    }
+
+    #[test]
+    fn relay_chain_requires_transport_continuity_and_original_provenance() {
+        let frame = drill_frame(TransportProfile::WebSocket, 1).unwrap();
+        let first = build_relay_receipt(
+            &frame, 1, "fed:qsol:relay-one".into(), None,
+            TransportProfile::Quic, TransportProfile::StoreForward,
+        ).unwrap();
+        assert!(validate_relay_chain(&frame, &[first]).is_err());
+
+        let first = build_relay_receipt(
+            &frame, 1, "fed:qsol:relay-one".into(), None,
+            TransportProfile::WebSocket, TransportProfile::StoreForward,
+        ).unwrap();
+        let second = build_relay_receipt(
+            &frame, 2, "fed:qsol:relay-two".into(), Some(first.relay_receipt_id.clone()),
+            TransportProfile::Quic, TransportProfile::WebSocket,
+        ).unwrap();
+        assert!(validate_relay_chain(&frame, &[first, second]).is_err());
     }
 
     #[test]
@@ -701,6 +971,19 @@ mod tests {
             assert!(run_transport_drill(profile, TransportDrillKind::ResourceExhaustion).unwrap().passed);
             assert!(run_transport_drill(profile, TransportDrillKind::PartitionRecovery).unwrap().passed);
         }
+    }
+
+    #[test]
+    fn failed_drill_reports_name_the_breached_boundary() {
+        let resource = drill_report(TransportProfile::StoreForward, TransportDrillKind::ResourceExhaustion, false, "forced failure").unwrap();
+        assert!(!resource.passed);
+        assert!(resource.resource_bound_breached);
+        let identity = drill_report(TransportProfile::Quic, TransportDrillKind::NatTraversalIdentity, false, "forced failure").unwrap();
+        assert!(identity.identity_weakened);
+        let provenance = drill_report(TransportProfile::OfflineSneakernet, TransportDrillKind::MultiRelayProvenance, false, "forced failure").unwrap();
+        assert!(provenance.provenance_lost);
+        let holodeck = drill_report(TransportProfile::UnixIpc, TransportDrillKind::HolodeckTransportIndependence, false, "forced failure").unwrap();
+        assert!(holodeck.holodeck_invariant_drift);
     }
 
     #[test]
@@ -730,8 +1013,15 @@ mod tests {
 
     #[test]
     fn holodeck_sandbox_invariants_are_transport_independent() {
+        let receipt = real_holodeck_receipt();
+        assert_eq!(receipt.authority_effect, "none");
+        assert_eq!(receipt.federation_effect, "none");
+        assert_eq!(receipt.evidence_effect, "none");
+        assert!(!receipt.network_used);
+        assert!(!receipt.real_tools_used);
+        assert!(!receipt.credentials_exposed);
         for profile in ALL_TRANSPORT_PROFILES {
-            let report = run_transport_drill(profile, TransportDrillKind::HolodeckTransportIndependence).unwrap();
+            let report = run_holodeck_transport_independence_drill(profile, &receipt).unwrap();
             assert!(report.passed);
             assert!(!report.holodeck_invariant_drift);
         }
@@ -739,6 +1029,7 @@ mod tests {
 
     #[test]
     fn every_profile_runs_the_complete_resilience_matrix() {
+        let receipt = real_holodeck_receipt();
         for profile in ALL_TRANSPORT_PROFILES {
             for kind in [
                 TransportDrillKind::ResourceExhaustion,
@@ -747,7 +1038,6 @@ mod tests {
                 TransportDrillKind::NatTraversalIdentity,
                 TransportDrillKind::MultiRelayProvenance,
                 TransportDrillKind::ArchiveCompatibility,
-                TransportDrillKind::HolodeckTransportIndependence,
             ] {
                 let report = run_transport_drill(profile, kind).unwrap();
                 assert!(report.passed, "Phase 8 drill failed for {profile:?}/{kind:?}");
@@ -757,6 +1047,9 @@ mod tests {
                 assert!(!report.resource_bound_breached);
                 assert!(!report.holodeck_invariant_drift);
             }
+            let holodeck = run_holodeck_transport_independence_drill(profile, &receipt).unwrap();
+            assert!(holodeck.passed, "Phase 8 Holodeck drill failed for {profile:?}");
+            assert!(!holodeck.holodeck_invariant_drift);
         }
     }
 }
