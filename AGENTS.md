@@ -6,11 +6,11 @@ QSOL-FED is a security-sensitive federation boundary. Protocol convenience never
 
 ### Read first
 
-Read `README4AI.md`, `CHARTER.md`, `PRIME_DIRECTIVE.md`, all historical/current `claims/*.json`, `invariants/fed-v1.json`, `wire/phase1.json`, `crypto/phase2.json`, `api/phase3.json`, `state/phase4.json`, `state/phase5a-holodeck.json`, `state/phase5.json`, `state/phase5c.json`, `state/phase6.json`, `state/phase7.json`, `CANONICAL_JSON.md`, `CRYPTOGRAPHY.md`, `API.md`, `TLS_PROFILE.md`, `FEDERATION_STATE.md`, `HOLODECK.md`, `QSOL_ADAPTERS.md`, `SDK.md`, `docs/THIRD_PARTY_INTEGRATION.md`, `ASSEMBLY.md`, `src/invariants.rs`, `src/claims.rs`, `src/store.rs`, `src/peering.rs`, `src/bundle.rs`, `src/holodeck.rs`, `src/qsol_adapters.rs`, `src/oracle_live.rs`, `src/sdk.rs`, `src/assembly.rs`, and `THREAT_MODEL.md` before changing security, state, simulation, adapter, SDK, or governance semantics.
+Read `README4AI.md`, `CHARTER.md`, `PRIME_DIRECTIVE.md`, all historical/current `claims/*.json`, `invariants/fed-v1.json`, `wire/phase1.json`, `crypto/phase2.json`, `api/phase3.json`, `state/phase4.json`, `state/phase5a-holodeck.json`, `state/phase5.json`, `state/phase5c.json`, `state/phase6.json`, `state/phase7.json`, `state/phase8.json`, `CANONICAL_JSON.md`, `CRYPTOGRAPHY.md`, `API.md`, `TLS_PROFILE.md`, `FEDERATION_STATE.md`, `HOLODECK.md`, `QSOL_ADAPTERS.md`, `SDK.md`, `docs/THIRD_PARTY_INTEGRATION.md`, `ASSEMBLY.md`, `TRANSPORTS.md`, `src/invariants.rs`, `src/claims.rs`, `src/store.rs`, `src/peering.rs`, `src/bundle.rs`, `src/holodeck.rs`, `src/qsol_adapters.rs`, `src/oracle_live.rs`, `src/sdk.rs`, `src/assembly.rs`, `src/transport.rs`, and `THREAT_MODEL.md` before changing security, state, simulation, adapter, SDK, governance, transport, archive, relay, NAT, or resilience semantics.
 
 ### Core constitutional rules
 
-No peer, model, config, request, signature, trust label, imported bundle, capability advertisement, persisted object, Holodeck program, simulated actor, Council report, ORACLE observation, ORACLE transport response, ARK record, SDK participant, Assembly proposal, Assembly vote, governance receipt, or adversarial persona may directly create member-local governance authority, promote evidence, create/reweight local Council votes, install capabilities, rewrite history, mutate citizenship/identity authority, trigger arbitrary remote execution, place secrets in semantic state, or disable constitutional/Holodeck safeguards.
+No peer, model, config, request, signature, trust label, imported bundle, capability advertisement, persisted object, Holodeck program, simulated actor, Council report, ORACLE observation, ORACLE transport response, ARK record, SDK participant, Assembly proposal, Assembly vote, governance receipt, transport frame, NAT ticket, relay receipt, offline package, archive record, partition recovery path, or adversarial persona may directly create member-local governance authority, promote evidence, create/reweight local Council votes, install capabilities, rewrite history, mutate citizenship/identity authority, trigger arbitrary remote execution, place secrets in semantic state, or disable constitutional/Holodeck safeguards.
 
 Unknown authority-bearing effects fail closed.
 
@@ -56,9 +56,9 @@ Rust, Python, and TypeScript/JavaScript reference implementations must reproduce
 
 Run `python3 tools/validate_phase6_gate.py`.
 
-### Current Phase 7 Federation Assembly rules
+### Historical Phase 7 Federation Assembly rules
 
-`state/phase7.json`, `claims/phase7.json`, `ASSEMBLY.md`, `schemas/assembly-member-v1.schema.json`, `schemas/assembly-proposal-v1.schema.json`, `schemas/governance-receipt-v1.schema.json`, and `src/assembly.rs` define the current Assembly boundary.
+`state/phase7.json`, `claims/phase7.json`, `ASSEMBLY.md`, `schemas/assembly-member-v1.schema.json`, `schemas/assembly-proposal-v1.schema.json`, `schemas/governance-receipt-v1.schema.json`, and `src/assembly.rs` preserve the Assembly boundary.
 
 - Assembly membership is separate from Federation network membership.
 - Network membership never grants Assembly membership or voting rights.
@@ -66,20 +66,46 @@ Run `python3 tools/validate_phase6_gate.py`.
 - One active NFC-normalized representation subject is allowed per Assembly registry; this does **not** prove real-world principal uniqueness.
 - Representation is `one-member-one-vote/1`; one member gets one immutable vote per proposal.
 - Each proposal freezes its electorate when opened; later membership changes do not reweight that electorate.
-- Quorum is `ceil(2/3)` of the frozen electorate; approval is `ceil(2/3)` of non-abstaining votes with at least one yes.
 - The deterministic `qsol-fed-charter-gate/1` maps declared effects to existing invariant IDs.
 - A current-lineage proposal that conflicts with the Charter becomes `fork_required`; ordinary voting may not silently weaken the sitting constitutional lineage.
-- A fork endorsement records an incompatible direction but does not rewrite the current lineage.
-- NEXUS is advisory-only by default: advisory weight = 0, vote weight = 0, authority = none.
+- NEXUS remains advisory-only with zero vote weight and no authority.
+- Finalization is terminal; final outcomes live in receipts and active proposal capacity is reclaimed only after receipt derivation succeeds.
 - Accepted proposals and governance receipts do not merge source, create tags/releases, upgrade members, or mutate a running protocol.
 - `member_local_authority_mutated = false`, `protocol_changed_automatically = false`, and `authority_effect = none` remain mandatory.
-- `src/assembly.rs` must not import `PeerRegistry`, `TrustRegistry`, `LocalCapabilityPolicy`, `FederationObjectStore`, ORACLE execution, signing keys, network/process/tool handles, or credentials.
-- `ASSEMBLY MEMBERSHIP != NETWORK MEMBERSHIP`.
-- `ASSEMBLY VOTE != MEMBER-LOCAL COMMAND`.
-- `NEXUS ADVICE != VOTE WEIGHT`.
-- `ASSEMBLY ACCEPTANCE != DEPLOYMENT`.
+- `src/assembly.rs` remains positive-capability allowlisted and contains no network/process/tool/member-authority handles.
 
-Run `python3 tools/validate_phase7_gate.py` after Assembly/schema/claim/roadmap changes.
+`ASSEMBLY MEMBERSHIP != NETWORK MEMBERSHIP`, `ASSEMBLY VOTE != MEMBER-LOCAL COMMAND`, `NEXUS ADVICE != VOTE WEIGHT`, and `ASSEMBLY ACCEPTANCE != DEPLOYMENT` remain historical law.
+
+Run `python3 tools/validate_phase7_gate.py`.
+
+### Current Phase 8 transport and resilience rules
+
+`state/phase8.json`, `claims/phase8.json`, `TRANSPORTS.md`, `schemas/transport-frame-v1.schema.json`, `schemas/nat-traversal-ticket-v1.schema.json`, `schemas/relay-receipt-v1.schema.json`, `schemas/offline-package-v1.schema.json`, `schemas/transport-drill-report-v1.schema.json`, and `src/transport.rs` define the current transport-resilience boundary.
+
+- WebSocket, QUIC, Unix/local IPC, offline/sneakernet and store-forward are reference **framing/resilience profiles**, not certified production socket services.
+- Every profile carries the same bounded `qsol-fed-transport-frame/1` and preserves original `message_id`, `payload_ref`, and `provenance_ref`.
+- A transport frame is data only and `authority_effect = none`.
+- Phase 2 authenticated identity remains the identity source; transport profile or route may never replace sender identity.
+- NAT tickets are short-lived route hints for WebSocket/QUIC only; ticket node must equal the already authenticated sender; NAT tickets grant no trust or authority and candidates may not embed credentials.
+- Relay receipts are provenance only, max 16 hops, preserving original frame/message/payload identity and explicitly linking the prior receipt. Relay presence/count never creates trust or authority.
+- Offline/sneakernet physical possession and archival presence never bypass local admission or become authority.
+- Store-forward queues remain bounded to 1,024 active frames, reject duplicates, preserve FIFO order, and never silently reconcile local governance/trust/evidence state after a partition.
+- A compromised or non-current key remains rejected on every transport. Phase 2 lifecycle remains authoritative; transport failover cannot revive a key or skip replay/local-admission checks.
+- `qsol-fed-archive-compatibility/1` preserves historical canonical bytes and object identity; unknown future majors reject until an explicit migration contract; historical receipts are never silently reinterpreted.
+- Every profile runs resource-exhaustion, partition, key-compromise, relay, archive and Holodeck-independence drills. NAT identity drills apply to WebSocket/QUIC.
+- Holodeck transport is outside the sandbox. Carrying a receipt over a network does not rewrite the sandbox's `network_used = false`, and offline media does not make simulation authoritative.
+- `src/transport.rs` is production-import allowlisted and must not import socket/process/filesystem backends or member-authority subsystems.
+
+```text
+TRANSPORT != IDENTITY
+ROUTE != TRUST
+RELAY != AUTHORITY
+PARTITION RECOVERY != SILENT RECONCILIATION
+NETWORK OUTSIDE HOLODECK != NETWORK INSIDE HOLODECK
+REFERENCE TRANSPORT PROFILE != PRODUCTION NETWORK SERVICE
+```
+
+Run `python3 tools/validate_phase8_gate.py` after transport/schema/archive/NAT/relay/claim/roadmap changes.
 
 ### MORIARTY/1 roadmap rule
 
@@ -94,7 +120,7 @@ ZENODO PRESENCE != TECHNICAL AUTHORITY
 
 ### Claim discipline
 
-Historical: `claims/phase0.json`, `claims/phase2.json`, `claims/phase3.json`, `claims/phase4.json`, `claims/phase5a.json`, `claims/phase5.json`, `claims/phase5c.json`, `claims/phase6.json`. Current: `claims/phase7.json`.
+Historical: `claims/phase0.json`, `claims/phase2.json`, `claims/phase3.json`, `claims/phase4.json`, `claims/phase5a.json`, `claims/phase5.json`, `claims/phase5c.json`, `claims/phase6.json`, `claims/phase7.json`. Current: `claims/phase8.json`.
 
 Current hard-false claims include `oracle_holodeck_synthetic_admission`, `host_level_sandbox`, `production_networking`, `remote_execution`, and deployed `interoperable_federation`.
 
@@ -117,12 +143,13 @@ python3 tools/validate_phase5_gate.py
 python3 tools/validate_phase5c_gate.py
 python3 tools/validate_phase6_gate.py
 python3 tools/validate_phase7_gate.py
+python3 tools/validate_phase8_gate.py
 ```
 
 ### Architecture rule
 
-QSOL-NEXUS remains a Council service and possible Federation/Assembly participant, not the sovereign owner of QSOL-FED. QSOL-ORACLE remains an evidentiary membrane, QSOL-ARK an archive/recovery system, and third-party nodes remain possible without adopting QSOL governance. The Assembly governs protocol-evolution proposals only; it does not own member-local state.
+QSOL-NEXUS remains a Council service and possible Federation/Assembly participant, not the sovereign owner of QSOL-FED. QSOL-ORACLE remains an evidentiary membrane, QSOL-ARK an archive/recovery system, and third-party nodes remain possible without adopting QSOL governance. The Assembly governs protocol-evolution proposals only; it does not own member-local state. Phase 8 transports move already-identified protocol material; they do not become identity, trust, governance, evidence, or execution authorities.
 
 ### Security comedy clause
 
-A valid signature is not trust, a bundle is not authority, an ORACLE suggestion is not evidence, an archive is not truth, `fed:qsol:` is not a loyalty oath, an Assembly supermajority is not `sudo`, and Professor Moriarty still does not get `admin=true` because it would improve the plot.
+A valid signature is not trust, a bundle is not authority, an ORACLE suggestion is not evidence, an archive is not truth, `fed:qsol:` is not a loyalty oath, an Assembly supermajority is not `sudo`, a NAT candidate is not a passport, a relay is not a bishop conferring legitimacy, and Professor Moriarty still does not get `admin=true` because it would improve the plot.
