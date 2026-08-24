@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "qsol-fed-transport-frame/1",
+  "title": "QSOL-FED bounded transport frame",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "frame_id", "profile", "sender_node_id", "recipient_node_id", "message_id", "payload_ref", "provenance_ref", "sequence", "authority_effect"],
+  "properties": {
+    "schema": {"const": "qsol-fed-transport-frame/1"},
+    "frame_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "profile": {"enum": ["web_socket", "quic", "unix_ipc", "offline_sneakernet", "store_forward"]},
+    "sender_node_id": {"type": "string", "pattern": "^fed:qsol:[a-z0-9][a-z0-9._-]{0,127}$"},
+    "recipient_node_id": {"type": "string", "pattern": "^fed:qsol:[a-z0-9][a-z0-9._-]{0,127}$"},
+    "message_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "payload_ref": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "provenance_ref": {"anyOf": [{"type": "null"}, {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}]},
+    "sequence": {"type": "integer", "minimum": 1},
+    "authority_effect": {"const": "none"}
+  },
+  "$comment": "Transport framing is delivery metadata only. frame_id excludes frame_id itself; message_id, payload_ref and provenance_ref remain the original protocol identities. Transport profile MUST NOT alter authority or authenticated node identity. Canonical serialized frames are bounded to 65536 bytes by the Phase 8 semantic validator."
+}
