@@ -22,6 +22,13 @@ PHASE7_KEYS = {
     "nexus_assembly_advisory_only", "assembly_fork_version_path",
     "assembly_governance_receipts",
 }
+PHASE8_KEYS = {
+    "bounded_transport_frame_contract", "websocket_transport_profile", "quic_transport_profile",
+    "unix_local_ipc_profile", "offline_sneakernet_profile", "store_forward_profile",
+    "nat_traversal_identity_binding", "multi_relay_provenance",
+    "disaster_recovery_key_compromise_drills", "long_lived_archive_compatibility",
+    "transport_resource_partition_drills", "holodeck_transport_independence",
+}
 
 
 def require(condition: bool, message: str) -> None:
@@ -74,7 +81,15 @@ def validate_claim_delta() -> None:
     require(all(phase7[key] == value for key, value in phase6.items()), "Phase 7 changed a historical Phase 6 capability")
     require(set(phase7) - set(phase6) == PHASE7_KEYS, "Phase 7 successor capability key drift")
     require(all(phase7[key] is True for key in PHASE7_KEYS), "Phase 7 Assembly capability missing")
-    require(rust_claims() == phase7, "Rust current claims disagree with Phase 7 successor")
+
+    phase8 = load("claims/phase8.json")["capabilities"]
+    require(set(phase7).issubset(phase8), "Phase 8 dropped Phase 7 capability keys")
+    require(all(phase8[key] == value for key, value in phase7.items()), "Phase 8 changed a historical Phase 7 capability")
+    require(set(phase8) - set(phase7) == PHASE8_KEYS, "Phase 8 successor capability key drift")
+    require(all(phase8[key] is True for key in PHASE8_KEYS), "Phase 8 transport capability missing")
+    for key in ("oracle_holodeck_synthetic_admission", "host_level_sandbox", "production_networking", "remote_execution", "interoperable_federation"):
+        require(phase8[key] is False, f"Phase 8 successor overclaim: {key}")
+    require(rust_claims() == phase8, "Rust current claims disagree with Phase 8 successor")
 
 
 def validate_contract_and_snapshots() -> None:
@@ -164,8 +179,8 @@ def validate_surfaces() -> None:
     ai = load("README4AI.md")
     require(ai.get("phase5_status") == "historical_qsol_adapter_gate_preserved", "README4AI Phase 5 historical status drift")
     require(ai.get("phase5c_status") == "historical_oracle_live_transport_gate_preserved", "README4AI Phase 5C historical status missing")
-    require(ai.get("current_claim_manifest") == "claims/phase7.json", "README4AI Phase 7 current manifest drift")
-    require(ai.get("current_claims") == load("claims/phase7.json")["capabilities"], "README4AI Phase 7 claim drift")
+    require(ai.get("current_claim_manifest") == "claims/phase8.json", "README4AI Phase 8 current manifest drift")
+    require(ai.get("current_claims") == load("claims/phase8.json")["capabilities"], "README4AI Phase 8 claim drift")
     live = ai.get("phase5c_oracle_live", {})
     require(live.get("historical") is True, "README4AI Phase 5C history marker missing")
     require(live.get("oracle_pinned_commit") == ORACLE_COMMIT and live.get("oracle_release_fingerprint_sha256") == ORACLE_RELEASE, "README4AI ORACLE pin drift")
@@ -184,7 +199,7 @@ def main() -> None:
     validate_contract_and_snapshots()
     validate_rust_and_ci()
     validate_surfaces()
-    print("phase5c historical ORACLE live gate OK: donor fingerprint recomputed, staged runtime re-attested, bounded isolated local JSONL process verified, oracle-event provenance preserved, and the non-authority transport survives the Phase 7 successor unchanged")
+    print("phase5c historical ORACLE live gate OK: donor fingerprint recomputed, staged runtime re-attested, bounded isolated local JSONL process verified, oracle-event provenance preserved, and the non-authority transport survives the Phase 8 successor unchanged")
 
 
 if __name__ == "__main__":
