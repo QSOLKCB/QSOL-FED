@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "qsol-fed-nat-traversal-ticket/1",
+  "title": "QSOL-FED NAT traversal route-hint ticket",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "ticket_id", "node_id", "identity_ref", "profile", "issued_at_unix", "expires_at_unix", "candidates", "grants_trust", "grants_authority", "authority_effect"],
+  "properties": {
+    "schema": {"const": "qsol-fed-nat-traversal-ticket/1"},
+    "ticket_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "node_id": {"type": "string", "pattern": "^fed:qsol:[a-z0-9][a-z0-9._-]{0,127}$"},
+    "identity_ref": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "profile": {"enum": ["web_socket", "quic"]},
+    "issued_at_unix": {"type": "integer"},
+    "expires_at_unix": {"type": "integer"},
+    "candidates": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "endpoint"],
+        "properties": {
+          "kind": {"enum": ["host", "server_reflexive", "relay"]},
+          "endpoint": {"type": "string", "minLength": 1, "maxLength": 512}
+        }
+      }
+    },
+    "grants_trust": {"const": false},
+    "grants_authority": {"const": false},
+    "authority_effect": {"const": "none"}
+  },
+  "$comment": "Candidate endpoints are routing hints only. Ticket node_id MUST match the already authenticated sender identity. Ticket lifetime is at most 600 seconds and candidate strings are separately screened for credentials/control characters by the semantic validator."
+}
