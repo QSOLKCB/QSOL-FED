@@ -1,9 +1,9 @@
 //! Release-claim boundaries.
 //!
-//! Phase 0, Phase 2, Phase 3, Phase 4, Phase 5A, Phase 5, Phase 5C, and Phase 6
-//! manifests remain historical baselines. `CURRENT_CLAIMS` is the current
-//! Phase 7 sovereignty-preserving Federation Assembly surface. None of these values
-//! are runtime configuration.
+//! Phase 0, Phase 2, Phase 3, Phase 4, Phase 5A, Phase 5, Phase 5C, Phase 6,
+//! and Phase 7 manifests remain historical baselines. `CURRENT_CLAIMS` is the
+//! current Phase 8 transport-resilience surface. None of these values are runtime
+//! configuration.
 
 pub const PHASE0_GATE_ID: &str = "qsol-fed-phase0-claim-gate/1";
 pub const PHASE2_GATE_ID: &str = "qsol-fed-phase2-claim-gate/1";
@@ -14,6 +14,7 @@ pub const PHASE5_GATE_ID: &str = "qsol-fed-phase5-adapter-gate/1";
 pub const PHASE5C_GATE_ID: &str = "qsol-fed-phase5c-oracle-live-gate/1";
 pub const PHASE6_GATE_ID: &str = "qsol-fed-phase6-sdk-gate/1";
 pub const PHASE7_GATE_ID: &str = "qsol-fed-phase7-assembly-gate/1";
+pub const PHASE8_GATE_ID: &str = "qsol-fed-phase8-transport-resilience-gate/1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Phase0Claims {
@@ -96,6 +97,18 @@ pub struct CurrentClaims {
     pub nexus_assembly_advisory_only: bool,
     pub assembly_fork_version_path: bool,
     pub assembly_governance_receipts: bool,
+    pub bounded_transport_frame_contract: bool,
+    pub websocket_transport_profile: bool,
+    pub quic_transport_profile: bool,
+    pub unix_local_ipc_profile: bool,
+    pub offline_sneakernet_profile: bool,
+    pub store_forward_profile: bool,
+    pub nat_traversal_identity_binding: bool,
+    pub multi_relay_provenance: bool,
+    pub disaster_recovery_key_compromise_drills: bool,
+    pub long_lived_archive_compatibility: bool,
+    pub transport_resource_partition_drills: bool,
+    pub holodeck_transport_independence: bool,
     pub host_level_sandbox: bool,
     pub production_networking: bool,
     pub remote_execution: bool,
@@ -159,6 +172,18 @@ pub const CURRENT_CLAIMS: CurrentClaims = CurrentClaims {
     nexus_assembly_advisory_only: true,
     assembly_fork_version_path: true,
     assembly_governance_receipts: true,
+    bounded_transport_frame_contract: true,
+    websocket_transport_profile: true,
+    quic_transport_profile: true,
+    unix_local_ipc_profile: true,
+    offline_sneakernet_profile: true,
+    store_forward_profile: true,
+    nat_traversal_identity_binding: true,
+    multi_relay_provenance: true,
+    disaster_recovery_key_compromise_drills: true,
+    long_lived_archive_compatibility: true,
+    transport_resource_partition_drills: true,
+    holodeck_transport_independence: true,
     host_level_sandbox: false,
     production_networking: false,
     remote_execution: false,
@@ -223,6 +248,18 @@ pub enum ReleaseClaim {
     NexusAssemblyAdvisoryOnly,
     AssemblyForkVersionPath,
     AssemblyGovernanceReceipts,
+    BoundedTransportFrameContract,
+    WebsocketTransportProfile,
+    QuicTransportProfile,
+    UnixLocalIpcProfile,
+    OfflineSneakernetProfile,
+    StoreForwardProfile,
+    NatTraversalIdentityBinding,
+    MultiRelayProvenance,
+    DisasterRecoveryKeyCompromiseDrills,
+    LongLivedArchiveCompatibility,
+    TransportResourcePartitionDrills,
+    HolodeckTransportIndependence,
     HostLevelSandbox,
     ProductionNetworking,
     RemoteExecution,
@@ -287,6 +324,18 @@ pub const fn is_established(claim: ReleaseClaim) -> bool {
         ReleaseClaim::NexusAssemblyAdvisoryOnly => CURRENT_CLAIMS.nexus_assembly_advisory_only,
         ReleaseClaim::AssemblyForkVersionPath => CURRENT_CLAIMS.assembly_fork_version_path,
         ReleaseClaim::AssemblyGovernanceReceipts => CURRENT_CLAIMS.assembly_governance_receipts,
+        ReleaseClaim::BoundedTransportFrameContract => CURRENT_CLAIMS.bounded_transport_frame_contract,
+        ReleaseClaim::WebsocketTransportProfile => CURRENT_CLAIMS.websocket_transport_profile,
+        ReleaseClaim::QuicTransportProfile => CURRENT_CLAIMS.quic_transport_profile,
+        ReleaseClaim::UnixLocalIpcProfile => CURRENT_CLAIMS.unix_local_ipc_profile,
+        ReleaseClaim::OfflineSneakernetProfile => CURRENT_CLAIMS.offline_sneakernet_profile,
+        ReleaseClaim::StoreForwardProfile => CURRENT_CLAIMS.store_forward_profile,
+        ReleaseClaim::NatTraversalIdentityBinding => CURRENT_CLAIMS.nat_traversal_identity_binding,
+        ReleaseClaim::MultiRelayProvenance => CURRENT_CLAIMS.multi_relay_provenance,
+        ReleaseClaim::DisasterRecoveryKeyCompromiseDrills => CURRENT_CLAIMS.disaster_recovery_key_compromise_drills,
+        ReleaseClaim::LongLivedArchiveCompatibility => CURRENT_CLAIMS.long_lived_archive_compatibility,
+        ReleaseClaim::TransportResourcePartitionDrills => CURRENT_CLAIMS.transport_resource_partition_drills,
+        ReleaseClaim::HolodeckTransportIndependence => CURRENT_CLAIMS.holodeck_transport_independence,
         ReleaseClaim::HostLevelSandbox => CURRENT_CLAIMS.host_level_sandbox,
         ReleaseClaim::ProductionNetworking => CURRENT_CLAIMS.production_networking,
         ReleaseClaim::RemoteExecution => CURRENT_CLAIMS.remote_execution,
@@ -309,7 +358,7 @@ mod tests {
     }
 
     #[test]
-    fn phase7_adds_assembly_without_member_local_authority() {
+    fn phase7_assembly_capabilities_remain_established() {
         for claim in [
             ReleaseClaim::AssemblyMembershipSeparateFromNetwork,
             ReleaseClaim::AssemblyProposalLifecycle,
@@ -321,7 +370,27 @@ mod tests {
             ReleaseClaim::AssemblyForkVersionPath,
             ReleaseClaim::AssemblyGovernanceReceipts,
         ] {
-            assert!(is_established(claim), "Phase 7 Assembly capability disabled: {claim:?}");
+            assert!(is_established(claim), "historical Phase 7 Assembly capability disabled: {claim:?}");
+        }
+    }
+
+    #[test]
+    fn phase8_adds_transports_without_deployment_overclaim() {
+        for claim in [
+            ReleaseClaim::BoundedTransportFrameContract,
+            ReleaseClaim::WebsocketTransportProfile,
+            ReleaseClaim::QuicTransportProfile,
+            ReleaseClaim::UnixLocalIpcProfile,
+            ReleaseClaim::OfflineSneakernetProfile,
+            ReleaseClaim::StoreForwardProfile,
+            ReleaseClaim::NatTraversalIdentityBinding,
+            ReleaseClaim::MultiRelayProvenance,
+            ReleaseClaim::DisasterRecoveryKeyCompromiseDrills,
+            ReleaseClaim::LongLivedArchiveCompatibility,
+            ReleaseClaim::TransportResourcePartitionDrills,
+            ReleaseClaim::HolodeckTransportIndependence,
+        ] {
+            assert!(is_established(claim), "Phase 8 transport capability disabled: {claim:?}");
         }
         for claim in [
             ReleaseClaim::OracleHolodeckSyntheticAdmission,
@@ -330,19 +399,20 @@ mod tests {
             ReleaseClaim::RemoteExecution,
             ReleaseClaim::InteroperableFederation,
         ] {
-            assert!(!is_established(claim), "Phase 7 deployment/authority overclaim enabled: {claim:?}");
+            assert!(!is_established(claim), "Phase 8 deployment/authority overclaim enabled: {claim:?}");
         }
     }
 
     #[test]
     fn current_claim_gate_is_not_runtime_configurable() {
-        assert_eq!(PHASE7_GATE_ID, "qsol-fed-phase7-assembly-gate/1");
-        assert!(CURRENT_CLAIMS.minimal_protocol_sdk_contract);
-        assert!(CURRENT_CLAIMS.three_implementation_sdk_interop);
-        assert!(CURRENT_CLAIMS.assembly_membership_separate_from_network);
-        assert!(CURRENT_CLAIMS.deterministic_charter_gate);
-        assert!(CURRENT_CLAIMS.assembly_member_local_sovereignty);
-        assert!(CURRENT_CLAIMS.nexus_assembly_advisory_only);
+        assert_eq!(PHASE8_GATE_ID, "qsol-fed-phase8-transport-resilience-gate/1");
+        assert!(CURRENT_CLAIMS.bounded_transport_frame_contract);
+        assert!(CURRENT_CLAIMS.websocket_transport_profile);
+        assert!(CURRENT_CLAIMS.quic_transport_profile);
+        assert!(CURRENT_CLAIMS.nat_traversal_identity_binding);
+        assert!(CURRENT_CLAIMS.multi_relay_provenance);
+        assert!(CURRENT_CLAIMS.transport_resource_partition_drills);
+        assert!(CURRENT_CLAIMS.holodeck_transport_independence);
         assert!(!CURRENT_CLAIMS.oracle_holodeck_synthetic_admission);
         assert!(!CURRENT_CLAIMS.host_level_sandbox);
         assert!(!CURRENT_CLAIMS.production_networking);

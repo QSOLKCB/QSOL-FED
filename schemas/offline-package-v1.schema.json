@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "qsol-fed-offline-package/1",
+  "title": "QSOL-FED offline/sneakernet package",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "package_id", "frame", "relay_chain", "authority_effect"],
+  "properties": {
+    "schema": {"const": "qsol-fed-offline-package/1"},
+    "package_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "frame": {"$ref": "transport-frame-v1.schema.json"},
+    "relay_chain": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {"$ref": "relay-receipt-v1.schema.json"}
+    },
+    "authority_effect": {"const": "none"}
+  },
+  "$comment": "Offline media changes delivery only. Exact frame/message/payload identity and relay provenance are preserved; import still passes ordinary local admission and never becomes authority by archival or physical presence."
+}

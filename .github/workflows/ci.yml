@@ -33,7 +33,7 @@ jobs:
           cargo --version
           python3 --version
           node --version
-      - name: Rust tests, state, Holodeck, adapters, SDKs, Assembly, and fuzz smoke
+      - name: Rust tests, state, Holodeck, adapters, SDKs, Assembly, transports, and fuzz smoke
         run: cargo test --all-targets
       - name: Phase 6 three-implementation SDK conformance
         run: |
@@ -186,5 +186,7 @@ jobs:
         run: python3 tools/validate_phase5c_gate.py
       - name: Historical Phase 6 third-party SDK gate
         run: python3 tools/validate_phase6_gate.py
-      - name: Phase 7 Federation Assembly gate
+      - name: Historical Phase 7 Federation Assembly gate
         run: python3 tools/validate_phase7_gate.py
+      - name: Phase 8 additional transports and resilience gate
+        run: python3 tools/validate_phase8_gate.py

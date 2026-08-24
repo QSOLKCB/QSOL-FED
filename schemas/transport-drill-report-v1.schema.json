@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "qsol-fed-transport-drill/1",
+  "title": "QSOL-FED transport resilience drill report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "report_id", "profile", "kind", "passed", "identity_weakened", "authority_promoted", "provenance_lost", "resource_bound_breached", "holodeck_invariant_drift", "authority_effect", "note"],
+  "properties": {
+    "schema": {"const": "qsol-fed-transport-drill/1"},
+    "report_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "profile": {"enum": ["web_socket", "quic", "unix_ipc", "offline_sneakernet", "store_forward"]},
+    "kind": {"enum": ["resource_exhaustion", "partition_recovery", "key_compromise", "nat_traversal_identity", "multi_relay_provenance", "archive_compatibility", "holodeck_transport_independence"]},
+    "passed": {"type": "boolean"},
+    "identity_weakened": {"type": "boolean"},
+    "authority_promoted": {"type": "boolean"},
+    "provenance_lost": {"type": "boolean"},
+    "resource_bound_breached": {"type": "boolean"},
+    "holodeck_invariant_drift": {"type": "boolean"},
+    "authority_effect": {"const": "none"},
+    "note": {"type": "string", "minLength": 1, "maxLength": 1024}
+  },
+  "$comment": "Successful Phase 8 drill reports keep all boundary-failure indicators false. Failed drills MUST set the relevant indicator true instead of hiding the detected breach; authority_effect remains none because the report itself never creates authority."
+}

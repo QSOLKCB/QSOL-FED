@@ -85,8 +85,8 @@ def validate_surfaces() -> None:
     ai = load("README4AI.md")
     require(ai.get("phase5a_status") == "historical_holodeck_sandbox_gate_preserved", "README4AI must preserve Phase 5A historically")
     require(ai.get("phase5a_holodeck", {}).get("contract") == "state/phase5a-holodeck.json", "README4AI Holodeck map missing")
-    require(ai.get("current_claim_manifest") == "claims/phase7.json", "Phase 7 successor claim manifest not active")
-    require(ai.get("current_claims") == load("claims/phase7.json")["capabilities"], "README4AI Phase 7 claims drift")
+    require(ai.get("current_claim_manifest") == "claims/phase8.json", "Phase 8 successor claim manifest not active")
+    require(ai.get("current_claims") == load("claims/phase8.json")["capabilities"], "README4AI Phase 8 claims drift")
     agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8").lower()
     for marker in ("state/phase5a-holodeck.json", "holodeck.md", "claims/phase5a.json", "moriarty rule", "computer, end program", "python3 tools/validate_phase5a_gate.py"):
         require(marker in agents, f"AGENTS Phase 5A marker missing: {marker}")
@@ -94,5 +94,5 @@ def validate_surfaces() -> None:
     require("python3 tools/validate_phase5a_gate.py" in workflow, "CI missing historical Phase 5A gate")
 def main() -> None:
     validate_contract_and_snapshot(); validate_schemas_and_source(); validate_surfaces()
-    print("phase5a historical Holodeck gate OK: deterministic sandbox, Moriarty boundaries, freeze-before-audit, end-program, and synthetic non-authority preserved")
+    print("phase5a historical Holodeck gate OK: deterministic sandbox, Moriarty boundaries, freeze-before-audit, end-program, synthetic non-authority, and transport-independent sandbox semantics preserved")
 if __name__ == "__main__": main()

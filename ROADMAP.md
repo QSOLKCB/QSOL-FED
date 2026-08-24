@@ -182,7 +182,7 @@ Phase 6 proves local three-implementation protocol conformance. It does not clai
 
 ## Phase 7 — Federation Assembly
 
-**Status: current; sovereignty-preserving Assembly gate enforced by `claims/phase7.json`.**
+**Status: complete; historical sovereignty-preserving Assembly gate preserved by `claims/phase7.json`.**
 
 - [x] Separate Assembly membership from network membership.
 - [x] Proposal/amendment lifecycle, representation and anti-Sybil assumptions.
@@ -235,13 +235,73 @@ No Assembly mechanism may directly mutate member-local authority.
 
 ## Phase 8 — Additional transports and resilience
 
-- [ ] WebSocket, QUIC, Unix/local IPC, offline/sneakernet and store-forward profiles.
-- [ ] NAT traversal without identity weakening.
-- [ ] Multi-relay provenance.
-- [ ] Disaster recovery/key compromise drills.
-- [ ] Long-lived archive compatibility policy.
-- [ ] Resource-exhaustion and partition drills across every admitted transport.
-- [ ] Verify Holodeck sandbox invariants remain transport-independent.
+**Status: current; transport-resilience gate enforced by `claims/phase8.json`.**
+
+- [x] WebSocket, QUIC, Unix/local IPC, offline/sneakernet and store-forward profiles.
+- [x] NAT traversal without identity weakening.
+- [x] Multi-relay provenance.
+- [x] Disaster recovery/key compromise drills.
+- [x] Long-lived archive compatibility policy.
+- [x] Resource-exhaustion and partition drills across every admitted transport.
+- [x] Verify Holodeck sandbox invariants remain transport-independent.
+
+### Bounded transport profiles
+
+All five profiles carry the same canonical `qsol-fed-transport-frame/1` identity envelope above the delivery mechanism. The frame is bounded to 65,536 bytes and preserves the original `message_id`, `payload_ref`, and `provenance_ref`.
+
+WebSocket and QUIC are reference framing profiles, not certified public socket deployments. Unix/local IPC is length-prefixed reference framing. Offline/sneakernet and store-forward use canonical packages/spool records and remain subject to normal local admission.
+
+```text
+TRANSPORT != IDENTITY
+REFERENCE TRANSPORT PROFILE != PRODUCTION NETWORK SERVICE
+```
+
+### NAT traversal
+
+`qsol-fed-nat-traversal-ticket/1` carries at most eight short-lived route candidates for WebSocket/QUIC and binds them to the already authenticated node identity. Tickets grant neither trust nor authority, and route candidates may not embed credentials.
+
+```text
+ROUTE != TRUST
+NAT CANDIDATE != IDENTITY
+```
+
+### Multi-relay provenance
+
+Up to 16 `qsol-fed-relay-receipt/1` hops may form an explicit receipt chain. Every hop preserves the original frame/message/payload identity and links the prior receipt.
+
+```text
+RELAY != AUTHORITY
+RELAY RECEIPT = PROVENANCE
+```
+
+### Disaster recovery, partitions and resource bounds
+
+Every admitted transport runs deterministic key-compromise, resource-exhaustion, partition-recovery, multi-relay, archive and Holodeck-independence drills. WebSocket and QUIC additionally run NAT identity-binding drills.
+
+Compromised or non-current identity remains rejected regardless of route. Store-forward queues are bounded to 1,024 active frames, reject duplicates, drain FIFO after partitions, and never silently reconcile local governance/trust/evidence state.
+
+### Long-lived archive compatibility
+
+`qsol-fed-archive-compatibility/1` preserves canonical bytes and object identities for `qsol-fed/1`. Unknown future majors reject until an explicit migration contract exists. Historical receipts are never silently reinterpreted; migrations create new linked artifacts.
+
+### Holodeck transport independence
+
+Transport carrying a Holodeck receipt remains outside the simulation sandbox. A WebSocket carrying the receipt does not rewrite `network_used = false` inside the Holodeck, and offline media does not promote simulation output into authority.
+
+Holodeck sandbox invariants remain transport-independent:
+
+```text
+authority_effect     = none
+federation_effect    = none
+evidence_effect      = none
+network_used         = false
+real_tools_used      = false
+credentials_exposed  = false
+```
+
+### Phase 8 gate
+
+Every admitted transport must preserve Phase 2 identity, original message/payload/provenance identity, local admission, bounded resource use and Holodeck sandbox invariants. Route, relay, partition recovery, physical media and archive presence never create trust or authority.
 
 ---
 
@@ -251,7 +311,7 @@ No Assembly mechanism may directly mutate member-local authority.
 
 `MORIARTY/1` is a provider-neutral, repository-aware constitutional adversary whose reference operator may be Codex. It receives public blueprints and disposable test fixtures, never production credentials/targets or constitutional bypasses.
 
-Attack families include canonical/parser differentials; signature/domain/key-role confusion; replay/downgrade/clock attacks; HTTP rate/proxy/DDoS-shaped stress; SSRF/decompression; crash/fsync/restart; lifecycle/partition/history attacks; import/provenance authority laundering; adapter confusion; Holodeck escapes; safeguard persuasion; nested-world amplification; Assembly capture/representation attacks; and cross-phase contradictions.
+Attack families include canonical/parser differentials; signature/domain/key-role confusion; replay/downgrade/clock attacks; HTTP rate/proxy/DDoS-shaped stress; SSRF/decompression; crash/fsync/restart; lifecycle/partition/history attacks; import/provenance authority laundering; adapter confusion; Holodeck escapes; safeguard persuasion; nested-world amplification; Assembly capture/representation attacks; transport/NAT/relay/store-forward/archive attacks; and cross-phase contradictions.
 
 Every accepted finding must be a reproducible `moriarty-counterexample/1`. A valid finding reopens the phase owning the invariant and becomes a regression.
 
@@ -270,7 +330,7 @@ NO COUNTEREXAMPLE FOUND != NO COUNTEREXAMPLE EXISTS
 
 **Status: planned. Begins only after an exact commit passes MORIARTY/1.**
 
-Bind the Lean package to the exact Moriarty-surviving commit, invariant IDs, contracts, schemas, phase gates, and adversarial report. Initial theorem targets include Prime Directive admission, signature/trust/authority separation, peering/capability separation, import non-authority, lifecycle monotonicity, partition sovereignty, provenance preservation, canonical identity determinism, Holodeck separation/safeguards, adapter non-authority, SDK conformance boundaries, and Assembly sovereignty.
+Bind the Lean package to the exact Moriarty-surviving commit, invariant IDs, contracts, schemas, phase gates, and adversarial report. Initial theorem targets include Prime Directive admission, signature/trust/authority separation, peering/capability separation, import non-authority, lifecycle monotonicity, partition sovereignty, provenance preservation, canonical identity determinism, Holodeck separation/safeguards, adapter non-authority, SDK conformance boundaries, Assembly sovereignty, and transport identity/provenance independence.
 
 No unresolved `sorry`/`admit` is permitted in the graduation theorem set; assumptions must be named and theorem-to-contract traceability complete.
 
@@ -307,8 +367,8 @@ ARCHIVAL IMMUTABILITY != IMPLEMENTATION PERFECTION
 
 ## Explicitly deferred / prohibited
 
-Generic remote shell, arbitrary peer-selected tools, shared global truth, transitive trust by default, global mutable state, automatic evidence promotion, automatic vote federation, secret-bearing semantic prompts, peer-controlled constitutional override, Assembly-to-member authority mutation, Holodeck-to-real authority promotion, Holodeck-to-ORACLE synthetic admission without a separately reviewed non-evidence contract, simulated credential access, and protocol-derived personhood/legal sovereignty claims remain outside the current design.
+Generic remote shell, arbitrary peer-selected tools, shared global truth, transitive trust by default, global mutable state, automatic evidence promotion, automatic vote federation, secret-bearing semantic prompts, peer-controlled constitutional override, Assembly-to-member authority mutation, Holodeck-to-real authority promotion, Holodeck-to-ORACLE synthetic admission without a separately reviewed non-evidence contract, simulated credential access, production WebSocket/QUIC deployment claims without deployment evidence, transport-derived identity, relay-derived trust, physical-media-derived authority, and protocol-derived personhood/legal sovereignty claims remain outside the current design.
 
 ## Long-term success condition
 
-QSOL-FED succeeds when mutually distrustful systems can exchange useful, attributable knowledge while retaining local sovereignty; safely explore synthetic worlds without confusing simulation for reality; govern protocol evolution without turning governance into remote member authority; survive explicit adversarial graduation; and publish a traceable formal model without overstating what the proof or DOI establishes.
+QSOL-FED succeeds when mutually distrustful systems can exchange useful, attributable knowledge while retaining local sovereignty; safely explore synthetic worlds without confusing simulation for reality; govern protocol evolution without turning governance into remote member authority; survive transport changes, partitions and archival time without weakening identity or provenance; survive explicit adversarial graduation; and publish a traceable formal model without overstating what the proof or DOI establishes.
