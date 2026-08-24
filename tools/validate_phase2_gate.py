@@ -73,6 +73,7 @@ def validate_surfaces() -> None:
     require(ai.get("phase2_crypto", {}).get("contract") == "crypto/phase2.json", "README4AI Phase 2 crypto map missing")
     require(ai.get("claim_disagreement_policy") == "fail_closed", "claim disagreement policy drift")
     for path, expected in (
+        ("claims/phase8.json", "claims/phase8.json"),
         ("claims/phase7.json", "claims/phase7.json"),
         ("claims/phase6.json", "claims/phase6.json"),
         ("claims/phase5c.json", "claims/phase5c.json"),
