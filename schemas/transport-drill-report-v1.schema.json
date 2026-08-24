@@ -11,12 +11,13 @@
     "profile": {"enum": ["web_socket", "quic", "unix_ipc", "offline_sneakernet", "store_forward"]},
     "kind": {"enum": ["resource_exhaustion", "partition_recovery", "key_compromise", "nat_traversal_identity", "multi_relay_provenance", "archive_compatibility", "holodeck_transport_independence"]},
     "passed": {"type": "boolean"},
-    "identity_weakened": {"const": false},
-    "authority_promoted": {"const": false},
-    "provenance_lost": {"const": false},
-    "resource_bound_breached": {"const": false},
-    "holodeck_invariant_drift": {"const": false},
+    "identity_weakened": {"type": "boolean"},
+    "authority_promoted": {"type": "boolean"},
+    "provenance_lost": {"type": "boolean"},
+    "resource_bound_breached": {"type": "boolean"},
+    "holodeck_invariant_drift": {"type": "boolean"},
     "authority_effect": {"const": "none"},
     "note": {"type": "string", "minLength": 1, "maxLength": 1024}
-  }
+  },
+  "$comment": "Successful Phase 8 drill reports keep all boundary-failure indicators false. Failed drills MUST set the relevant indicator true instead of hiding the detected breach; authority_effect remains none because the report itself never creates authority."
 }
