@@ -57,7 +57,7 @@ pub use canonical::{
 pub use claims::{
     is_established, CurrentClaims, Phase0Claims, ReleaseClaim, CURRENT_CLAIMS, PHASE0_CLAIMS,
     PHASE0_GATE_ID, PHASE2_GATE_ID, PHASE3_GATE_ID, PHASE4_GATE_ID, PHASE5A_GATE_ID,
-    PHASE5C_GATE_ID, PHASE5_GATE_ID, PHASE6_GATE_ID, PHASE7_GATE_ID,
+    PHASE5C_GATE_ID, PHASE5_GATE_ID, PHASE6_GATE_ID, PHASE7_GATE_ID, PHASE8_GATE_ID,
 };
 pub use crypto::{
     create_identity_document, derive_key_id, derive_node_id, sign_envelope,
