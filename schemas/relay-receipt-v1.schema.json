@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "qsol-fed-relay-receipt/1",
+  "title": "QSOL-FED relay provenance receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "relay_receipt_id", "frame_id", "message_id", "payload_ref", "hop_index", "relay_node_id", "previous_relay_receipt_ref", "ingress_profile", "egress_profile", "authority_effect"],
+  "properties": {
+    "schema": {"const": "qsol-fed-relay-receipt/1"},
+    "relay_receipt_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "frame_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "message_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "payload_ref": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "hop_index": {"type": "integer", "minimum": 1, "maximum": 16},
+    "relay_node_id": {"type": "string", "pattern": "^fed:qsol:[a-z0-9][a-z0-9._-]{0,127}$"},
+    "previous_relay_receipt_ref": {"anyOf": [{"type": "null"}, {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}]},
+    "ingress_profile": {"enum": ["web_socket", "quic", "unix_ipc", "offline_sneakernet", "store_forward"]},
+    "egress_profile": {"enum": ["web_socket", "quic", "unix_ipc", "offline_sneakernet", "store_forward"]},
+    "authority_effect": {"const": "none"}
+  },
+  "$comment": "Relay receipts are provenance only. Every hop MUST preserve the original frame_id, message_id and payload_ref, and each hop after the first MUST point to the prior relay_receipt_id. Relay presence or count never grants trust or authority."
+}
