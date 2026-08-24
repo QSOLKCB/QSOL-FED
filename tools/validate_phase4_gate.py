@@ -76,7 +76,7 @@ def validate_surfaces() -> None:
     ai = load("README4AI.md")
     require(ai.get("phase4_status") == "historical_federation_state_gate_preserved", "README4AI Phase 4 historical status drift")
     require(ai.get("phase4_state", {}).get("contract") == "state/phase4.json", "README4AI Phase 4 map missing")
-    require(ai.get("current_claim_manifest") == "claims/phase7.json", "Phase 7 successor claim manifest not active")
+    require(ai.get("current_claim_manifest") == "claims/phase8.json", "Phase 8 successor claim manifest not active")
     require(ai.get("claim_disagreement_policy") == "fail_closed", "claim disagreement policy drift")
     agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8").lower()
     for marker in ("state/phase4.json", "federation_state.md", "claims/phase4.json", "lifecycle prefix", "silent reconciliation", "persist-before-live", "attribution", "namespace move", "python3 tools/validate_phase4_gate.py"):
