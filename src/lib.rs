@@ -1,12 +1,13 @@
 #![forbid(unsafe_code)]
 
 //! QSOL-FED constitutional, canonical wire, cryptographic identity, opt-in HTTP,
-//! durable federation-state, sandboxed synthetic-world, adapter, SDK, and Assembly core.
+//! durable federation-state, sandboxed synthetic-world, adapter, SDK, Assembly,
+//! and transport-resilience core.
 //!
 //! Persistence, import, peering, trust, capability policy, simulation, evidence
 //! observation, Council reports, archival presence, live-local adapter transport,
-//! SDK conformance, and Assembly governance remain separate from truth, member-local
-//! authority, constitutional admission, and real execution effects.
+//! SDK conformance, Assembly governance, and transport routing remain separate from
+//! truth, member-local authority, constitutional admission, and real execution effects.
 
 pub mod api;
 pub mod assembly;
@@ -23,6 +24,7 @@ pub mod qsol_adapters;
 pub mod replay;
 pub mod sdk;
 pub mod store;
+pub mod transport;
 pub mod wire;
 
 pub use api::{
@@ -124,6 +126,20 @@ pub use sdk::{
 pub use store::{
     FederationObjectStore, ForeignNamespace, ForeignObjectRecord, LocalDescendantRecord,
     StoreError, FOREIGN_RECORD_SCHEMA_V1, LOCAL_DESCENDANT_SCHEMA_V1,
+};
+pub use transport::{
+    admit_transport_frame, archive_compatibility_policy, build_offline_package,
+    build_relay_receipt, carry_holodeck_boundary_snapshot, run_transport_drill,
+    transport_profile_spec, validate_holodeck_boundary_snapshot, validate_nat_ticket,
+    validate_offline_package, validate_relay_chain, validate_transport_frame,
+    ArchiveCompatibilityPolicy, BoundedTransportQueue, HolodeckBoundarySnapshot, NatCandidate,
+    NatCandidateKind, NatTraversalTicket, OfflinePackage, RelayReceipt, TransportAdmissionContext,
+    TransportAdmissionDecision, TransportDrillKind, TransportDrillReport, TransportError,
+    TransportFrame, TransportProfile, TransportProfileSpec, ALL_TRANSPORT_PROFILES,
+    ARCHIVE_POLICY_V1, NAT_MAX_CANDIDATES, NAT_MAX_TICKET_LIFETIME_SECONDS,
+    NAT_TRAVERSAL_TICKET_SCHEMA_V1, OFFLINE_PACKAGE_SCHEMA_V1, RELAY_RECEIPT_SCHEMA_V1,
+    TRANSPORT_DRILL_SCHEMA_V1, TRANSPORT_FRAME_MAX_BYTES, TRANSPORT_FRAME_SCHEMA_V1,
+    TRANSPORT_HOLODECK_INVARIANT, TRANSPORT_MAX_RELAY_HOPS, TRANSPORT_QUEUE_MAX_DEPTH,
 };
 pub use wire::{
     classify_protocol, is_capability_id, is_node_id, is_sha256_ref, is_wire_timestamp,
