@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import hashlib
 import json
 import os
@@ -16,7 +17,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, NoReturn
+from typing import Any, NoReturn, Sequence
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ROOT / "tools"
@@ -49,7 +50,35 @@ def fail(message: str) -> NoReturn:
     raise SystemExit(message)
 
 
-def _trusted_executable(name: str, *, preferred: Path | None = None) -> str:
+@dataclass(frozen=True)
+class TrustedExecutable:
+    """Preserve argv[0] while binding exec to a validated resolved target."""
+
+    name: str
+    invocation: str
+    executable: str
+    device: int
+    inode: int
+    size: int
+    mtime_ns: int
+    mode: int
+
+
+def _directory_chain_safe(path: Path) -> bool:
+    current = path.parent
+    while True:
+        try:
+            mode = current.stat().st_mode
+        except OSError:
+            return False
+        if mode & (stat.S_IWGRP | stat.S_IWOTH):
+            return False
+        if current.parent == current:
+            return True
+        current = current.parent
+
+
+def _trusted_executable(name: str, *, preferred: Path | None = None) -> TrustedExecutable:
     candidates: list[Path] = []
     if preferred is not None:
         candidates.append(preferred)
@@ -64,31 +93,76 @@ def _trusted_executable(name: str, *, preferred: Path | None = None) -> str:
         invocation = candidate.absolute()
         try:
             target = invocation.resolve(strict=True)
+            target_stat = target.stat()
         except OSError:
             continue
         if not target.is_file() or not os.access(invocation, os.X_OK):
             continue
         if target == ROOT or ROOT in target.parents or invocation == ROOT or ROOT in invocation.parents:
             continue
-        try:
-            invocation_mode = invocation.parent.stat().st_mode
-            target_mode = target.parent.stat().st_mode
-        except OSError:
+        if not _directory_chain_safe(invocation) or not _directory_chain_safe(target):
             continue
-        if invocation_mode & stat.S_IWOTH or target_mode & stat.S_IWOTH:
+        if not stat.S_ISREG(target_stat.st_mode) or not (target_stat.st_mode & 0o111):
             continue
-        # Validate the resolved target, but preserve the original trusted path for
-        # invocation. Rustup-style multicall shims select Cargo/Rustc behavior from
-        # argv[0], so executing the resolved `rustup` target directly would change
-        # the command's semantics even though the symlink itself is trusted.
-        return str(invocation)
+        return TrustedExecutable(
+            name=name,
+            invocation=str(invocation),
+            executable=str(target),
+            device=target_stat.st_dev,
+            inode=target_stat.st_ino,
+            size=target_stat.st_size,
+            mtime_ns=target_stat.st_mtime_ns,
+            mode=stat.S_IMODE(target_stat.st_mode),
+        )
     fail(f"moriarty_trusted_executable_unavailable:{name}")
 
 
-PYTHON_EXE = _trusted_executable("python3", preferred=Path(sys.executable))
-GIT_EXE = _trusted_executable("git")
-CARGO_EXE = _trusted_executable("cargo")
-RUSTC_EXE = _trusted_executable("rustc")
+def trusted_executable_matches(trusted: TrustedExecutable) -> bool:
+    """Revalidate the alias and the exact executable that will be passed to exec."""
+    invocation = Path(trusted.invocation)
+    try:
+        target = invocation.resolve(strict=True)
+        target_stat = target.stat()
+    except OSError:
+        return False
+    if str(target) != trusted.executable:
+        return False
+    if not _directory_chain_safe(invocation) or not _directory_chain_safe(target):
+        return False
+    return (
+        stat.S_ISREG(target_stat.st_mode)
+        and bool(target_stat.st_mode & 0o111)
+        and target_stat.st_dev == trusted.device
+        and target_stat.st_ino == trusted.inode
+        and target_stat.st_size == trusted.size
+        and target_stat.st_mtime_ns == trusted.mtime_ns
+        and stat.S_IMODE(target_stat.st_mode) == trusted.mode
+    )
+
+
+def trusted_run(
+    trusted: TrustedExecutable,
+    args: Sequence[str],
+    **kwargs: Any,
+) -> subprocess.CompletedProcess[bytes]:
+    if not trusted_executable_matches(trusted):
+        fail(f"moriarty_trusted_executable_changed:{trusted.name}")
+    return subprocess.run(
+        [trusted.invocation, *args],
+        executable=trusted.executable,
+        **kwargs,
+    )
+
+
+PYTHON_TRUSTED = _trusted_executable("python3", preferred=Path(sys.executable))
+GIT_TRUSTED = _trusted_executable("git")
+CARGO_TRUSTED = _trusted_executable("cargo")
+RUSTC_TRUSTED = _trusted_executable("rustc")
+
+PYTHON_EXE = PYTHON_TRUSTED.invocation
+GIT_EXE = GIT_TRUSTED.invocation
+CARGO_EXE = CARGO_TRUSTED.invocation
+RUSTC_EXE = RUSTC_TRUSTED.invocation
 
 # Source-owned and closed. An external/model candidate finding must be reduced to
 # one of these deterministic local probes before it is eligible for the accepted registry.
@@ -106,6 +180,10 @@ PROBES: dict[str, tuple[str, ...]] = {
     "phase7": (PYTHON_EXE, "tools/validate_phase7_gate.py"),
     "phase8": (PYTHON_EXE, "tools/validate_phase8_gate.py"),
     "rust_all": (CARGO_EXE, "test", "--all-targets", "--offline"),
+}
+PROBE_EXECUTABLES: dict[str, TrustedExecutable] = {
+    probe_id: (CARGO_TRUSTED if probe_id == "rust_all" else PYTHON_TRUSTED)
+    for probe_id in PROBES
 }
 
 EXPECTED_FAMILIES = {
@@ -156,8 +234,9 @@ def _git_env() -> dict[str, str]:
 
 
 def git(*args: str) -> subprocess.CompletedProcess[bytes]:
-    return subprocess.run(
-        [GIT_EXE, *args],
+    return trusted_run(
+        GIT_TRUSTED,
+        args,
         cwd=ROOT,
         env=_git_env(),
         stdout=subprocess.PIPE,
@@ -428,9 +507,15 @@ def run_probe(probe_id: str, home: Path) -> dict[str, Any]:
         return _probe_failure_result(probe_id, "tool_error", b"tracked_tree_dirty_before_probe")
 
     argv = PROBES[probe_id]
+    trusted = PROBE_EXECUTABLES[probe_id]
+    if not trusted_executable_matches(trusted):
+        return _probe_failure_result(probe_id, "tool_error", b"trusted_executable_changed_before_probe")
+    if probe_id == "rust_all" and not trusted_executable_matches(RUSTC_TRUSTED):
+        return _probe_failure_result(probe_id, "tool_error", b"trusted_rustc_changed_before_probe")
     try:
         process = subprocess.Popen(
             list(argv),
+            executable=trusted.executable,
             cwd=ROOT,
             env=_probe_environment(home),
             stdout=subprocess.PIPE,
@@ -493,6 +578,10 @@ def run_probe(probe_id: str, home: Path) -> dict[str, Any]:
 
     if not tracked_tree_clean():
         return _probe_failure_result(probe_id, "tool_error", b"tracked_tree_dirty_after_probe")
+    if not trusted_executable_matches(trusted):
+        return _probe_failure_result(probe_id, "tool_error", b"trusted_executable_changed_after_probe")
+    if probe_id == "rust_all" and not trusted_executable_matches(RUSTC_TRUSTED):
+        return _probe_failure_result(probe_id, "tool_error", b"trusted_rustc_changed_after_probe")
     if counts["stdout"] > MAX_PROBE_OUTPUT_BYTES or counts["stderr"] > MAX_PROBE_OUTPUT_BYTES:
         failure_kind = "tool_error"
 
