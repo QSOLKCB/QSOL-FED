@@ -39,6 +39,11 @@ jobs:
           node --version
       - name: Rust tests, state, Holodeck, adapters, SDKs, Assembly, transports, and fuzz smoke
         run: cargo test --all-targets
+      - name: Capture generated Cargo lockfile
+        run: |
+          echo '---BEGIN-QSOL-FED-CARGO-LOCK---'
+          cat Cargo.lock
+          echo '---END-QSOL-FED-CARGO-LOCK---'
       - name: Phase 6 three-implementation SDK conformance
         run: |
           cargo run --quiet --bin qsol-fed-sdk-conformance > /tmp/phase6-rust.json
