@@ -32,6 +32,10 @@
     "target_is_exact_git_commit": true,
     "target_commit_format": "40 lowercase hexadecimal Git commit characters",
     "checked_out_head_must_equal_target": true,
+    "tracked_worktree_must_be_clean": true,
+    "probe_environment_allowlisted": true,
+    "probe_process_group_isolated": true,
+    "probe_output_bounded": true,
     "shell_execution": false,
     "fixed_repository_probe_map": true,
     "arbitrary_command_execution": false,
@@ -67,7 +71,11 @@
     "unknown_probe_id": "reject",
     "probe_output_semantic_content_in_report": false,
     "failure_output_is_recorded_by_digest_and_size_only": true,
-    "timeout_seconds": 300
+    "maximum_output_bytes_per_stream": 1048576,
+    "timeout_seconds": 300,
+    "cargo_network_access": false,
+    "cargo_mode": "offline",
+    "shared_probe_failure_implies_specific_attack": false
   },
   "counterexample_policy": {
     "accepted_schema": "moriarty-counterexample/1",
@@ -81,7 +89,9 @@
     "regression_probes_must_be_subset_of_attack_probes": true,
     "external_findings_are_candidates_only": true,
     "candidate_can_enter_accepted_registry_without_local_reproduction": false,
+    "maximum_accepted_counterexamples": 32,
     "unresolved_accepted_finding_blocks_graduation": true,
+    "unresolved_regressions_execute_before_graduation_decision": true,
     "resolved_finding_remains_in_registry": true,
     "resolved_finding_becomes_regression": true,
     "resolution_commit_is_fix_commit": true,
@@ -99,9 +109,13 @@
     "records_probe_results_without_raw_output": true,
     "records_generated_counterexamples": true,
     "graduated_requires_zero_unresolved_counterexamples": true,
+    "graduated_requires_all_probes_green": true,
+    "failed_report_metadata_exposed_before_exit": true,
+    "maximum_canonical_bytes": 65536,
+    "maximum_counterexamples": 48,
     "security_proof": false,
     "no_counterexample_found_implies_none_exist": false,
     "authority_effect": "none"
   },
-  "phase9_gate": "For the exact checked-out commit, the provider-neutral fixed-probe MORIARTY/1 harness must execute the constitutional gate, every historical Phase 0-8 gate, the complete Rust all-targets regression suite, and every accepted counterexample regression probe. Accepted records require an observed deterministic local probe failure and must bind semantically to the referenced attack-corpus entry; external observations remain candidates until reproduced locally. Resolved records must name a real fix commit descending from the vulnerable target and reachable in the reviewed target history. No unresolved reproducible counterexample may cross a constitutional, authority, provenance, sandbox, cryptographic, replay, storage, transport, adapter, Assembly, or resource-safety boundary. MORIARTY adds assurance machinery only and does not promote the Phase 8 capability surface."
+  "phase9_gate": "For the exact clean checked-out commit, the provider-neutral fixed-probe MORIARTY/1 harness must execute under an allowlisted credential-scrubbed environment with bounded process-group-isolated probes. The constitutional gate, every historical Phase 0-8 gate, the complete Rust all-targets regression suite in offline Cargo mode, and every accepted counterexample regression probe must execute. Accepted records require an observed deterministic local probe failure and must bind semantically to the referenced attack-corpus entry; external observations remain candidates until reproduced locally. Shared probe failures block graduation without being laundered into unrelated family-specific findings. Resolved records must name a real fix commit descending from the vulnerable target and reachable in the reviewed target history. No unresolved reproducible counterexample or failed fixed probe may cross the graduation boundary. MORIARTY adds assurance machinery only and does not promote the Phase 8 capability surface."
 }
