@@ -235,9 +235,9 @@ def validate_probe_map() -> None:
         require(ROOT not in executable.parents and executable != ROOT, f"MORIARTY probe executable came from repository: {probe_id}")
         require(tuple(argv[1:]) == tail, f"MORIARTY fixed probe argv drift: {probe_id}")
         if probe_id == "rust_all":
-            require(executable.name == "cargo", "MORIARTY Rust probe executable drift")
+            require(argv[0] == moriarty.CARGO_EXE, "MORIARTY Rust probe executable drift")
         else:
-            require(executable.name.startswith("python3"), f"MORIARTY Python probe executable drift: {probe_id}")
+            require(argv[0] == moriarty.PYTHON_EXE, f"MORIARTY Python probe executable drift: {probe_id}")
 
 
 def validate_runner_source() -> None:
