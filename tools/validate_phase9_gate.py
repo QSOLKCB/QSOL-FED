@@ -889,7 +889,14 @@ def execute_exact_commit_gate(target: str, report_dir: Path | None) -> None:
         stderr=subprocess.PIPE,
         check=False,
     )
-    require(report_path.exists(), "MORIARTY runner did not emit report")
+    if not report_path.exists():
+        stderr = completed.stderr.decode("utf-8", errors="replace").strip()
+        stdout = completed.stdout.decode("utf-8", errors="replace").strip()
+        diagnostic = stderr or stdout or "no runner output"
+        raise SystemExit(
+            "MORIARTY runner did not emit report: "
+            + diagnostic[:2048]
+        )
     raw = report_path.read_bytes()
     require(len(raw) <= moriarty.MAX_REPORT_BYTES, "MORIARTY report exceeds canonical byte bound")
     require(canonicalize(raw.decode("utf-8")) == raw, "MORIARTY report is not exact canonical JSON")
