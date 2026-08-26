@@ -460,7 +460,16 @@ def create_verified_cargo_template(real_cargo_home: Path, workspace: Path, cargo
                 if digest == checksum:
                     matching.append(candidate)
         if not matching:
-            fail(f"moriarty_verified_cargo_archive_missing:{filename}")
+            # Cargo.lock may include platform-specific packages not required by
+            # the current runner target, so a preceding locked all-targets build
+            # can legitimately leave their archives absent. Never synthesize or
+            # trust an absent package. If any archive with this package filename
+            # exists but none matches the lock checksum, reject it; otherwise the
+            # later --frozen --offline Cargo probe remains the fail-closed test of
+            # whether this target actually requires the absent package.
+            if candidates:
+                fail(f"moriarty_cargo_archive_checksum_mismatch:{filename}")
+            continue
         selected = matching[0]
         cache_namespace = selected.parent.name
         _copy_regular_file(selected, template / "registry" / "cache" / cache_namespace / filename, checksum)
