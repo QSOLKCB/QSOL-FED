@@ -9,7 +9,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ROOT / "tools"
@@ -29,7 +29,8 @@ TIMEOUT_SECONDS = 300
 
 # This is intentionally source-owned and closed. The attack corpus may select only
 # these probe identifiers. It cannot inject commands, shells, network targets, or
-# credentials into the harness.
+# credentials into the harness. A model/human candidate finding must first be reduced
+# to one of these reviewed local regression probes before MORIARTY executes it.
 PROBES: dict[str, tuple[str, ...]] = {
     "constitution": ("python3", "tools/validate_constitution.py"),
     "phase0": ("python3", "tools/validate_phase0_gate.py"),
@@ -65,7 +66,7 @@ EXPECTED_FAMILIES = {
 }
 
 
-def fail(message: str) -> "NoReturn":
+def fail(message: str) -> NoReturn:
     raise SystemExit(message)
 
 
