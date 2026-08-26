@@ -45,7 +45,7 @@ git rev-parse HEAD == requested target_commit
 tracked index/worktree == clean relative to HEAD
 ```
 
-The clean-tree check still rejects tracked source/index drift, but probes do not execute from that mutable checkout. The runner creates a fresh exact-commit `git archive` export for every fixed probe, rejects archive links/special files, and applies Linux Landlock so the child cannot mutate the export even after changing Unix mode bits. Cross-probe source mutation is therefore eliminated both by kernel write denial and by never sharing an executable export between probes. Untracked files, including an untracked repository-local `.cargo/config.toml`, are therefore absent from the execution tree rather than merely ignored by `git diff`.
+The clean-tree check still rejects tracked source/index drift, but probes do not execute from that mutable checkout. The runner creates a fresh read-only exact-commit export from `git archive` for every fixed probe, rejects archive links/special files, and applies Linux Landlock so the child cannot mutate the export even after changing Unix mode bits. Cross-probe source mutation is therefore eliminated both by kernel write denial and by never sharing an executable export between probes. Untracked files, including an untracked repository-local `.cargo/config.toml`, are therefore absent from the execution tree rather than merely ignored by `git diff`.
 
 The CI checkout explicitly selects the pull-request head SHA on pull requests and `github.sha` on pushes, fetches complete history for remediation ancestry checks, and removes persisted checkout credentials. This avoids GitHub's synthetic PR merge commit when making an exact-commit assurance statement.
 
