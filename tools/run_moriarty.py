@@ -26,12 +26,17 @@ if str(TOOLS) not in sys.path:
 
 from qsol_canonical import serialize  # noqa: E402
 from moriarty_isolation import (  # noqa: E402
+    create_empty_cargo_home,
     create_exact_export,
     create_isolated_cargo_home,
+    create_verified_cargo_template,
     enable_child_subreaper,
     landlock_abi_version,
-    landlock_write_preexec,
+    network_seccomp_supported,
+    probe_isolation_preexec,
     proc_fd_path,
+    stage_executable_from_fd,
+    stage_rust_toolchain_runtime,
     write_report_exclusive,
 )
 
@@ -48,6 +53,10 @@ MAX_PROBE_OUTPUT_BYTES = 1_048_576
 MAX_ACCEPTED_COUNTEREXAMPLES = 32
 MAX_REPORT_COUNTEREXAMPLES = 48
 MAX_REPORT_BYTES = 65_536
+MAX_GIT_ARCHIVE_BYTES = 64 * 1024 * 1024
+POST_EXIT_DRAIN_SECONDS = 2.0
+TERMINATION_DRAIN_SECONDS = 2.0
+HARNESS_PATHS = ("tools/run_moriarty.py", "tools/moriarty_isolation.py", "tools/qsol_canonical.py")
 
 if os.name != "posix" or sys.platform != "linux":
     raise SystemExit("moriarty_requires_linux_process_and_landlock_isolation")
@@ -411,11 +420,54 @@ def git_head() -> str:
     return head
 
 
+def _index_flags_output_clean(raw: bytes) -> bool:
+    try:
+        lines = raw.decode("utf-8", errors="strict").splitlines()
+    except UnicodeError:
+        return False
+    for line in lines:
+        if len(line) < 2 or line[1] != " ":
+            return False
+        tag = line[0]
+        if tag == "S" or tag.islower():
+            return False
+    return True
+
+
+def index_flags_clean() -> bool:
+    completed = git("ls-files", "-t", "-v")
+    return completed.returncode == 0 and _index_flags_output_clean(completed.stdout)
+
+
 def tracked_tree_clean() -> bool:
     return (
         git("diff", "--quiet", "HEAD", "--").returncode == 0
         and git("diff", "--cached", "--quiet", "--").returncode == 0
+        and index_flags_clean()
     )
+
+
+def harness_files_match_target(target: str, extra_paths: Sequence[str] = ()) -> bool:
+    for path in (*HARNESS_PATHS, *extra_paths):
+        completed = git("show", f"{target}:{path}")
+        if completed.returncode != 0:
+            return False
+        try:
+            actual = (ROOT / path).read_bytes()
+        except OSError:
+            return False
+        if actual != completed.stdout:
+            return False
+    return True
+
+
+def git_archive_bytes(commit: str) -> bytes:
+    completed = git("archive", "--format=tar", commit)
+    if completed.returncode != 0:
+        fail("moriarty_exact_export_git_archive_failed")
+    if len(completed.stdout) > MAX_GIT_ARCHIVE_BYTES:
+        fail("moriarty_exact_export_archive_too_large")
+    return completed.stdout
 
 
 def git_commit_exists(commit: str) -> bool:
@@ -431,10 +483,13 @@ def _probe_environment(
     cargo_home: Path,
     target_dir: Path,
     temp_dir: Path,
-    rustc_fd: int | None = None,
+    tool_paths: Sequence[Path],
+    rustc_path: Path | None = None,
+    rustdoc_path: Path | None = None,
+    rust_lib: Path | None = None,
 ) -> dict[str, str]:
     environment = {
-        "PATH": "/usr/bin:/bin",
+        "PATH": os.pathsep.join([*(str(path) for path in tool_paths), "/usr/bin", "/bin"]),
         "HOME": str(home),
         "CARGO_HOME": str(cargo_home),
         "CARGO_TARGET_DIR": str(target_dir),
@@ -449,9 +504,31 @@ def _probe_environment(
         "LANG": "C.UTF-8",
         "LC_ALL": "C.UTF-8",
     }
-    if rustc_fd is not None:
-        environment["RUSTC"] = proc_fd_path(rustc_fd)
+    if rustc_path is not None:
+        environment["RUSTC"] = str(rustc_path)
+    if rustdoc_path is not None:
+        environment["RUSTDOC"] = str(rustdoc_path)
+    if rust_lib is not None:
+        environment["LD_LIBRARY_PATH"] = str(rust_lib)
     return environment
+
+
+def _system_read_exec_paths() -> tuple[Path, ...]:
+    return tuple(path for path in (Path("/usr"), Path("/bin"), Path("/lib"), Path("/lib64")) if path.exists())
+
+
+def _system_read_paths() -> tuple[Path, ...]:
+    return tuple(path for path in (Path("/etc"), Path("/dev/urandom"), Path("/dev/random")) if path.exists())
+
+
+def _system_writable_files() -> tuple[Path, ...]:
+    return tuple(path for path in (Path("/dev/null"),) if path.exists())
+
+
+def _fresh_cargo_home(probe_id: str, template: Path, workspace: Path, label: str) -> Path:
+    if probe_id == "rust_all":
+        return create_isolated_cargo_home(template, workspace, label)
+    return create_empty_cargo_home(workspace, label)
 
 
 def validate_attack_corpus(corpus: dict[str, Any]) -> list[dict[str, Any]]:
@@ -729,15 +806,18 @@ def bounded_output_update(digest: Any, count: int, chunk: bytes) -> tuple[int, b
 
 
 def _probe_failure_result(probe_id: str, kind: str, diagnostic: bytes) -> dict[str, Any]:
+    bounded = diagnostic[:MAX_PROBE_OUTPUT_BYTES]
     return {
         "probe_id": probe_id,
         "ok": False,
         "exit_code": None,
         "failure_kind": kind,
         "stdout_sha256": bytes_ref(b""),
-        "stderr_sha256": bytes_ref(diagnostic),
+        "stderr_sha256": bytes_ref(bounded),
         "stdout_bytes": 0,
-        "stderr_bytes": len(diagnostic),
+        "stderr_bytes": len(bounded),
+        "stdout_truncated": False,
+        "stderr_truncated": len(diagnostic) > len(bounded),
     }
 
 
@@ -747,11 +827,18 @@ def run_probe(
     source_root: Path,
     cargo_home: Path,
     target_dir: Path,
+    python_exec: Path,
+    cargo_exec: Path,
+    rustc_exec: Path,
+    rustdoc_exec: Path | None,
+    rust_runtime: Path | None,
 ) -> dict[str, Any]:
     if not tracked_tree_clean():
-        return _probe_failure_result(probe_id, "tool_error", b"tracked_tree_dirty_before_probe")
+        return _probe_failure_result(probe_id, "tool_error", b"tracked_tree_or_index_flags_dirty_before_probe")
     if landlock_abi_version() < 3:
         return _probe_failure_result(probe_id, "tool_error", b"landlock_abi3_unavailable")
+    if not network_seccomp_supported():
+        return _probe_failure_result(probe_id, "tool_error", b"network_seccomp_unavailable")
     home.mkdir(mode=0o700, parents=False, exist_ok=False)
     target_dir.mkdir(mode=0o700, parents=False, exist_ok=False)
     temp_dir = target_dir.parent / f"tmp-{target_dir.name}"
@@ -761,22 +848,44 @@ def run_probe(
     trusted = PROBE_EXECUTABLES[probe_id]
     if not trusted_executable_matches(trusted):
         return _probe_failure_result(probe_id, "tool_error", b"trusted_executable_fd_invalid_before_probe")
-    rustc_fd: int | None = None
-    pass_fds = (trusted.fd,)
-    if probe_id == "rust_all":
-        if not trusted_executable_matches(RUSTC_TRUSTED):
-            return _probe_failure_result(probe_id, "tool_error", b"trusted_rustc_fd_invalid_before_probe")
-        rustc_fd = RUSTC_TRUSTED.fd
-        pass_fds = (trusted.fd, RUSTC_TRUSTED.fd)
+    if probe_id == "rust_all" and not trusted_executable_matches(RUSTC_TRUSTED):
+        return _probe_failure_result(probe_id, "tool_error", b"trusted_rustc_fd_invalid_before_probe")
 
-    preexec = landlock_write_preexec((home, cargo_home, target_dir, temp_dir))
+    executable = cargo_exec if probe_id == "rust_all" else python_exec
+    tool_paths = [python_exec.parent]
+    rust_lib: Path | None = None
+    if rust_runtime is not None:
+        tool_paths.insert(0, rust_runtime / "bin")
+        rust_lib = rust_runtime / "lib"
+    elif probe_id == "rust_all":
+        tool_paths.insert(0, cargo_exec.parent)
+
+    read_exec_paths = [source_root, executable.parent, *_system_read_exec_paths()]
+    if rust_runtime is not None:
+        read_exec_paths.append(rust_runtime)
+    elif probe_id == "rust_all":
+        read_exec_paths.extend([cargo_exec.parent, rustc_exec.parent])
+    writable_paths = [home, cargo_home, target_dir, temp_dir, *_system_writable_files()]
+    preexec = probe_isolation_preexec(
+        tuple(read_exec_paths),
+        _system_read_paths(),
+        tuple(writable_paths),
+    )
     try:
         process = subprocess.Popen(
             list(argv),
-            executable=proc_fd_path(trusted.fd),
-            pass_fds=pass_fds,
+            executable=str(executable),
             cwd=source_root,
-            env=_probe_environment(home, cargo_home, target_dir, temp_dir, rustc_fd),
+            env=_probe_environment(
+                home,
+                cargo_home,
+                target_dir,
+                temp_dir,
+                tool_paths,
+                rustc_exec if probe_id == "rust_all" else None,
+                rustdoc_exec if probe_id == "rust_all" else None,
+                rust_lib,
+            ),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             start_new_session=True,
@@ -792,26 +901,35 @@ def run_probe(
     selector.register(process.stderr, selectors.EVENT_READ, "stderr")
     digests = {"stdout": hashlib.sha256(), "stderr": hashlib.sha256()}
     counts = {"stdout": 0, "stderr": 0}
+    truncated = {"stdout": False, "stderr": False}
     deadline = time.monotonic() + TIMEOUT_SECONDS
-    drain_deadline: float | None = None
+    post_exit_deadline: float | None = None
+    termination_deadline: float | None = None
     failure_kind: str | None = None
 
     try:
         while selector.get_map():
             now = time.monotonic()
             remaining = deadline - now
+            direct_exited = process.poll() is not None
             if remaining <= 0 and failure_kind is None:
                 failure_kind = "timeout"
                 _kill_probe_tree(process)
-                drain_deadline = now + 2.0
-            if process.poll() is not None and failure_kind is None and selector.get_map():
-                # The direct child exited but a descendant retained a pipe.
-                failure_kind = "tool_error"
-                _kill_probe_tree(process)
-                drain_deadline = now + 2.0
-            if failure_kind is not None and drain_deadline is None:
-                drain_deadline = now + 2.0
-            if drain_deadline is not None and now >= drain_deadline:
+                termination_deadline = now + TERMINATION_DRAIN_SECONDS
+            elif direct_exited and failure_kind is None:
+                # Normal processes may exit before the parent consumes buffered
+                # pipe bytes/EOF. Give them a bounded drain grace before calling
+                # the still-open descriptors a descendant leak.
+                if post_exit_deadline is None:
+                    post_exit_deadline = now + POST_EXIT_DRAIN_SECONDS
+                elif now >= post_exit_deadline:
+                    failure_kind = "tool_error"
+                    _kill_probe_tree(process)
+                    termination_deadline = now + TERMINATION_DRAIN_SECONDS
+
+            if failure_kind is not None and termination_deadline is None:
+                termination_deadline = now + TERMINATION_DRAIN_SECONDS
+            if termination_deadline is not None and now >= termination_deadline:
                 for key in list(selector.get_map().values()):
                     try:
                         selector.unregister(key.fileobj)
@@ -823,12 +941,14 @@ def run_probe(
                         pass
                 break
 
-            timeout = 0.1
-            if failure_kind is None:
-                timeout = max(0.0, min(0.1, remaining))
-            elif drain_deadline is not None:
-                timeout = max(0.0, min(0.1, drain_deadline - now))
-            events = selector.select(timeout=timeout)
+            limits = [0.1]
+            if failure_kind is None and not direct_exited:
+                limits.append(max(0.0, remaining))
+            if post_exit_deadline is not None and failure_kind is None:
+                limits.append(max(0.0, post_exit_deadline - now))
+            if termination_deadline is not None:
+                limits.append(max(0.0, termination_deadline - now))
+            events = selector.select(timeout=min(limits))
             for key, _ in events:
                 stream_name = key.data
                 chunk = os.read(key.fileobj.fileno(), 65_536)
@@ -839,10 +959,12 @@ def run_probe(
                 counts[stream_name], overflow = bounded_output_update(
                     digests[stream_name], counts[stream_name], chunk
                 )
-                if overflow and failure_kind is None:
-                    failure_kind = "tool_error"
-                    _kill_probe_tree(process)
-                    drain_deadline = time.monotonic() + 2.0
+                if overflow:
+                    truncated[stream_name] = True
+                    if failure_kind is None:
+                        failure_kind = "tool_error"
+                        _kill_probe_tree(process)
+                        termination_deadline = time.monotonic() + TERMINATION_DRAIN_SECONDS
 
         if process.poll() is None:
             wait_budget = 1.0 if failure_kind is not None else max(0.0, deadline - time.monotonic())
@@ -872,7 +994,7 @@ def run_probe(
     _reap_adopted_children()
 
     if not tracked_tree_clean():
-        return _probe_failure_result(probe_id, "tool_error", b"tracked_tree_dirty_after_probe")
+        return _probe_failure_result(probe_id, "tool_error", b"tracked_tree_or_index_flags_dirty_after_probe")
     if not trusted_executable_matches(trusted):
         return _probe_failure_result(probe_id, "tool_error", b"trusted_executable_fd_invalid_after_probe")
     if probe_id == "rust_all" and not trusted_executable_matches(RUSTC_TRUSTED):
@@ -894,6 +1016,8 @@ def run_probe(
         "stderr_sha256": "sha256:" + digests["stderr"].hexdigest(),
         "stdout_bytes": counts["stdout"],
         "stderr_bytes": counts["stderr"],
+        "stdout_truncated": truncated["stdout"],
+        "stderr_truncated": truncated["stderr"],
     }
 
 
@@ -940,21 +1064,34 @@ def counterexample_failure_matches(item: dict[str, Any], result: dict[str, Any])
 def verify_resolved_counterexamples(
     accepted: list[dict[str, Any]],
     workspace: Path,
-    cargo_home: Path,
+    cargo_template: Path,
+    python_exec: Path,
+    cargo_exec: Path,
+    rustc_exec: Path,
+    rustdoc_exec: Path | None,
+    rust_runtime: Path | None,
 ) -> None:
     for index, item in enumerate(accepted):
         if item["status"] != "resolved":
             continue
         probe_id = item["regression_probe_ids"][0]
         before_source = create_exact_export(
-            item["target_commit"], workspace, lambda *args: git(*args).returncode, f"resolved-{index}-before"
+            item["target_commit"], workspace, git_archive_bytes, f"resolved-{index}-before"
+        )
+        before_cargo = _fresh_cargo_home(
+            probe_id, cargo_template, workspace, f"resolved-{index}-before"
         )
         before = run_probe(
             probe_id,
             workspace / f"resolved-{index}-before-home",
             before_source,
-            cargo_home,
+            before_cargo,
             workspace / f"resolved-{index}-before-target",
+            python_exec,
+            cargo_exec,
+            rustc_exec,
+            rustdoc_exec,
+            rust_runtime,
         )
         if not counterexample_failure_matches(item, before):
             fail("moriarty_resolution_target_failure_not_reproduced")
@@ -962,14 +1099,22 @@ def verify_resolved_counterexamples(
         resolution = item["resolution_commit"]
         assert isinstance(resolution, str)
         after_source = create_exact_export(
-            resolution, workspace, lambda *args: git(*args).returncode, f"resolved-{index}-after"
+            resolution, workspace, git_archive_bytes, f"resolved-{index}-after"
+        )
+        after_cargo = _fresh_cargo_home(
+            probe_id, cargo_template, workspace, f"resolved-{index}-after"
         )
         after = run_probe(
             probe_id,
             workspace / f"resolved-{index}-after-home",
             after_source,
-            cargo_home,
+            after_cargo,
             workspace / f"resolved-{index}-after-target",
+            python_exec,
+            cargo_exec,
+            rustc_exec,
+            rustdoc_exec,
+            rust_runtime,
         )
         if after["ok"] is not True or after["exit_code"] != 0:
             fail("moriarty_resolution_fix_probe_not_green")
@@ -977,8 +1122,9 @@ def verify_resolved_counterexamples(
 
 def report_probe_result(result: dict[str, Any]) -> dict[str, Any]:
     return {key: result[key] for key in (
-        "probe_id", "ok", "exit_code", "stdout_sha256", "stderr_sha256",
-        "stdout_bytes", "stderr_bytes",
+        "probe_id", "ok", "exit_code", "failure_kind",
+        "stdout_sha256", "stderr_sha256", "stdout_bytes", "stderr_bytes",
+        "stdout_truncated", "stderr_truncated",
     )}
 
 
@@ -994,18 +1140,43 @@ def main() -> int:
     if git_head() != target:
         fail("moriarty_target_commit_does_not_match_checkout")
     if not tracked_tree_clean():
-        fail("moriarty_target_tracked_tree_dirty")
+        fail("moriarty_target_tracked_tree_or_index_flags_dirty")
+    if not harness_files_match_target(target):
+        fail("moriarty_harness_worktree_bytes_do_not_match_target")
 
     with tempfile.TemporaryDirectory(prefix="qsol-fed-moriarty-work-") as work_dir:
         workspace = Path(work_dir)
-        cargo_home = create_isolated_cargo_home(REAL_HOME / ".cargo", workspace)
         if landlock_abi_version() < 3:
             fail("moriarty_landlock_abi3_required")
-        control_source = create_exact_export(
-            target, workspace, lambda *git_args: git(*git_args).returncode, "control"
-        )
+        if not network_seccomp_supported():
+            fail("moriarty_network_seccomp_required")
+        control_source = create_exact_export(target, workspace, git_archive_bytes, "control")
         if not (control_source / "Cargo.lock").is_file():
             fail("moriarty_committed_cargo_lock_missing")
+        cargo_template = create_verified_cargo_template(
+            REAL_HOME / ".cargo", workspace, control_source / "Cargo.lock"
+        )
+        python_exec = stage_executable_from_fd(
+            PYTHON_TRUSTED.fd, workspace / "python-runtime" / "python3"
+        )
+
+        rust_runtime: Path | None = None
+        if RUSTUP_DISCOVERY_USED:
+            rust_source_root = Path(CARGO_TRUSTED.executable).parent.parent
+            rust_runtime = stage_rust_toolchain_runtime(
+                rust_source_root,
+                workspace / "rust-runtime",
+                CARGO_TRUSTED.fd,
+                RUSTC_TRUSTED.fd,
+            )
+            cargo_exec = rust_runtime / "bin" / "cargo"
+            rustc_exec = rust_runtime / "bin" / "rustc"
+            rustdoc_candidate = rust_runtime / "bin" / "rustdoc"
+            rustdoc_exec = rustdoc_candidate if rustdoc_candidate.is_file() else None
+        else:
+            cargo_exec = Path(CARGO_TRUSTED.executable)
+            rustc_exec = Path(RUSTC_TRUSTED.executable)
+            rustdoc_exec = None
 
         corpus = load_json(control_source / "fixtures/phase9/attack-corpus.json")
         attacks = validate_attack_corpus(corpus)
@@ -1032,28 +1203,37 @@ def main() -> int:
 
         results: dict[str, dict[str, Any]] = {}
         for probe_index, probe_id in enumerate(ordered_probe_ids):
-            probe_source = create_exact_export(
-                target,
-                workspace,
-                lambda *git_args: git(*git_args).returncode,
-                f"probe-{probe_index}-{probe_id}",
-            )
+            label = f"probe-{probe_index}-{probe_id}"
+            probe_source = create_exact_export(target, workspace, git_archive_bytes, label)
+            probe_cargo_home = _fresh_cargo_home(probe_id, cargo_template, workspace, label)
             results[probe_id] = run_probe(
                 probe_id,
-                workspace / f"home-{probe_id}",
+                workspace / f"home-{probe_index}-{probe_id}",
                 probe_source,
-                cargo_home,
-                workspace / f"target-{probe_id}",
+                probe_cargo_home,
+                workspace / f"target-{probe_index}-{probe_id}",
+                python_exec,
+                cargo_exec,
+                rustc_exec,
+                rustdoc_exec,
+                rust_runtime,
             )
-        verify_resolved_counterexamples(accepted, workspace, cargo_home)
+        verify_resolved_counterexamples(
+            accepted,
+            workspace,
+            cargo_template,
+            python_exec,
+            cargo_exec,
+            rustc_exec,
+            rustdoc_exec,
+            rust_runtime,
+        )
 
     generated: list[dict[str, Any]] = []
     for probe_id, result in results.items():
         if result["ok"]:
             continue
         owners = probe_users.get(probe_id, [])
-        # Shared infrastructure/regression probes block graduation through the
-        # probe result, but they do not fabricate family-specific findings.
         if len(owners) == 1 and result["failure_kind"] in {"exit_nonzero", "timeout", "tool_error"}:
             generated.append(generated_counterexample(target, owners[0], result))
 
@@ -1061,8 +1241,8 @@ def main() -> int:
     unresolved_count = len(unresolved_accepted) + len(generated)
     all_probes_ok = all(result["ok"] for result in results.values())
 
-    if git_head() != target or not tracked_tree_clean():
-        fail("moriarty_target_changed_during_probes")
+    if git_head() != target or not tracked_tree_clean() or not harness_files_match_target(target):
+        fail("moriarty_target_or_harness_changed_during_probes")
 
     report = {
         "schema": REPORT_SCHEMA,
@@ -1092,8 +1272,8 @@ def main() -> int:
 
     output = Path(args.output)
     write_report_exclusive(output, encoded, ROOT)
-    if git_head() != target or not tracked_tree_clean():
-        fail("moriarty_target_changed_during_report_publication")
+    if git_head() != target or not tracked_tree_clean() or not harness_files_match_target(target):
+        fail("moriarty_target_or_harness_changed_during_report_publication")
 
     if report["graduated"]:
         print(

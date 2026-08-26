@@ -72,6 +72,9 @@ def git_head() -> str:
     return head
 
 
+PHASE9_CLAIM_RULE = "Phase 9 adds adversarial graduation assurance, not a new runtime or protocol capability. The Phase 8 capability map remains unchanged. A MORIARTY report is evidence about execution of the exact reviewed regression surface, not a security proof, authority grant, production-deployment certification, or proof that no counterexample exists."
+
+
 def _validate_claim_document(previous: dict[str, Any], current: dict[str, Any]) -> None:
     expected_top = {
         "document_type", "schema_version", "protocol", "wire_protocol", "phase", "gate_id",
@@ -84,13 +87,10 @@ def _validate_claim_document(previous: dict[str, Any], current: dict[str, Any]) 
         "fixed_repository_probe_map", "cross_phase_regression_sweep",
         "isolated_source_export", "committed_cargo_lock", "opened_executable_binding",
         "cache_only_cargo_home", "exclusive_external_report_output",
-        "remediation_transition_verified", "production_credentials_used",
-        "production_targets_used", "constitutional_bypass_used", "report_is_security_proof",
-        "no_counterexample_found_means_none_exist", "authority_effect",
-    }
-    expected_promotions = {
-        "interoperable_federation", "production_networking", "remote_execution",
-        "host_level_sandbox", "oracle_holodeck_synthetic_admission",
+        "remediation_transition_verified", "network_syscalls_denied", "probe_proc_read_isolated",
+        "per_probe_cargo_home", "verified_cargo_registry_archives", "staged_rust_toolchain_runtime",
+        "production_credentials_used", "production_targets_used", "constitutional_bypass_used",
+        "report_is_security_proof", "no_counterexample_found_means_none_exist", "authority_effect",
     }
     require(set(current) == expected_top, "Phase 9 claim manifest field set is not closed")
     require(current.get("document_type") == "qsol-fed-phase9-moriarty-claims", "Phase 9 claim id drift")
@@ -109,6 +109,8 @@ def _validate_claim_document(previous: dict[str, Any], current: dict[str, Any]) 
         "accepted_counterexample_registry", "fixed_repository_probe_map", "cross_phase_regression_sweep",
         "isolated_source_export", "committed_cargo_lock", "opened_executable_binding",
         "cache_only_cargo_home", "exclusive_external_report_output", "remediation_transition_verified",
+        "network_syscalls_denied", "probe_proc_read_isolated", "per_probe_cargo_home",
+        "verified_cargo_registry_archives", "staged_rust_toolchain_runtime",
     ):
         require(assurance.get(key) is True, f"Phase 9 assurance drift: {key}")
     for key in (
@@ -117,8 +119,11 @@ def _validate_claim_document(previous: dict[str, Any], current: dict[str, Any]) 
     ):
         require(assurance.get(key) is False, f"Phase 9 assurance overclaim/bypass: {key}")
     require(assurance.get("authority_effect") == "none", "MORIARTY assurance gained authority")
-    promotions = current.get("promotion_requirements")
-    require(isinstance(promotions, dict) and set(promotions) == expected_promotions, "Phase 9 promotion requirement field set is not closed")
+    require(current.get("claim_rule") == PHASE9_CLAIM_RULE, "Phase 9 claim rule drift")
+    require(
+        current.get("promotion_requirements") == previous.get("promotion_requirements"),
+        "Phase 9 promotion requirements changed the preserved Phase 8 requirements",
+    )
 
 
 def validate_claims() -> None:
@@ -128,6 +133,12 @@ def validate_claims() -> None:
     malicious = copy.deepcopy(current)
     malicious["assurance"]["security_proof"] = True
     _expect_reject(lambda: _validate_claim_document(previous, malicious), "undeclared assurance claim")
+    promotion_drift = copy.deepcopy(current)
+    promotion_drift["promotion_requirements"]["remote_execution"] = "already admitted"
+    _expect_reject(lambda: _validate_claim_document(previous, promotion_drift), "promotion requirement value drift")
+    claim_drift = copy.deepcopy(current)
+    claim_drift["claim_rule"] = "Phase 9 grants authority"
+    _expect_reject(lambda: _validate_claim_document(previous, claim_drift), "claim rule drift")
 
 
 def validate_contract() -> None:
@@ -166,7 +177,7 @@ def validate_contract() -> None:
         require(operator[key] is False, f"MORIARTY operator boundary weakened: {key}")
 
     execution = state["execution_boundary"]
-    expected_execution_fields = {'fixed_repository_probe_map', 'production_credentials_allowed', 'probe_output_bounded', 'production_targets_allowed', 'target_is_exact_git_commit', 'report_output_external_private_exclusive', 'semantic_payload_execution_allowed', 'untracked_inputs_excluded', 'tracked_worktree_must_be_clean', 'cargo_target_outside_source', 'authority_effect', 'probe_process_group_isolated', 'arbitrary_command_execution', 'outbound_network_targeting_allowed', 'checked_out_head_must_equal_target', 'cargo_home_cache_only', 'exact_source_export', 'constitutional_bypass_allowed', 'target_commit_format', 'shell_execution', 'source_export_read_only', 'tool_exec_via_open_descriptor', 'probe_environment_allowlisted'}
+    expected_execution_fields = {'fixed_repository_probe_map', 'production_credentials_allowed', 'probe_output_bounded', 'production_targets_allowed', 'target_is_exact_git_commit', 'report_output_external_private_exclusive', 'semantic_payload_execution_allowed', 'untracked_inputs_excluded', 'tracked_worktree_must_be_clean', 'cargo_target_outside_source', 'authority_effect', 'probe_process_group_isolated', 'arbitrary_command_execution', 'outbound_network_targeting_allowed', 'checked_out_head_must_equal_target', 'cargo_home_cache_only', 'exact_source_export', 'constitutional_bypass_allowed', 'target_commit_format', 'shell_execution', 'source_export_read_only', 'tool_exec_via_open_descriptor', 'probe_environment_allowlisted', 'probe_network_syscalls_denied', 'probe_proc_read_isolated', 'rust_toolchain_runtime_staged'}
     require(set(execution) == expected_execution_fields, "MORIARTY execution boundary field set is not closed")
     required_true = {
         "target_is_exact_git_commit", "checked_out_head_must_equal_target", "tracked_worktree_must_be_clean",
@@ -174,6 +185,7 @@ def validate_contract() -> None:
         "probe_output_bounded", "exact_source_export", "source_export_read_only",
         "untracked_inputs_excluded", "tool_exec_via_open_descriptor", "cargo_home_cache_only",
         "cargo_target_outside_source", "report_output_external_private_exclusive",
+        "probe_network_syscalls_denied", "probe_proc_read_isolated", "rust_toolchain_runtime_staged",
     }
     for key in required_true:
         require(execution[key] is True, f"MORIARTY exact/fixed execution boundary drift: {key}")
@@ -186,12 +198,14 @@ def validate_contract() -> None:
     require(execution["authority_effect"] == "none", "MORIARTY execution gained authority")
 
     probes = state["probe_policy"]
-    expected_probe_fields = {'probe_ids_are_source_allowlisted', 'failure_output_is_recorded_by_digest_and_size_only', 'probe_output_semantic_content_in_report', 'historical_phase_gates_are_regressions', 'rust_all_targets_is_regression', 'shared_probe_failure_implies_specific_attack', 'cargo_mode', 'cargo_lockfile_committed', 'maximum_output_bytes_per_stream', 'timeout_seconds', 'cargo_network_access', 'constitutional_gate_is_regression', 'unknown_probe_id', 'cargo_user_config_inherited'}
+    expected_probe_fields = {'probe_ids_are_source_allowlisted', 'failure_output_is_recorded_by_digest_and_size_only', 'probe_output_semantic_content_in_report', 'historical_phase_gates_are_regressions', 'rust_all_targets_is_regression', 'shared_probe_failure_implies_specific_attack', 'cargo_mode', 'cargo_lockfile_committed', 'maximum_output_bytes_per_stream', 'timeout_seconds', 'cargo_network_access', 'constitutional_gate_is_regression', 'unknown_probe_id', 'cargo_user_config_inherited', 'cargo_home_per_probe', 'cargo_registry_archives_verified_against_lock'}
     require(set(probes) == expected_probe_fields, "MORIARTY probe policy field set is not closed")
     require(probes["cargo_network_access"] is False, "MORIARTY Cargo probe regained network access")
     require(probes["cargo_mode"] == "frozen", "MORIARTY Cargo mode is not frozen")
     require(probes["cargo_lockfile_committed"] is True, "MORIARTY Cargo lockfile is not committed")
     require(probes["cargo_user_config_inherited"] is False, "MORIARTY Cargo user config became ambient")
+    require(probes["cargo_home_per_probe"] is True, "MORIARTY Cargo home is shared across probes")
+    require(probes["cargo_registry_archives_verified_against_lock"] is True, "MORIARTY Cargo archives are not lock-authenticated")
     require(probes["shared_probe_failure_implies_specific_attack"] is False, "shared probe can fabricate specific counterexample")
     require(probes["maximum_output_bytes_per_stream"] == moriarty.MAX_PROBE_OUTPUT_BYTES, "MORIARTY output bound drift")
 
@@ -219,14 +233,15 @@ def validate_contract() -> None:
     require(counterexamples["maximum_accepted_counterexamples"] == moriarty.MAX_ACCEPTED_COUNTEREXAMPLES, "MORIARTY registry count bound drift")
 
     report = state["report_policy"]
-    expected_report_fields = {'report_persisted_for_ci_artifact_upload', 'records_probe_results_without_raw_output', 'graduated_requires_all_probes_green', 'records_generated_counterexamples', 'schema', 'security_proof', 'maximum_canonical_bytes', 'no_counterexample_found_implies_none_exist', 'maximum_counterexamples', 'generated_report_nested_schema_validated', 'authority_effect', 'binds_canonical_attack_corpus_identity', 'binds_exact_target_commit', 'failed_report_metadata_exposed_before_exit', 'graduated_requires_zero_unresolved_counterexamples'}
+    expected_report_fields = {'report_persisted_for_ci_artifact_upload', 'records_probe_results_without_raw_output', 'graduated_requires_all_probes_green', 'records_generated_counterexamples', 'schema', 'security_proof', 'maximum_canonical_bytes', 'no_counterexample_found_implies_none_exist', 'maximum_counterexamples', 'generated_report_nested_schema_validated', 'authority_effect', 'binds_canonical_attack_corpus_identity', 'binds_exact_target_commit', 'failed_report_metadata_exposed_before_exit', 'graduated_requires_zero_unresolved_counterexamples', 'probe_failure_kind_persisted', 'probe_output_truncation_persisted'}
     require(set(report) == expected_report_fields, "MORIARTY report policy field set is not closed")
     for key in (
         "binds_exact_target_commit", "binds_canonical_attack_corpus_identity",
         "records_probe_results_without_raw_output", "records_generated_counterexamples",
         "graduated_requires_zero_unresolved_counterexamples", "graduated_requires_all_probes_green",
         "failed_report_metadata_exposed_before_exit", "generated_report_nested_schema_validated",
-        "report_persisted_for_ci_artifact_upload",
+        "report_persisted_for_ci_artifact_upload", "probe_failure_kind_persisted",
+        "probe_output_truncation_persisted",
     ):
         require(report[key] is True, f"MORIARTY report policy drift: {key}")
     require(report["maximum_canonical_bytes"] == moriarty.MAX_REPORT_BYTES, "MORIARTY report byte bound drift")
@@ -235,12 +250,47 @@ def validate_contract() -> None:
     require(report["authority_effect"] == "none", "MORIARTY report gained authority")
 
 
+def _require_closed_schema_fields(schema: dict[str, Any], expected: set[str], name: str) -> None:
+    props = schema.get("properties")
+    required = schema.get("required")
+    require(isinstance(props, dict) and set(props) == expected, f"MORIARTY {name} schema property set drift")
+    require(isinstance(required, list) and set(required) == expected and len(required) == len(expected), f"MORIARTY {name} schema required set drift")
+    require(schema.get("additionalProperties") is False, f"MORIARTY {name} schema must remain closed")
+
+
 def validate_schemas_and_fixtures() -> None:
     corpus_schema = load("schemas/moriarty-attack-corpus-v1.schema.json")
     counterexample_schema = load("schemas/moriarty-counterexample-v1.schema.json")
     report_schema = load("schemas/moriarty-report-v1.schema.json")
-    for name, schema in (("attack corpus", corpus_schema), ("counterexample", counterexample_schema), ("report", report_schema)):
-        require(schema.get("additionalProperties") is False, f"MORIARTY {name} schema must remain closed")
+
+    corpus_fields = {
+        "schema", "protocol", "attacks", "production_credentials_allowed",
+        "production_targets_allowed", "constitutional_bypass_allowed", "authority_effect",
+    }
+    attack_fields = {"id", "family", "owner_phases", "boundary_ids", "probe_ids"}
+    counterexample_fields = {
+        "schema", "counterexample_id", "target_commit", "attack_id", "family", "owner_phases",
+        "boundary_ids", "regression_probe_ids", "failure_kind", "observed_exit_code",
+        "stdout_sha256", "stderr_sha256", "stdout_bytes", "stderr_bytes", "status",
+        "resolution_commit", "production_credentials_used", "production_targets_used",
+        "constitutional_bypass_used", "authority_effect",
+    }
+    report_fields = {
+        "schema", "protocol", "target_commit", "corpus_ref", "operator_profile", "family_count",
+        "executed_probe_count", "probe_results", "counterexamples", "unresolved_counterexamples",
+        "graduated", "production_credentials_used", "production_targets_used",
+        "constitutional_bypass_used", "security_proof", "no_counterexample_found_implies_none_exist",
+        "authority_effect",
+    }
+    probe_result_fields = {
+        "probe_id", "ok", "exit_code", "failure_kind", "stdout_sha256", "stderr_sha256",
+        "stdout_bytes", "stderr_bytes", "stdout_truncated", "stderr_truncated",
+    }
+    _require_closed_schema_fields(corpus_schema, corpus_fields, "attack corpus")
+    _require_closed_schema_fields(corpus_schema["properties"]["attacks"]["items"], attack_fields, "attack record")
+    _require_closed_schema_fields(counterexample_schema, counterexample_fields, "counterexample")
+    _require_closed_schema_fields(report_schema, report_fields, "report")
+    _require_closed_schema_fields(report_schema["properties"]["probe_results"]["items"], probe_result_fields, "probe result")
 
     corpus_props = corpus_schema["properties"]
     for key in ("production_credentials_allowed", "production_targets_allowed", "constitutional_bypass_allowed"):
@@ -252,8 +302,13 @@ def validate_schemas_and_fixtures() -> None:
     for key in ("production_credentials_used", "production_targets_used", "constitutional_bypass_used"):
         require(counter_props[key].get("const") is False, f"MORIARTY counterexample schema boundary drift: {key}")
     require(counter_props["authority_effect"].get("const") == "none", "MORIARTY counterexample schema gained authority")
-    require(isinstance(counterexample_schema.get("allOf"), list), "MORIARTY counterexample conditional semantics missing")
     require(counter_props["regression_probe_ids"].get("maxItems") == 1, "MORIARTY counterexample must bind one observed regression probe")
+    require(counter_props["stdout_bytes"].get("maximum") == moriarty.MAX_PROBE_OUTPUT_BYTES, "counterexample stdout bound schema drift")
+    require(counter_props["stderr_bytes"].get("maximum") == moriarty.MAX_PROBE_OUTPUT_BYTES, "counterexample stderr bound schema drift")
+    all_of = counterexample_schema.get("allOf")
+    require(isinstance(all_of, list) and len(all_of) == 2, "MORIARTY counterexample conditional set drift")
+    require(set(all_of[0].get("if", {}).get("required", [])) == {"failure_kind"}, "counterexample failure conditional drift")
+    require(set(all_of[1].get("if", {}).get("required", [])) == {"status"}, "counterexample status conditional drift")
     require((ROOT / "Cargo.lock").is_file(), "MORIARTY committed Cargo.lock missing")
 
     report_props = report_schema["properties"]
@@ -261,6 +316,10 @@ def validate_schemas_and_fixtures() -> None:
     require(report_props["family_count"].get("const") == 15, "MORIARTY report family count drift")
     require(report_props["counterexamples"].get("maxItems") == moriarty.MAX_REPORT_COUNTEREXAMPLES, "MORIARTY report counterexample bound drift")
     require(report_props["unresolved_counterexamples"].get("maximum") == moriarty.MAX_REPORT_COUNTEREXAMPLES, "MORIARTY unresolved count schema drift")
+    result_props = report_props["probe_results"]["items"]["properties"]
+    require(result_props["stdout_bytes"].get("maximum") == moriarty.MAX_PROBE_OUTPUT_BYTES, "report stdout bound schema drift")
+    require(result_props["stderr_bytes"].get("maximum") == moriarty.MAX_PROBE_OUTPUT_BYTES, "report stderr bound schema drift")
+    require(set(result_props["failure_kind"].get("enum", [])) == {None, "exit_nonzero", "timeout", "tool_error"}, "report failure-kind schema drift")
     for key in (
         "production_credentials_used", "production_targets_used", "constitutional_bypass_used",
         "security_proof", "no_counterexample_found_implies_none_exist",
@@ -280,9 +339,6 @@ def validate_schemas_and_fixtures() -> None:
     require({item["family"] for item in attacks} == EXPECTED_FAMILIES, "MORIARTY corpus family set drift")
 
     registry = load("fixtures/phase9/accepted-counterexamples.json")
-    require(registry.get("schema") == "moriarty-counterexample-registry/1", "MORIARTY registry id drift")
-    require(registry.get("protocol") == "MORIARTY/1", "MORIARTY registry protocol drift")
-    require(registry.get("authority_effect") == "none", "MORIARTY registry gained authority")
     values = registry.get("counterexamples")
     require(isinstance(values, list) and len(values) <= moriarty.MAX_ACCEPTED_COUNTEREXAMPLES, "MORIARTY registry counterexample count drift")
     require(all(item.get("failure_kind") != "accepted_external" for item in values if isinstance(item, dict)), "accepted_external entered accepted counterexample registry")
@@ -290,10 +346,7 @@ def validate_schemas_and_fixtures() -> None:
     require(registry.get("unresolved_counterexamples") == unresolved, "MORIARTY registry unresolved count drift")
     registry_extra = copy.deepcopy(registry)
     registry_extra["member_local_authority"] = "root"
-    _expect_reject(
-        lambda: moriarty.validate_registry(registry_extra, attacks, git_head()),
-        "undeclared accepted-registry wrapper field",
-    )
+    _expect_reject(lambda: moriarty.validate_registry(registry_extra, attacks, git_head()), "undeclared accepted-registry wrapper field")
 
 
 def validate_probe_map() -> None:
@@ -321,6 +374,9 @@ def validate_probe_map() -> None:
         require(not moriarty._same_trusted_inode(moriarty.RUSTC_TRUSTED, moriarty.RUSTUP_TRUSTED), "MORIARTY rustc still points at Rustup shim")
         require(Path(moriarty.CARGO_TRUSTED.executable).parent == Path(moriarty.RUSTC_TRUSTED.executable).parent, "MORIARTY concrete Cargo/rustc toolchain mismatch")
     require(moriarty._git_env().get("GIT_NO_REPLACE_OBJECTS") == "1", "MORIARTY Git replacement objects are not disabled")
+    require(moriarty._index_flags_output_clean(b"H tools/run_moriarty.py\n"), "normal Git index flag parser failed")
+    require(not moriarty._index_flags_output_clean(b"h tools/run_moriarty.py\n"), "assume-unchanged index flag was accepted")
+    require(not moriarty._index_flags_output_clean(b"S tools/run_moriarty.py\n"), "skip-worktree index flag was accepted")
     digest = hashlib.sha256()
     bounded_count, overflow = moriarty.bounded_output_update(digest, moriarty.MAX_PROBE_OUTPUT_BYTES - 1, b"AB")
     require(bounded_count == moriarty.MAX_PROBE_OUTPUT_BYTES and overflow is True, "MORIARTY output overflow bound regression failed")
@@ -345,15 +401,17 @@ def validate_runner_source() -> None:
         "provider-neutral-fixed-probe/1", "moriarty-counterexample/1", "moriarty-report/1",
         "PROBES: dict[str, tuple[str, ...]]", "PROBE_EXECUTABLES", "TrustedExecutable",
         "proc_fd_path(trusted.fd)", "pass_fds=pass_fds", "create_exact_export",
-        "create_isolated_cargo_home", "landlock_write_preexec", "write_report_exclusive", "--frozen", "candidate",
+        "create_isolated_cargo_home", "create_verified_cargo_template", "probe_isolation_preexec",
+        "stage_rust_toolchain_runtime", "git_archive_bytes", "index_flags_clean",
+        "write_report_exclusive", "--frozen", "candidate",
         "GIT_NO_REPLACE_OBJECTS", "RUSTUP_DISCOVERY_USED", "_rustup_which", "bounded_output_update",
-        "enable_child_subreaper", "_kill_probe_tree", "drain_deadline",
+        "enable_child_subreaper", "_kill_probe_tree", "post_exit_deadline", "termination_deadline",
         "tracked_tree_clean", "start_new_session=True", "selectors.DefaultSelector",
         "MAX_PROBE_OUTPUT_BYTES", "git_commit_exists", "git_is_ancestor",
         "moriarty_counterexample_attack_not_in_corpus", "moriarty_resolution_commit_missing",
         "counterexample_identity_projection", "verify_resolved_counterexamples",
         "production_credentials_used", "production_targets_used", "constitutional_bypass_used",
-        "security_proof", "no_counterexample_found_implies_none_exist",
+        "security_proof", "no_counterexample_found_implies_none_exist", "stdout_truncated", "stderr_truncated",
     ):
         require(marker in source, f"MORIARTY runner marker missing: {marker}")
     require("accepted_external" not in source, "MORIARTY runner still admits accepted_external")
@@ -516,15 +574,40 @@ def validate_counterexample_negative_tests(target: str) -> None:
 
 
 def validate_isolation_negative_tests(target: str) -> None:
-    with tempfile.TemporaryDirectory(prefix="moriarty-cargo-home-test-") as temp_dir:
+    require(moriarty.harness_files_match_target(target, ("tools/validate_phase9_gate.py",)), "executed Phase 9 harness bytes do not match target")
+
+    with tempfile.TemporaryDirectory(prefix="moriarty-cargo-auth-test-") as temp_dir:
         root = Path(temp_dir)
         ambient = root / "ambient"
-        (ambient / "registry").mkdir(parents=True)
+        cache = ambient / "registry" / "cache" / "test-index"
+        cache.mkdir(parents=True)
+        (ambient / "registry" / "index").mkdir(parents=True)
         (ambient / "config.toml").write_text("[build]\nrustc-wrapper='evil'\n", encoding="utf-8")
+        good = b"verified crate archive"
+        good_sha = hashlib.sha256(good).hexdigest()
+        crate = cache / "demo-1.0.0.crate"
+        crate.write_bytes(b"tampered")
+        lock = root / "Cargo.lock"
+        lock.write_text(
+            'version = 4\n\n[[package]]\nname = "demo"\nversion = "1.0.0"\nsource = "registry+https://github.com/rust-lang/crates.io-index"\nchecksum = "' + good_sha + '"\n',
+            encoding="utf-8",
+        )
+        workspace_bad = root / "workspace-bad"
+        workspace_bad.mkdir()
+        _expect_reject(
+            lambda: moriarty.create_verified_cargo_template(ambient, workspace_bad, lock),
+            "tampered Cargo package archive",
+        )
+        crate.write_bytes(good)
         workspace = root / "workspace"
         workspace.mkdir()
-        isolated = moriarty.create_isolated_cargo_home(ambient, workspace)
-        require(not (isolated / "config.toml").exists(), "ambient Cargo config entered isolated Cargo home")
+        template = moriarty.create_verified_cargo_template(ambient, workspace, lock)
+        require(not (template / "config.toml").exists(), "ambient Cargo config entered verified template")
+        require(not (template / "registry" / "src").exists(), "ambient unpacked Cargo source entered verified template")
+        first = moriarty.create_isolated_cargo_home(template, workspace, "first")
+        second = moriarty.create_isolated_cargo_home(template, workspace, "second")
+        (first / "config.toml").write_text("[build]\nrustc-wrapper='evil'\n", encoding="utf-8")
+        require(not (second / "config.toml").exists(), "per-probe Cargo homes contaminated each other")
 
     cargo_dir = ROOT / ".cargo"
     config = cargo_dir / "config.toml"
@@ -534,9 +617,7 @@ def validate_isolation_negative_tests(target: str) -> None:
         config.write_text("[build]\nrustc-wrapper='evil'\n", encoding="utf-8")
         with tempfile.TemporaryDirectory(prefix="moriarty-export-test-") as temp_dir:
             workspace = Path(temp_dir)
-            export = moriarty.create_exact_export(
-                target, workspace, lambda *args: moriarty.git(*args).returncode, "negative-untracked"
-            )
+            export = moriarty.create_exact_export(target, workspace, moriarty.git_archive_bytes, "negative-untracked")
             require(not (export / ".cargo/config.toml").exists(), "untracked Cargo config entered exact export")
             require((export / "Cargo.lock").read_bytes() == (ROOT / "Cargo.lock").read_bytes(), "exact export lockfile drift")
     finally:
@@ -560,10 +641,7 @@ def validate_isolation_negative_tests(target: str) -> None:
         victim.write_bytes(b"unchanged")
         output = parent / "report.json"
         output.symlink_to(victim)
-        _expect_reject(
-            lambda: moriarty.write_report_exclusive(output, b"{}", ROOT),
-            "symlinked report output",
-        )
+        _expect_reject(lambda: moriarty.write_report_exclusive(output, b"{}", ROOT), "symlinked report output")
         require(victim.read_bytes() == b"unchanged", "report symlink negative test modified victim")
 
 
@@ -618,6 +696,55 @@ raise SystemExit(2)
         require(victim.read_text(encoding="utf-8") == "original", "MORIARTY Landlock victim changed")
 
 
+def validate_kernel_network_and_proc_denial() -> None:
+    require(moriarty.network_seccomp_supported(), "MORIARTY requires network seccomp support")
+    with tempfile.TemporaryDirectory(prefix="moriarty-net-proc-test-") as temp_dir:
+        root = Path(temp_dir)
+        writable = root / "writable"
+        writable.mkdir(mode=0o700)
+        parent_pid = os.getpid()
+        program = r"""
+import errno
+import socket
+import sys
+from pathlib import Path
+parent_pid = sys.argv[1]
+try:
+    Path(f"/proc/{parent_pid}/environ").read_bytes()
+except PermissionError:
+    pass
+else:
+    raise SystemExit(3)
+try:
+    socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+except OSError as exc:
+    if exc.errno == errno.EPERM:
+        raise SystemExit(0)
+    raise
+raise SystemExit(4)
+"""
+        preexec = moriarty.probe_isolation_preexec(
+            tuple(path for path in (Path("/usr"), Path("/bin"), Path("/lib"), Path("/lib64")) if path.exists()),
+            tuple(path for path in (Path("/etc"), Path("/dev/urandom"), Path("/dev/random")) if path.exists()),
+            tuple(path for path in (writable, Path("/dev/null")) if path.exists()),
+        )
+        completed = subprocess.run(
+            [sys.executable, "-I", "-c", program, str(parent_pid)],
+            cwd=ROOT,
+            env={"PATH": "/usr/bin:/bin", "HOME": str(writable), "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"},
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=10,
+            preexec_fn=preexec,
+        )
+        require(
+            completed.returncode == 0,
+            "MORIARTY network/proc isolation regression failed: "
+            + completed.stderr.decode("utf-8", errors="replace")[:256],
+        )
+
+
 def validate_report_common(report: dict[str, Any], target: str) -> None:
     expected_fields = {
         "schema", "protocol", "target_commit", "corpus_ref", "operator_profile", "family_count",
@@ -636,7 +763,7 @@ def validate_report_common(report: dict[str, Any], target: str) -> None:
     require(report["executed_probe_count"] == len(EXPECTED_PROBES), "MORIARTY did not execute complete fixed-probe set")
 
     probe_results = report["probe_results"]
-    result_fields = {"probe_id", "ok", "exit_code", "stdout_sha256", "stderr_sha256", "stdout_bytes", "stderr_bytes"}
+    result_fields = {"probe_id", "ok", "exit_code", "failure_kind", "stdout_sha256", "stderr_sha256", "stdout_bytes", "stderr_bytes", "stdout_truncated", "stderr_truncated"}
     require(isinstance(probe_results, list) and len(probe_results) == len(EXPECTED_PROBES), "MORIARTY report probe result count drift")
     require({item.get("probe_id") for item in probe_results if isinstance(item, dict)} == set(EXPECTED_PROBES), "MORIARTY report probe set drift")
     for item in probe_results:
@@ -645,10 +772,20 @@ def validate_report_common(report: dict[str, Any], target: str) -> None:
         require(type(item["ok"]) is bool, "MORIARTY probe result ok must be boolean")
         exit_code = item["exit_code"]
         require(exit_code is None or (type(exit_code) is int and -2147483648 <= exit_code <= 2147483647), "MORIARTY probe exit code invalid")
+        failure_kind = item["failure_kind"]
+        require(failure_kind in {None, "exit_nonzero", "timeout", "tool_error"}, "MORIARTY probe failure kind invalid")
+        require(type(item["stdout_truncated"]) is bool and type(item["stderr_truncated"]) is bool, "MORIARTY truncation flags must be boolean")
         if item["ok"]:
-            require(exit_code == 0, "MORIARTY successful probe lacks zero exit code")
+            require(exit_code == 0 and failure_kind is None, "MORIARTY successful probe exit/failure semantics invalid")
+            require(not item["stdout_truncated"] and not item["stderr_truncated"], "successful probe cannot be truncated")
+        elif failure_kind == "exit_nonzero":
+            require(type(exit_code) is int and exit_code != 0, "exit_nonzero probe lacks nonzero exit")
         else:
-            require(exit_code is None or exit_code != 0, "MORIARTY failed probe reports zero exit code")
+            require(exit_code is None, "timeout/tool_error probe must not expose an exit code")
+        for stream in ("stdout", "stderr"):
+            if item[f"{stream}_truncated"]:
+                require(item[f"{stream}_bytes"] == moriarty.MAX_PROBE_OUTPUT_BYTES, f"truncated {stream} did not stop at byte bound")
+                require(failure_kind == "tool_error", f"truncated {stream} must be a tool_error")
         for digest in ("stdout_sha256", "stderr_sha256"):
             require(isinstance(item[digest], str) and moriarty.SHA256_REF_RE.fullmatch(item[digest]) is not None, f"MORIARTY probe digest invalid: {digest}")
         for size in ("stdout_bytes", "stderr_bytes"):
@@ -693,6 +830,9 @@ def failure_diagnostic(report: dict[str, Any]) -> str:
         {
             "probe_id": item["probe_id"],
             "exit_code": item["exit_code"],
+            "failure_kind": item["failure_kind"],
+            "stdout_truncated": item["stdout_truncated"],
+            "stderr_truncated": item["stderr_truncated"],
             "stdout_sha256": item["stdout_sha256"],
             "stderr_sha256": item["stderr_sha256"],
             "stdout_bytes": item["stdout_bytes"],
@@ -722,7 +862,8 @@ def failure_diagnostic(report: dict[str, Any]) -> str:
 
 def execute_exact_commit_gate(target: str, report_dir: Path | None) -> None:
     require(git_head() == target, "Phase 9 target commit does not match checked-out HEAD")
-    require(moriarty.tracked_tree_clean(), "Phase 9 target tracked tree is dirty before runner")
+    require(moriarty.tracked_tree_clean(), "Phase 9 target tracked tree/index flags are dirty before runner")
+    require(moriarty.harness_files_match_target(target, ("tools/validate_phase9_gate.py",)), "Phase 9 executed harness bytes differ from target")
     registry = load("fixtures/phase9/accepted-counterexamples.json")
     if report_dir is None:
         report_dir = Path(tempfile.mkdtemp(prefix="qsol-fed-moriarty-report-"))
@@ -783,6 +924,7 @@ def main() -> None:
     validate_counterexample_negative_tests(target)
     validate_isolation_negative_tests(target)
     validate_kernel_write_denial()
+    validate_kernel_network_and_proc_denial()
     execute_exact_commit_gate(target, Path(args.report_dir).resolve() if args.report_dir else None)
     print(
         f"phase9 MORIARTY/1 gate OK for exact commit {target}: "

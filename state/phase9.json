@@ -51,7 +51,10 @@
     "tool_exec_via_open_descriptor": true,
     "cargo_home_cache_only": true,
     "cargo_target_outside_source": true,
-    "report_output_external_private_exclusive": true
+    "report_output_external_private_exclusive": true,
+    "probe_network_syscalls_denied": true,
+    "probe_proc_read_isolated": true,
+    "rust_toolchain_runtime_staged": true
   },
   "attack_families": [
     "canonical_parser_differentials",
@@ -84,7 +87,9 @@
     "cargo_mode": "frozen",
     "shared_probe_failure_implies_specific_attack": false,
     "cargo_lockfile_committed": true,
-    "cargo_user_config_inherited": false
+    "cargo_user_config_inherited": false,
+    "cargo_home_per_probe": true,
+    "cargo_registry_archives_verified_against_lock": true
   },
   "counterexample_policy": {
     "accepted_schema": "moriarty-counterexample/1",
@@ -129,7 +134,9 @@
     "no_counterexample_found_implies_none_exist": false,
     "authority_effect": "none",
     "generated_report_nested_schema_validated": true,
-    "report_persisted_for_ci_artifact_upload": true
+    "report_persisted_for_ci_artifact_upload": true,
+    "probe_failure_kind_persisted": true,
+    "probe_output_truncation_persisted": true
   },
-  "phase9_gate": "For the exact clean checked-out commit, MORIARTY/1 exports only tracked bytes from the requested commit into a read-only private source tree; untracked repository inputs are excluded. Python, Git, Cargo, and rustc are executed through already-open validated executable descriptors while preserving the intended argv[0]. Cargo uses the committed Cargo.lock with cargo test --all-targets --frozen, a cache-only private CARGO_HOME with no ambient user configuration or credentials, and CARGO_TARGET_DIR outside the source export. The constitutional gate, every historical Phase 0-8 gate, and all accepted regressions execute under bounded process-group-isolated probes. Resolved findings must reproduce the recorded failure at target_commit and pass the same single fixed probe at resolution_commit; the counterexample identity remains stable across resolution. Reports are closed nested structures published exclusively to a private external directory without following a pre-existing destination. No unresolved reproducible counterexample or failed fixed probe may cross graduation. MORIARTY adds assurance only and does not promote the Phase 8 capability surface."
+  "phase9_gate": "For the exact clean checked-out commit, MORIARTY/1 materializes tracked bytes directly from pinned Git archive output and runs each fixed probe from its own exact export. Linux Landlock enforces read/execute and write allowlists, exposes only the probe's own /proc PID subtree, and seccomp denies socket/network syscalls for the probe and descendants. Python is privately staged; Rustup toolchains are resolved to concrete Cargo/rustc and the complete bin/lib runtime is privately staged before adversarial execution. Cargo uses the committed lockfile, verified registry .crate archives, no ambient unpacked registry source, a fresh per-probe Cargo home, frozen offline resolution, and an external target directory. Resolved findings replay fail-before/pass-after with independent exports and Cargo state. Bounded reports persist failure kind and truncation metadata. No unresolved reproducible counterexample or failed fixed probe may cross graduation. MORIARTY adds assurance only and does not promote the Phase 8 capability surface."
 }
