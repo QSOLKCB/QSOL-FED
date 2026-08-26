@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Run the previous one-shot Sol transformer with one deterministic rewrite fix."""
+"""Run the original one-shot Sol transformer with one deterministic rewrite fix."""
 from __future__ import annotations
 
 import subprocess
 from pathlib import Path
 
+ORIGINAL_TRANSFORMER_COMMIT = "07295c49a50e272006a5470b2d6b9f20b67fb975"
 previous = subprocess.run(
-    ["git", "show", "HEAD^:tools/apply_phase9_codex_round2.py"],
+    ["git", "show", f"{ORIGINAL_TRANSFORMER_COMMIT}:tools/apply_phase9_codex_round2.py"],
     check=True,
     stdout=subprocess.PIPE,
 ).stdout.decode("utf-8", errors="strict")
