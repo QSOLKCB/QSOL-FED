@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qsol.example/schemas/moriarty-report-v1.schema.json",
+  "title": "MORIARTY/1 exact-commit graduation report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "protocol",
+    "target_commit",
+    "corpus_ref",
+    "operator_profile",
+    "family_count",
+    "executed_probe_count",
+    "probe_results",
+    "counterexamples",
+    "unresolved_counterexamples",
+    "graduated",
+    "production_credentials_used",
+    "production_targets_used",
+    "constitutional_bypass_used",
+    "security_proof",
+    "no_counterexample_found_implies_none_exist",
+    "authority_effect"
+  ],
+  "properties": {
+    "schema": {"const": "moriarty-report/1"},
+    "protocol": {"const": "MORIARTY/1"},
+    "target_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "corpus_ref": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "operator_profile": {"const": "provider-neutral-fixed-probe/1"},
+    "family_count": {"const": 15},
+    "executed_probe_count": {"type": "integer", "minimum": 1, "maximum": 128},
+    "probe_results": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["probe_id", "ok", "exit_code", "stdout_sha256", "stderr_sha256", "stdout_bytes", "stderr_bytes"],
+        "properties": {
+          "probe_id": {"type": "string", "pattern": "^[a-z0-9_]{1,64}$"},
+          "ok": {"type": "boolean"},
+          "exit_code": {"type": ["integer", "null"]},
+          "stdout_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+          "stderr_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+          "stdout_bytes": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+          "stderr_bytes": {"type": "integer", "minimum": 0, "maximum": 9007199254740991}
+        }
+      }
+    },
+    "counterexamples": {
+      "type": "array",
+      "maxItems": 1024,
+      "items": {"$ref": "moriarty-counterexample-v1.schema.json"}
+    },
+    "unresolved_counterexamples": {"type": "integer", "minimum": 0, "maximum": 1024},
+    "graduated": {"type": "boolean"},
+    "production_credentials_used": {"const": false},
+    "production_targets_used": {"const": false},
+    "constitutional_bypass_used": {"const": false},
+    "security_proof": {"const": false},
+    "no_counterexample_found_implies_none_exist": {"const": false},
+    "authority_effect": {"const": "none"}
+  }
+}
