@@ -29,6 +29,7 @@ from moriarty_isolation import (  # noqa: E402
     create_exact_export,
     create_isolated_cargo_home,
     proc_fd_path,
+    stage_executable_from_fd,
     write_report_exclusive,
 )
 
@@ -292,8 +293,13 @@ def git_is_ancestor(ancestor: str, descendant: str) -> bool:
     return git("merge-base", "--is-ancestor", ancestor, descendant).returncode == 0
 
 
-def _probe_environment(home: Path, cargo_home: Path, target_dir: Path) -> dict[str, str]:
-    return {
+def _probe_environment(
+    home: Path,
+    cargo_home: Path,
+    target_dir: Path,
+    rustc_path: Path | None = None,
+) -> dict[str, str]:
+    environment = {
         "PATH": "/usr/bin:/bin",
         "HOME": str(home),
         "CARGO_HOME": str(cargo_home),
@@ -301,14 +307,15 @@ def _probe_environment(home: Path, cargo_home: Path, target_dir: Path) -> dict[s
         "CARGO_TARGET_DIR": str(target_dir),
         "CARGO_NET_OFFLINE": "true",
         "CARGO_TERM_COLOR": "never",
-        "RUSTC": proc_fd_path(RUSTC_TRUSTED.fd),
         "RUST_BACKTRACE": "0",
         "PYTHONNOUSERSITE": "1",
         "PYTHONDONTWRITEBYTECODE": "1",
         "LANG": "C.UTF-8",
         "LC_ALL": "C.UTF-8",
     }
-
+    if rustc_path is not None:
+        environment["RUSTC"] = str(rustc_path)
+    return environment
 
 def validate_attack_corpus(corpus: dict[str, Any]) -> list[dict[str, Any]]:
     if (
@@ -534,16 +541,22 @@ def run_probe(
     trusted = PROBE_EXECUTABLES[probe_id]
     if not trusted_executable_matches(trusted):
         return _probe_failure_result(probe_id, "tool_error", b"trusted_executable_fd_invalid_before_probe")
-    if probe_id == "rust_all" and not trusted_executable_matches(RUSTC_TRUSTED):
-        return _probe_failure_result(probe_id, "tool_error", b"trusted_rustc_fd_invalid_before_probe")
-    pass_fds = (trusted.fd,) if probe_id != "rust_all" else (trusted.fd, RUSTC_TRUSTED.fd)
+    rustc_path: Path | None = None
+    if probe_id == "rust_all":
+        if not trusted_executable_matches(RUSTC_TRUSTED):
+            return _probe_failure_result(probe_id, "tool_error", b"trusted_rustc_fd_invalid_before_probe")
+        rustc_path = stage_executable_from_fd(
+            RUSTC_TRUSTED.fd,
+            target_dir.parent / f"toolchain-{target_dir.name}" / "rustc",
+        )
+    pass_fds = (trusted.fd,)
     try:
         process = subprocess.Popen(
             list(argv),
             executable=proc_fd_path(trusted.fd),
             pass_fds=pass_fds,
             cwd=source_root,
-            env=_probe_environment(home, cargo_home, target_dir),
+            env=_probe_environment(home, cargo_home, target_dir, rustc_path),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             start_new_session=True,

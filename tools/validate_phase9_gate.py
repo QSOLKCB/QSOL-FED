@@ -314,7 +314,7 @@ def validate_runner_source() -> None:
         "provider-neutral-fixed-probe/1", "moriarty-counterexample/1", "moriarty-report/1",
         "PROBES: dict[str, tuple[str, ...]]", "PROBE_EXECUTABLES", "TrustedExecutable",
         "proc_fd_path(trusted.fd)", "pass_fds=pass_fds", "create_exact_export",
-        "create_isolated_cargo_home", "write_report_exclusive", "--frozen", "candidate",
+        "create_isolated_cargo_home", "stage_executable_from_fd", "write_report_exclusive", "--frozen", "candidate",
         "tracked_tree_clean", "start_new_session=True", "selectors.DefaultSelector",
         "MAX_PROBE_OUTPUT_BYTES", "git_commit_exists", "git_is_ancestor",
         "moriarty_counterexample_attack_not_in_corpus", "moriarty_resolution_commit_missing",
