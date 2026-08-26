@@ -6,37 +6,10 @@ on:
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  apply-phase9-ci-fix:
-    if: github.event_name == 'pull_request' && github.event.pull_request.number == 13
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: agent/phase9-moriarty-graduation
-          fetch-depth: 0
-          persist-credentials: true
-      - name: Apply and clean Phase 9 CI fix
-        run: |
-          python3 tools/apply_phase9_codex_round2.py
-          python3 -m py_compile tools/moriarty_isolation.py
-          git show HEAD^:.github/workflows/ci.yml > .github/workflows/ci.yml
-          git rm -f .github/workflows/apply-phase9-ci-fix.yml tools/apply_phase9_codex_round2.py
-          rm -rf tools/__pycache__
-          git diff --check
-      - name: Commit clean source fix
-        run: |
-          git config user.name "Trent Slade"
-          git config user.email "73952179+EmergentMonk@users.noreply.github.com"
-          git add .github/workflows/ci.yml tools/moriarty_isolation.py
-          git diff --cached --check
-          git commit -m "Fix target-specific Cargo archive authentication"
-          git push origin HEAD:agent/phase9-moriarty-graduation
-
   constitutional-contract:
-    if: github.event_name != 'pull_request' || github.event.pull_request.number != 13
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
