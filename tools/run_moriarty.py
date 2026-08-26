@@ -5,9 +5,16 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
+import pwd
 import re
+import selectors
+import signal
+import stat
 import subprocess
 import sys
+import tempfile
+import time
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -27,23 +34,72 @@ OPERATOR_PROFILE = "provider-neutral-fixed-probe/1"
 TARGET_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_REF_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 TIMEOUT_SECONDS = 300
+MAX_PROBE_OUTPUT_BYTES = 1_048_576
+MAX_ACCEPTED_COUNTEREXAMPLES = 32
+MAX_REPORT_COUNTEREXAMPLES = 48
+MAX_REPORT_BYTES = 65_536
+
+if os.name != "posix":
+    raise SystemExit("moriarty_requires_posix_process_group_isolation")
+
+REAL_HOME = Path(pwd.getpwuid(os.getuid()).pw_dir).resolve()
+
+
+def fail(message: str) -> NoReturn:
+    raise SystemExit(message)
+
+
+def _trusted_executable(name: str, *, preferred: Path | None = None) -> str:
+    candidates: list[Path] = []
+    if preferred is not None:
+        candidates.append(preferred)
+    candidates.extend([
+        Path("/usr/local/cargo/bin") / name,
+        Path("/usr/local/bin") / name,
+        Path("/usr/bin") / name,
+        Path("/bin") / name,
+        REAL_HOME / ".cargo" / "bin" / name,
+    ])
+    for candidate in candidates:
+        try:
+            path = candidate.resolve(strict=True)
+        except OSError:
+            continue
+        if not path.is_file() or not os.access(path, os.X_OK):
+            continue
+        if path == ROOT or ROOT in path.parents:
+            continue
+        try:
+            mode = path.parent.stat().st_mode
+        except OSError:
+            continue
+        if mode & stat.S_IWOTH:
+            continue
+        return str(path)
+    fail(f"moriarty_trusted_executable_unavailable:{name}")
+
+
+PYTHON_EXE = _trusted_executable("python3", preferred=Path(sys.executable))
+GIT_EXE = _trusted_executable("git")
+CARGO_EXE = _trusted_executable("cargo")
+RUSTC_EXE = _trusted_executable("rustc")
 
 # Source-owned and closed. An external/model candidate finding must be reduced to
 # one of these deterministic local probes before it is eligible for the accepted registry.
 PROBES: dict[str, tuple[str, ...]] = {
-    "constitution": ("python3", "tools/validate_constitution.py"),
-    "phase0": ("python3", "tools/validate_phase0_gate.py"),
-    "phase1": ("python3", "tools/validate_phase1_gate.py"),
-    "phase2": ("python3", "tools/validate_phase2_gate.py"),
-    "phase3": ("python3", "tools/validate_phase3_gate.py"),
-    "phase4": ("python3", "tools/validate_phase4_gate.py"),
-    "phase5a": ("python3", "tools/validate_phase5a_gate.py"),
-    "phase5": ("python3", "tools/validate_phase5_gate.py"),
-    "phase5c": ("python3", "tools/validate_phase5c_gate.py"),
-    "phase6": ("python3", "tools/validate_phase6_gate.py"),
-    "phase7": ("python3", "tools/validate_phase7_gate.py"),
-    "phase8": ("python3", "tools/validate_phase8_gate.py"),
-    "rust_all": ("cargo", "test", "--all-targets"),
+    "constitution": (PYTHON_EXE, "tools/validate_constitution.py"),
+    "phase0": (PYTHON_EXE, "tools/validate_phase0_gate.py"),
+    "phase1": (PYTHON_EXE, "tools/validate_phase1_gate.py"),
+    "phase2": (PYTHON_EXE, "tools/validate_phase2_gate.py"),
+    "phase3": (PYTHON_EXE, "tools/validate_phase3_gate.py"),
+    "phase4": (PYTHON_EXE, "tools/validate_phase4_gate.py"),
+    "phase5a": (PYTHON_EXE, "tools/validate_phase5a_gate.py"),
+    "phase5": (PYTHON_EXE, "tools/validate_phase5_gate.py"),
+    "phase5c": (PYTHON_EXE, "tools/validate_phase5c_gate.py"),
+    "phase6": (PYTHON_EXE, "tools/validate_phase6_gate.py"),
+    "phase7": (PYTHON_EXE, "tools/validate_phase7_gate.py"),
+    "phase8": (PYTHON_EXE, "tools/validate_phase8_gate.py"),
+    "rust_all": (CARGO_EXE, "test", "--all-targets", "--offline"),
 }
 
 EXPECTED_FAMILIES = {
@@ -65,10 +121,6 @@ EXPECTED_FAMILIES = {
 }
 
 
-def fail(message: str) -> NoReturn:
-    raise SystemExit(message)
-
-
 def load_json(path: Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -87,10 +139,21 @@ def bytes_ref(value: bytes) -> str:
     return "sha256:" + hashlib.sha256(value).hexdigest()
 
 
+def _git_env() -> dict[str, str]:
+    return {
+        "PATH": os.pathsep.join(sorted({str(Path(GIT_EXE).parent), "/usr/bin", "/bin"})),
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+    }
+
+
 def git(*args: str) -> subprocess.CompletedProcess[bytes]:
     return subprocess.run(
-        ["git", *args],
+        [GIT_EXE, *args],
         cwd=ROOT,
+        env=_git_env(),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
@@ -110,12 +173,48 @@ def git_head() -> str:
     return head
 
 
+def tracked_tree_clean() -> bool:
+    return (
+        git("diff", "--quiet", "HEAD", "--").returncode == 0
+        and git("diff", "--cached", "--quiet", "--").returncode == 0
+    )
+
+
 def git_commit_exists(commit: str) -> bool:
     return bool(TARGET_RE.fullmatch(commit)) and git("cat-file", "-e", f"{commit}^{{commit}}").returncode == 0
 
 
 def git_is_ancestor(ancestor: str, descendant: str) -> bool:
     return git("merge-base", "--is-ancestor", ancestor, descendant).returncode == 0
+
+
+def _probe_environment(home: Path) -> dict[str, str]:
+    cargo_home = REAL_HOME / ".cargo"
+    for credentials in (cargo_home / "credentials", cargo_home / "credentials.toml"):
+        if credentials.exists():
+            fail("moriarty_cargo_credentials_present")
+    safe_path = os.pathsep.join(dict.fromkeys([
+        str(Path(PYTHON_EXE).parent),
+        str(Path(CARGO_EXE).parent),
+        str(Path(RUSTC_EXE).parent),
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+    ]))
+    return {
+        "PATH": safe_path,
+        "HOME": str(home),
+        "CARGO_HOME": str(cargo_home),
+        "RUSTUP_HOME": str(REAL_HOME / ".rustup"),
+        "CARGO_NET_OFFLINE": "true",
+        "CARGO_TERM_COLOR": "never",
+        "RUSTC": RUSTC_EXE,
+        "RUST_BACKTRACE": "0",
+        "PYTHONNOUSERSITE": "1",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+    }
 
 
 def validate_attack_corpus(corpus: dict[str, Any]) -> list[dict[str, Any]]:
@@ -247,7 +346,7 @@ def validate_registry(
     ):
         fail("moriarty_counterexample_registry_boundary_invalid")
     counterexamples = registry.get("counterexamples")
-    if not isinstance(counterexamples, list) or len(counterexamples) > 1024:
+    if not isinstance(counterexamples, list) or len(counterexamples) > MAX_ACCEPTED_COUNTEREXAMPLES:
         fail("moriarty_counterexample_registry_count_invalid")
 
     attack_by_id = {attack["id"]: attack for attack in attacks}
@@ -298,38 +397,116 @@ def validate_registry(
     return counterexamples
 
 
-def run_probe(probe_id: str) -> dict[str, Any]:
+def _kill_process_group(process: subprocess.Popen[bytes]) -> None:
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+
+
+def _probe_failure_result(probe_id: str, kind: str, diagnostic: bytes) -> dict[str, Any]:
+    return {
+        "probe_id": probe_id,
+        "ok": False,
+        "exit_code": None,
+        "failure_kind": kind,
+        "stdout_sha256": bytes_ref(b""),
+        "stderr_sha256": bytes_ref(diagnostic),
+        "stdout_bytes": 0,
+        "stderr_bytes": len(diagnostic),
+    }
+
+
+def run_probe(probe_id: str, home: Path) -> dict[str, Any]:
+    if not tracked_tree_clean():
+        return _probe_failure_result(probe_id, "tool_error", b"tracked_tree_dirty_before_probe")
+
     argv = PROBES[probe_id]
     try:
-        completed = subprocess.run(
-            list(argv), cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            timeout=TIMEOUT_SECONDS, check=False,
+        process = subprocess.Popen(
+            list(argv),
+            cwd=ROOT,
+            env=_probe_environment(home),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
+            bufsize=0,
         )
-        return {
-            "probe_id": probe_id,
-            "ok": completed.returncode == 0,
-            "exit_code": completed.returncode,
-            "failure_kind": None if completed.returncode == 0 else "exit_nonzero",
-            "stdout_sha256": bytes_ref(completed.stdout),
-            "stderr_sha256": bytes_ref(completed.stderr),
-            "stdout_bytes": len(completed.stdout),
-            "stderr_bytes": len(completed.stderr),
-        }
-    except subprocess.TimeoutExpired as exc:
-        stdout = exc.stdout if isinstance(exc.stdout, bytes) else b""
-        stderr = exc.stderr if isinstance(exc.stderr, bytes) else b""
-        return {
-            "probe_id": probe_id, "ok": False, "exit_code": None, "failure_kind": "timeout",
-            "stdout_sha256": bytes_ref(stdout), "stderr_sha256": bytes_ref(stderr),
-            "stdout_bytes": len(stdout), "stderr_bytes": len(stderr),
-        }
     except OSError as exc:
-        encoded = str(exc).encode("utf-8", errors="replace")
-        return {
-            "probe_id": probe_id, "ok": False, "exit_code": None, "failure_kind": "tool_error",
-            "stdout_sha256": bytes_ref(b""), "stderr_sha256": bytes_ref(encoded),
-            "stdout_bytes": 0, "stderr_bytes": len(encoded),
-        }
+        return _probe_failure_result(probe_id, "tool_error", str(exc).encode("utf-8", errors="replace"))
+
+    assert process.stdout is not None and process.stderr is not None
+    selector = selectors.DefaultSelector()
+    selector.register(process.stdout, selectors.EVENT_READ, "stdout")
+    selector.register(process.stderr, selectors.EVENT_READ, "stderr")
+    digests = {"stdout": hashlib.sha256(), "stderr": hashlib.sha256()}
+    counts = {"stdout": 0, "stderr": 0}
+    deadline = time.monotonic() + TIMEOUT_SECONDS
+    failure_kind: str | None = None
+
+    try:
+        while selector.get_map():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 and failure_kind is None:
+                failure_kind = "timeout"
+                _kill_process_group(process)
+            events = selector.select(timeout=max(0.0, min(0.1, remaining)) if failure_kind is None else 0.1)
+            for key, _ in events:
+                stream_name = key.data
+                chunk = os.read(key.fileobj.fileno(), 65_536)
+                if not chunk:
+                    selector.unregister(key.fileobj)
+                    key.fileobj.close()
+                    continue
+                counts[stream_name] += len(chunk)
+                digests[stream_name].update(chunk)
+                if counts[stream_name] > MAX_PROBE_OUTPUT_BYTES and failure_kind is None:
+                    failure_kind = "tool_error"
+                    _kill_process_group(process)
+            if process.poll() is not None and not events:
+                time.sleep(0.01)
+        remaining = max(0.0, deadline - time.monotonic())
+        try:
+            return_code = process.wait(timeout=remaining)
+        except subprocess.TimeoutExpired:
+            failure_kind = failure_kind or "timeout"
+            _kill_process_group(process)
+            process.wait(timeout=1)
+            return_code = None
+    except subprocess.TimeoutExpired:
+        failure_kind = failure_kind or "timeout"
+        _kill_process_group(process)
+        return_code = None
+    finally:
+        selector.close()
+        for stream in (process.stdout, process.stderr):
+            try:
+                stream.close()
+            except OSError:
+                pass
+
+    if not tracked_tree_clean():
+        return _probe_failure_result(probe_id, "tool_error", b"tracked_tree_dirty_after_probe")
+    if counts["stdout"] > MAX_PROBE_OUTPUT_BYTES or counts["stderr"] > MAX_PROBE_OUTPUT_BYTES:
+        failure_kind = "tool_error"
+
+    if failure_kind is None and return_code == 0:
+        ok = True
+    else:
+        ok = False
+        if failure_kind is None:
+            failure_kind = "exit_nonzero"
+
+    return {
+        "probe_id": probe_id,
+        "ok": ok,
+        "exit_code": return_code if failure_kind == "exit_nonzero" or ok else None,
+        "failure_kind": failure_kind,
+        "stdout_sha256": "sha256:" + digests["stdout"].hexdigest(),
+        "stderr_sha256": "sha256:" + digests["stderr"].hexdigest(),
+        "stdout_bytes": counts["stdout"],
+        "stderr_bytes": counts["stderr"],
+    }
 
 
 def generated_counterexample(target: str, attack: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
@@ -380,6 +557,8 @@ def main() -> int:
         fail("moriarty_target_commit_invalid")
     if git_head() != target:
         fail("moriarty_target_commit_does_not_match_checkout")
+    if not tracked_tree_clean():
+        fail("moriarty_target_tracked_tree_dirty")
 
     corpus = load_json(ROOT / "fixtures/phase9/attack-corpus.json")
     attacks = validate_attack_corpus(corpus)
@@ -399,16 +578,32 @@ def main() -> int:
             seen_probes.add(probe_id)
             ordered_probe_ids.append(probe_id)
 
-    results = {probe_id: run_probe(probe_id) for probe_id in ordered_probe_ids}
-    generated: list[dict[str, Any]] = []
+    probe_users: dict[str, list[dict[str, Any]]] = {probe_id: [] for probe_id in ordered_probe_ids}
     for attack in attacks:
         for probe_id in attack["probe_ids"]:
-            result = results[probe_id]
-            if not result["ok"]:
-                generated.append(generated_counterexample(target, attack, result))
+            probe_users.setdefault(probe_id, []).append(attack)
+
+    with tempfile.TemporaryDirectory(prefix="qsol-fed-moriarty-home-") as home_dir:
+        home = Path(home_dir)
+        results = {probe_id: run_probe(probe_id, home) for probe_id in ordered_probe_ids}
+
+    generated: list[dict[str, Any]] = []
+    for probe_id, result in results.items():
+        if result["ok"]:
+            continue
+        owners = probe_users.get(probe_id, [])
+        # Shared infrastructure/regression probes block graduation through the
+        # probe result, but they do not fabricate family-specific findings.
+        if len(owners) == 1 and result["failure_kind"] in {"exit_nonzero", "timeout", "tool_error"}:
+            generated.append(generated_counterexample(target, owners[0], result))
 
     unresolved_accepted = [item for item in accepted if item["status"] == "unresolved"]
     unresolved_count = len(unresolved_accepted) + len(generated)
+    all_probes_ok = all(result["ok"] for result in results.values())
+
+    if git_head() != target or not tracked_tree_clean():
+        fail("moriarty_target_changed_during_probes")
+
     report = {
         "schema": REPORT_SCHEMA,
         "protocol": PROTOCOL,
@@ -420,7 +615,7 @@ def main() -> int:
         "probe_results": [report_probe_result(results[probe_id]) for probe_id in ordered_probe_ids],
         "counterexamples": accepted + generated,
         "unresolved_counterexamples": unresolved_count,
-        "graduated": unresolved_count == 0,
+        "graduated": unresolved_count == 0 and all_probes_ok,
         "production_credentials_used": False,
         "production_targets_used": False,
         "constitutional_bypass_used": False,
@@ -429,11 +624,17 @@ def main() -> int:
         "authority_effect": "none",
     }
 
+    if len(report["counterexamples"]) > MAX_REPORT_COUNTEREXAMPLES:
+        fail("moriarty_report_counterexample_count_exceeded")
+    encoded = serialize(report).encode("utf-8")
+    if len(encoded) > MAX_REPORT_BYTES:
+        fail("moriarty_report_size_exceeded")
+
     output = Path(args.output)
     if not output.is_absolute():
         output = ROOT / output
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_bytes(serialize(report).encode("utf-8"))
+    output.write_bytes(encoded)
 
     if report["graduated"]:
         print(
@@ -444,7 +645,8 @@ def main() -> int:
         return 0
     print(
         f"MORIARTY/1 blocked exact commit {target}: "
-        f"{unresolved_count} unresolved reproducible counterexample(s); report={output}",
+        f"{unresolved_count} unresolved reproducible counterexample(s), "
+        f"{sum(not result['ok'] for result in results.values())} failed probe(s); report={output}",
         file=sys.stderr,
     )
     return 1
