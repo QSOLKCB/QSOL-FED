@@ -578,20 +578,43 @@ def validate_kernel_write_denial() -> None:
         victim = forbidden / "victim.txt"
         victim.write_text("original", encoding="utf-8")
         os.chmod(victim, 0o400)
-        pid = os.fork()
-        if pid == 0:
-            try:
-                moriarty.apply_landlock_write_policy((allowed,))
-                os.chmod(victim, 0o600)
-                try:
-                    victim.write_text("changed", encoding="utf-8")
-                except PermissionError:
-                    os._exit(0)
-                os._exit(2)
-            except BaseException:
-                os._exit(3)
-        _, status = os.waitpid(pid, 0)
-        require(os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0, "MORIARTY Landlock write-denial regression failed")
+        program = r'''
+import os
+import sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+import moriarty_isolation as isolation
+allowed = Path(sys.argv[2])
+victim = Path(sys.argv[3])
+isolation.apply_landlock_write_policy((allowed,))
+os.chmod(victim, 0o600)
+try:
+    victim.write_text("changed", encoding="utf-8")
+except PermissionError:
+    raise SystemExit(0)
+raise SystemExit(2)
+'''
+        completed = subprocess.run(
+            [sys.executable, "-I", "-c", program, str(TOOLS), str(allowed), str(victim)],
+            cwd=ROOT,
+            env={
+                "PATH": "/usr/bin:/bin",
+                "HOME": str(root),
+                "PYTHONNOUSERSITE": "1",
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "LANG": "C.UTF-8",
+                "LC_ALL": "C.UTF-8",
+            },
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=10,
+        )
+        require(
+            completed.returncode == 0,
+            "MORIARTY Landlock write-denial regression failed: "
+            + completed.stderr.decode("utf-8", errors="replace")[:256],
+        )
         require(victim.read_text(encoding="utf-8") == "original", "MORIARTY Landlock victim changed")
 
 
