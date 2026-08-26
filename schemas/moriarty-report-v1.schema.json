@@ -52,10 +52,10 @@
     },
     "counterexamples": {
       "type": "array",
-      "maxItems": 1024,
+      "maxItems": 48,
       "items": {"$ref": "moriarty-counterexample-v1.schema.json"}
     },
-    "unresolved_counterexamples": {"type": "integer", "minimum": 0, "maximum": 1024},
+    "unresolved_counterexamples": {"type": "integer", "minimum": 0, "maximum": 48},
     "graduated": {"type": "boolean"},
     "production_credentials_used": {"const": false},
     "production_targets_used": {"const": false},
