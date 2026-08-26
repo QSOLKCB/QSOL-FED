@@ -28,19 +28,26 @@ The current capability surface therefore remains `claims/phase8.json`. MORIARTY 
 
 The harness receives only the checked-out public repository, repository-owned disposable fixtures, and an exact Git commit identity. It receives no production credentials, production targets, private infrastructure addresses, arbitrary operator-selected commands, operator-selected URLs or sockets, secret-bearing semantic state, constitutional bypass, or runtime authority handle.
 
-The attack corpus contains **probe IDs**, not command strings. `tools/run_moriarty.py` owns the fixed mapping from those IDs to reviewed repository commands. Unknown probe IDs fail closed.
+The attack corpus contains **probe IDs**, not command strings. `tools/run_moriarty.py` owns the fixed mapping from those IDs to reviewed repository commands. Unknown probe IDs fail closed, and the Phase 9 validator checks each ID-to-argv mapping rather than merely checking that the ID appears in source.
 
-The reference runner uses `subprocess.run` with an argv list and never invokes a shell. It does not execute semantic payload content, contact an operator-selected network target, or accept a command-line flag that supplies a command, URL, host, credential, or token.
+The runner resolves Python, Git, Cargo, and rustc to absolute executables outside the repository. Probe subprocesses receive an allowlisted environment rather than inheriting arbitrary caller variables: semantic credentials, proxy settings, execution wrappers, `PYTHONPATH`, and similar ambient controls are absent. Cargo credentials are rejected if present.
 
-## Exact-commit binding
+The reference runner uses no shell. Every probe is started in its own process group. A timeout or output-bound failure terminates the complete group so surviving descendants cannot keep consuming resources or mutate the checkout after the result is recorded. Standard output and error are hashed incrementally and capped at 1,048,576 bytes per stream rather than buffered without limit.
+
+The Rust regression probe runs `cargo test --all-targets --offline` with `CARGO_NET_OFFLINE=true`. It may use the local Cargo cache but cannot contact a registry or Git dependency source during MORIARTY execution. QSOL-FED does not currently carry a committed `Cargo.lock`, so Phase 9 does not pretend `--frozen` is available; adding a reviewed lockfile is the path to a later locked-and-offline probe.
+
+## Exact-commit and clean-tree binding
 
 A MORIARTY run must satisfy:
 
 ```text
 git rev-parse HEAD == requested target_commit
+tracked index/worktree == clean relative to HEAD
 ```
 
-The CI checkout explicitly selects the pull-request head SHA on pull requests and `github.sha` on pushes. The Phase 9 workflow then passes that same value to the gate. This avoids GitHub's synthetic PR merge commit when making an exact-commit assurance statement.
+The clean-tree check runs before probes, around each probe, and before the final report. Untracked build outputs such as `target/` are not part of the exact-commit claim; tracked validator or probe changes are. A dirty tracked tree cannot graduate an unchanged Git SHA.
+
+The CI checkout explicitly selects the pull-request head SHA on pull requests and `github.sha` on pushes, fetches complete history for remediation ancestry checks, and removes persisted checkout credentials. This avoids GitHub's synthetic PR merge commit when making an exact-commit assurance statement.
 
 The report is ephemeral evidence for the commit that actually ran. For the Phase 10 handoff, the relevant target is the exact merged `main` commit whose own push workflow is green.
 
@@ -82,7 +89,9 @@ phase8
 rust_all
 ```
 
-The runner deduplicates probe IDs, so the exact commit executes the constitutional validator, every historical Phase 0-8 gate, and `cargo test --all-targets` once even though multiple attack families share regressions.
+The runner deduplicates probe IDs, so the exact commit executes the constitutional validator, every historical Phase 0-8 gate, and the Rust all-targets suite once even though multiple attack families share regressions.
+
+A shared probe failure is **not** automatically a family-specific security finding. For example, a compile failure in `rust_all`, which is shared by all families, blocks graduation through its failed probe result but does not create fifteen fictional counterexamples. A generated `moriarty-counterexample/1` is created automatically only when the failing fixed probe is uniquely attributable to one attack family. Ambiguous failures remain failed probe evidence until a dedicated local reproduction establishes attribution.
 
 ## Reproducible counterexamples
 
@@ -115,7 +124,9 @@ For a resolved record, `resolution_commit is the fix commit`. The runner verifie
 3. the fix commit descends from the vulnerable finding target;
 4. the fix commit is itself an ancestor of the exact commit currently being reviewed.
 
-A syntactically plausible but nonexistent SHA is therefore not remediation evidence. An unresolved accepted finding blocks graduation.
+A syntactically plausible but nonexistent SHA is therefore not remediation evidence. An unresolved accepted finding blocks graduation, but its regression probes still execute before the final graduation decision so a fix can demonstrate that the regression has gone green.
+
+The accepted registry is capped at 32 records. Combined accepted and generated counterexamples are capped at 48 per report, and the entire canonical report is capped at 65,536 bytes. The declared registry state therefore cannot silently grow beyond the canonical report profile it is supposed to graduate under.
 
 ## External/model-assisted findings
 
@@ -138,9 +149,9 @@ The operator never gets a mechanism to add an arbitrary runtime command merely b
 
 ## Report semantics
 
-`moriarty-report/1` binds the exact target commit, canonical attack-corpus identity, provider-neutral operator profile, all executed fixed probe results, accepted and newly generated counterexamples, unresolved count, graduation Boolean, and explicit non-authority/non-proof fields.
+`moriarty-report/1` binds the exact target commit, independently rechecked canonical attack-corpus identity, provider-neutral operator profile, all executed fixed probe results, accepted and newly generated counterexamples, unresolved count, graduation Boolean, and explicit non-authority/non-proof fields.
 
-A successful report requires every fixed probe to return zero and every accepted counterexample to be resolved.
+A successful report requires every fixed probe to return zero and every accepted counterexample to be resolved. If the runner returns nonzero, the gate validates the common report structure first and emits a compact diagnostic containing failed probe IDs, exit codes, output hashes/byte counts, counterexample IDs and unresolved state before CI exits. The temporary full report need not survive for its reproduction metadata to remain visible in the job log.
 
 ```text
 production_credentials_used                 = false
@@ -153,15 +164,15 @@ authority_effect                            = none
 
 ## Graduation rule
 
-For the exact checked-out commit:
+For the exact clean checked-out commit:
 
-> No unresolved reproducible counterexample may cross a constitutional, authority, provenance, sandbox, cryptographic, replay, storage, transport, adapter, Assembly, or resource-safety boundary.
+> No unresolved reproducible counterexample and no failed fixed probe may cross a constitutional, authority, provenance, sandbox, cryptographic, replay, storage, transport, adapter, Assembly, or resource-safety boundary.
 
 This is an executable regression graduation claim, not a universal security theorem.
 
 ## Running locally
 
-From a clean checkout, bind the run to the actual commit:
+From a clean checkout with the required toolchains and local dependency cache, bind the run to the actual commit:
 
 ```bash
 TARGET="$(git rev-parse HEAD)"
