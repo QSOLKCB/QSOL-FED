@@ -1,0 +1,32 @@
+name: apply-phase9-ci-fix
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    if: github.event.pull_request.number == 13
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/phase9-moriarty-graduation
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Apply Cargo archive fix
+        run: |
+          python3 tools/apply_phase9_codex_round2.py
+          python3 -m py_compile tools/moriarty_isolation.py
+          git diff --check
+      - name: Commit source fix
+        run: |
+          git config user.name "Trent Slade"
+          git config user.email "73952179+EmergentMonk@users.noreply.github.com"
+          git add tools/moriarty_isolation.py
+          git diff --cached --quiet && { echo "No source change produced"; exit 1; }
+          git commit -m "Allow target-specific absent Cargo archives"
+          git push origin HEAD:agent/phase9-moriarty-graduation
