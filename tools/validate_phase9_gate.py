@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import copy
+import os
 import hashlib
 import json
 import re
@@ -34,7 +36,7 @@ EXPECTED_PROBES = {
     "phase6": ("tools/validate_phase6_gate.py",),
     "phase7": ("tools/validate_phase7_gate.py",),
     "phase8": ("tools/validate_phase8_gate.py",),
-    "rust_all": ("test", "--all-targets", "--offline"),
+    "rust_all": ("test", "--all-targets", "--frozen"),
 }
 HARD_FALSE_CLAIMS = {
     "oracle_holodeck_synthetic_admission",
@@ -70,9 +72,27 @@ def git_head() -> str:
     return head
 
 
-def validate_claims() -> None:
-    previous = load("claims/phase8.json")
-    current = load("claims/phase9.json")
+def _validate_claim_document(previous: dict[str, Any], current: dict[str, Any]) -> None:
+    expected_top = {
+        "document_type", "schema_version", "protocol", "wire_protocol", "phase", "gate_id",
+        "gate_status", "historical_baseline", "runtime_override_allowed", "claim_surface_changed",
+        "capabilities", "assurance", "claim_rule", "promotion_requirements",
+    }
+    expected_assurance = {
+        "moriarty_protocol", "provider_neutral", "exact_commit_binding",
+        "reproducible_counterexample_contract", "accepted_counterexample_registry",
+        "fixed_repository_probe_map", "cross_phase_regression_sweep",
+        "isolated_source_export", "committed_cargo_lock", "opened_executable_binding",
+        "cache_only_cargo_home", "exclusive_external_report_output",
+        "remediation_transition_verified", "production_credentials_used",
+        "production_targets_used", "constitutional_bypass_used", "report_is_security_proof",
+        "no_counterexample_found_means_none_exist", "authority_effect",
+    }
+    expected_promotions = {
+        "interoperable_federation", "production_networking", "remote_execution",
+        "host_level_sandbox", "oracle_holodeck_synthetic_admission",
+    }
+    require(set(current) == expected_top, "Phase 9 claim manifest field set is not closed")
     require(current.get("document_type") == "qsol-fed-phase9-moriarty-claims", "Phase 9 claim id drift")
     require(current.get("gate_id") == "qsol-fed-phase9-moriarty-gate/1", "Phase 9 gate id drift")
     require(current.get("gate_status") == "enforced", "Phase 9 gate not enforced")
@@ -83,10 +103,12 @@ def validate_claims() -> None:
     for key in HARD_FALSE_CLAIMS:
         require(current["capabilities"].get(key) is False, f"Phase 9 overclaim enabled: {key}")
     assurance = current.get("assurance")
-    require(isinstance(assurance, dict), "Phase 9 assurance block missing")
+    require(isinstance(assurance, dict) and set(assurance) == expected_assurance, "Phase 9 assurance field set is not closed")
     for key in (
         "provider_neutral", "exact_commit_binding", "reproducible_counterexample_contract",
         "accepted_counterexample_registry", "fixed_repository_probe_map", "cross_phase_regression_sweep",
+        "isolated_source_export", "committed_cargo_lock", "opened_executable_binding",
+        "cache_only_cargo_home", "exclusive_external_report_output", "remediation_transition_verified",
     ):
         require(assurance.get(key) is True, f"Phase 9 assurance drift: {key}")
     for key in (
@@ -95,10 +117,30 @@ def validate_claims() -> None:
     ):
         require(assurance.get(key) is False, f"Phase 9 assurance overclaim/bypass: {key}")
     require(assurance.get("authority_effect") == "none", "MORIARTY assurance gained authority")
+    promotions = current.get("promotion_requirements")
+    require(isinstance(promotions, dict) and set(promotions) == expected_promotions, "Phase 9 promotion requirement field set is not closed")
+
+
+def validate_claims() -> None:
+    previous = load("claims/phase8.json")
+    current = load("claims/phase9.json")
+    _validate_claim_document(previous, current)
+    malicious = copy.deepcopy(current)
+    malicious["assurance"]["security_proof"] = True
+    _expect_reject(lambda: _validate_claim_document(previous, malicious), "undeclared assurance claim")
 
 
 def validate_contract() -> None:
     state = load("state/phase9.json")
+    expected_top = {
+        "document_type", "schema_version", "protocol", "wire_protocol", "moriarty_protocol", "purpose",
+        "feature_dependency", "claim_surface_changed", "capability_baseline", "assurance_manifest",
+        "attack_corpus", "accepted_counterexample_registry", "counterexample_schema", "report_schema",
+        "attack_corpus_schema", "reference_runner", "gate_validator", "operator_model",
+        "execution_boundary", "attack_families", "probe_policy", "counterexample_policy",
+        "report_policy", "phase9_gate",
+    }
+    require(set(state) == expected_top, "Phase 9 contract top-level field set is not closed")
     require(state.get("document_type") == "qsol-fed-phase9-moriarty-contract", "Phase 9 state id drift")
     require(state.get("moriarty_protocol") == "MORIARTY/1", "MORIARTY protocol drift")
     require(state.get("feature_dependency") is False, "MORIARTY became a feature dependency")
@@ -107,6 +149,13 @@ def validate_contract() -> None:
     require(set(state.get("attack_families", [])) == EXPECTED_FAMILIES, "MORIARTY attack-family set drift")
 
     operator = state["operator_model"]
+    require(set(operator) == {
+        "provider_neutral", "reference_operator_may_be_codex", "operator_output_is_authority",
+        "operator_output_is_security_proof", "operator_may_supply_commands",
+        "operator_may_supply_repository_targets", "operator_may_supply_network_targets",
+        "operator_may_supply_credentials", "operator_may_disable_constitution",
+        "candidate_findings_require_local_reproduction",
+    }, "MORIARTY operator field set is not closed")
     for key in ("provider_neutral", "reference_operator_may_be_codex", "candidate_findings_require_local_reproduction"):
         require(operator[key] is True, f"MORIARTY operator rule drift: {key}")
     for key in (
@@ -117,12 +166,14 @@ def validate_contract() -> None:
         require(operator[key] is False, f"MORIARTY operator boundary weakened: {key}")
 
     execution = state["execution_boundary"]
-    for key in (
-        "target_is_exact_git_commit", "checked_out_head_must_equal_target",
-        "fixed_repository_probe_map", "tracked_worktree_must_be_clean",
-        "probe_environment_allowlisted", "probe_process_group_isolated",
-        "probe_output_bounded",
-    ):
+    required_true = {
+        "target_is_exact_git_commit", "checked_out_head_must_equal_target", "tracked_worktree_must_be_clean",
+        "fixed_repository_probe_map", "probe_environment_allowlisted", "probe_process_group_isolated",
+        "probe_output_bounded", "exact_source_export", "source_export_read_only",
+        "untracked_inputs_excluded", "tool_exec_via_open_descriptor", "cargo_home_cache_only",
+        "cargo_target_outside_source", "report_output_external_private_exclusive",
+    }
+    for key in required_true:
         require(execution[key] is True, f"MORIARTY exact/fixed execution boundary drift: {key}")
     for key in (
         "shell_execution", "arbitrary_command_execution", "production_credentials_allowed",
@@ -134,6 +185,9 @@ def validate_contract() -> None:
 
     probes = state["probe_policy"]
     require(probes["cargo_network_access"] is False, "MORIARTY Cargo probe regained network access")
+    require(probes["cargo_mode"] == "frozen", "MORIARTY Cargo mode is not frozen")
+    require(probes["cargo_lockfile_committed"] is True, "MORIARTY Cargo lockfile is not committed")
+    require(probes["cargo_user_config_inherited"] is False, "MORIARTY Cargo user config became ambient")
     require(probes["shared_probe_failure_implies_specific_attack"] is False, "shared probe can fabricate specific counterexample")
     require(probes["maximum_output_bytes_per_stream"] == moriarty.MAX_PROBE_OUTPUT_BYTES, "MORIARTY output bound drift")
 
@@ -144,10 +198,11 @@ def validate_contract() -> None:
         "accepted_findings_name_owning_phases", "accepted_findings_name_boundary_ids",
         "accepted_findings_name_fixed_regression_probes", "regression_probes_must_be_subset_of_attack_probes",
         "external_findings_are_candidates_only", "unresolved_accepted_finding_blocks_graduation",
-        "unresolved_regressions_execute_before_graduation_decision",
-        "resolved_finding_remains_in_registry", "resolved_finding_becomes_regression",
-        "resolution_commit_is_fix_commit", "resolution_commit_must_exist",
+        "unresolved_regressions_execute_before_graduation_decision", "resolved_finding_remains_in_registry",
+        "resolved_finding_becomes_regression", "resolution_commit_is_fix_commit", "resolution_commit_must_exist",
         "resolution_commit_descends_from_finding_target", "resolution_commit_is_in_reviewed_history",
+        "counterexample_id_stable_through_resolution", "resolved_requires_fail_before_pass_after",
+        "resolved_failure_metadata_must_reproduce",
     ):
         require(counterexamples[key] is True, f"MORIARTY counterexample policy drift: {key}")
     for key in (
@@ -162,7 +217,8 @@ def validate_contract() -> None:
         "binds_exact_target_commit", "binds_canonical_attack_corpus_identity",
         "records_probe_results_without_raw_output", "records_generated_counterexamples",
         "graduated_requires_zero_unresolved_counterexamples", "graduated_requires_all_probes_green",
-        "failed_report_metadata_exposed_before_exit",
+        "failed_report_metadata_exposed_before_exit", "generated_report_nested_schema_validated",
+        "report_persisted_for_ci_artifact_upload",
     ):
         require(report[key] is True, f"MORIARTY report policy drift: {key}")
     require(report["maximum_canonical_bytes"] == moriarty.MAX_REPORT_BYTES, "MORIARTY report byte bound drift")
@@ -189,6 +245,8 @@ def validate_schemas_and_fixtures() -> None:
         require(counter_props[key].get("const") is False, f"MORIARTY counterexample schema boundary drift: {key}")
     require(counter_props["authority_effect"].get("const") == "none", "MORIARTY counterexample schema gained authority")
     require(isinstance(counterexample_schema.get("allOf"), list), "MORIARTY counterexample conditional semantics missing")
+    require(counter_props["regression_probe_ids"].get("maxItems") == 1, "MORIARTY counterexample must bind one observed regression probe")
+    require((ROOT / "Cargo.lock").is_file(), "MORIARTY committed Cargo.lock missing")
 
     report_props = report_schema["properties"]
     require(report_props["operator_profile"].get("const") == "provider-neutral-fixed-probe/1", "MORIARTY report operator profile drift")
@@ -245,6 +303,7 @@ def validate_probe_map() -> None:
         size=moriarty.PYTHON_TRUSTED.size,
         mtime_ns=moriarty.PYTHON_TRUSTED.mtime_ns,
         mode=moriarty.PYTHON_TRUSTED.mode,
+        fd=moriarty.PYTHON_TRUSTED.fd,
     )
     require(not moriarty.trusted_executable_matches(stale), "MORIARTY executable identity negative regression failed")
 
@@ -254,13 +313,14 @@ def validate_runner_source() -> None:
     for marker in (
         "provider-neutral-fixed-probe/1", "moriarty-counterexample/1", "moriarty-report/1",
         "PROBES: dict[str, tuple[str, ...]]", "PROBE_EXECUTABLES", "TrustedExecutable",
-        "executable=trusted.executable", "candidate", "tracked_tree_clean",
-        "stat.S_IWGRP", "trusted_executable_matches", "start_new_session=True",
-        "selectors.DefaultSelector", "MAX_PROBE_OUTPUT_BYTES", "git_commit_exists",
-        "git_is_ancestor", "moriarty_counterexample_attack_not_in_corpus",
-        "moriarty_resolution_commit_missing", "production_credentials_used",
-        "production_targets_used", "constitutional_bypass_used", "security_proof",
-        "no_counterexample_found_implies_none_exist",
+        "proc_fd_path(trusted.fd)", "pass_fds=pass_fds", "create_exact_export",
+        "create_isolated_cargo_home", "write_report_exclusive", "--frozen", "candidate",
+        "tracked_tree_clean", "start_new_session=True", "selectors.DefaultSelector",
+        "MAX_PROBE_OUTPUT_BYTES", "git_commit_exists", "git_is_ancestor",
+        "moriarty_counterexample_attack_not_in_corpus", "moriarty_resolution_commit_missing",
+        "counterexample_identity_projection", "verify_resolved_counterexamples",
+        "production_credentials_used", "production_targets_used", "constitutional_bypass_used",
+        "security_proof", "no_counterexample_found_implies_none_exist",
     ):
         require(marker in source, f"MORIARTY runner marker missing: {marker}")
     require("accepted_external" not in source, "MORIARTY runner still admits accepted_external")
@@ -279,6 +339,8 @@ def validate_docs_and_ci() -> None:
         "MORIARTY REPORT != SECURITY PROOF", "NO COUNTEREXAMPLE FOUND != NO COUNTEREXAMPLE EXISTS",
         "External observations are candidates only", "resolution_commit is the fix commit",
         "reopens the owning phase", "production credentials", "production targets",
+        "cargo test --all-targets --frozen", "read-only exact-commit export",
+        "fail-before/pass-after", "stable through resolution",
     ):
         require(marker in docs, f"MORIARTY.md marker missing: {marker}")
 
@@ -313,7 +375,10 @@ def validate_docs_and_ci() -> None:
     require("fetch-depth: 0" in workflow, "CI does not provide full Git history for remediation validation")
     require("persist-credentials: false" in workflow, "CI exact target checkout persists credentials")
     require("MORIARTY_TARGET_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}" in workflow, "CI MORIARTY target commit binding missing")
-    require("python3 tools/validate_phase9_gate.py --target-commit \"$MORIARTY_TARGET_COMMIT\"" in workflow, "CI missing exact-commit Phase 9 gate")
+    require("cargo test --all-targets --locked" in workflow, "CI Rust suite is not lockfile-bound")
+    require("MORIARTY_REPORT_DIR" in workflow, "CI MORIARTY persistent report directory missing")
+    require("actions/upload-artifact@v4" in workflow and "Preserve Phase 9 MORIARTY report" in workflow, "CI MORIARTY report artifact preservation missing")
+    require("python3 tools/validate_phase9_gate.py --target-commit \"$MORIARTY_TARGET_COMMIT\" --report-dir \"$MORIARTY_REPORT_DIR\"" in workflow, "CI missing exact-commit Phase 9 gate")
 
 
 def _counterexample_for_test(target: str, attack: dict[str, Any]) -> dict[str, Any]:
@@ -344,9 +409,7 @@ def _counterexample_for_test(target: str, attack: dict[str, Any]) -> dict[str, A
 
 
 def _reidentify(item: dict[str, Any]) -> None:
-    projection = dict(item)
-    projection.pop("counterexample_id")
-    item["counterexample_id"] = moriarty.canonical_ref(projection)
+    item["counterexample_id"] = moriarty.canonical_ref(moriarty.counterexample_identity_projection(item))
 
 
 def _expect_reject(action: Callable[[], Any], label: str) -> None:
@@ -407,6 +470,65 @@ def validate_counterexample_negative_tests(target: str) -> None:
         "nonexistent resolution commit",
     )
 
+    stable = _counterexample_for_test(target, attack)
+    original_id = stable["counterexample_id"]
+    stable["status"] = "resolved"
+    stable["resolution_commit"] = target
+    _reidentify(stable)
+    require(stable["counterexample_id"] == original_id, "counterexample identity changed through resolution")
+
+
+def validate_isolation_negative_tests(target: str) -> None:
+    with tempfile.TemporaryDirectory(prefix="moriarty-cargo-home-test-") as temp_dir:
+        root = Path(temp_dir)
+        ambient = root / "ambient"
+        (ambient / "registry").mkdir(parents=True)
+        (ambient / "config.toml").write_text("[build]\nrustc-wrapper='evil'\n", encoding="utf-8")
+        workspace = root / "workspace"
+        workspace.mkdir()
+        isolated = moriarty.create_isolated_cargo_home(ambient, workspace)
+        require(not (isolated / "config.toml").exists(), "ambient Cargo config entered isolated Cargo home")
+
+    cargo_dir = ROOT / ".cargo"
+    config = cargo_dir / "config.toml"
+    require(not config.exists(), "negative test requires no tracked repository Cargo config")
+    cargo_dir.mkdir(exist_ok=True)
+    try:
+        config.write_text("[build]\nrustc-wrapper='evil'\n", encoding="utf-8")
+        with tempfile.TemporaryDirectory(prefix="moriarty-export-test-") as temp_dir:
+            workspace = Path(temp_dir)
+            export = moriarty.create_exact_export(
+                target, workspace, lambda *args: moriarty.git(*args).returncode, "negative-untracked"
+            )
+            require(not (export / ".cargo/config.toml").exists(), "untracked Cargo config entered exact export")
+            require((export / "Cargo.lock").read_bytes() == (ROOT / "Cargo.lock").read_bytes(), "exact export lockfile drift")
+    finally:
+        try:
+            config.unlink()
+        except FileNotFoundError:
+            pass
+        try:
+            cargo_dir.rmdir()
+        except OSError:
+            pass
+
+    _expect_reject(
+        lambda: moriarty.write_report_exclusive(ROOT / "moriarty-report-negative.json", b"{}", ROOT),
+        "repository-local report output",
+    )
+    with tempfile.TemporaryDirectory(prefix="moriarty-report-test-") as temp_dir:
+        parent = Path(temp_dir)
+        os.chmod(parent, 0o700)
+        victim = parent / "victim"
+        victim.write_bytes(b"unchanged")
+        output = parent / "report.json"
+        output.symlink_to(victim)
+        _expect_reject(
+            lambda: moriarty.write_report_exclusive(output, b"{}", ROOT),
+            "symlinked report output",
+        )
+        require(victim.read_bytes() == b"unchanged", "report symlink negative test modified victim")
+
 
 def validate_report_common(report: dict[str, Any], target: str) -> None:
     expected_fields = {
@@ -424,16 +546,50 @@ def validate_report_common(report: dict[str, Any], target: str) -> None:
     require(report["operator_profile"] == "provider-neutral-fixed-probe/1", "MORIARTY generated report operator drift")
     require(report["family_count"] == 15, "MORIARTY generated report family count drift")
     require(report["executed_probe_count"] == len(EXPECTED_PROBES), "MORIARTY did not execute complete fixed-probe set")
+
     probe_results = report["probe_results"]
+    result_fields = {"probe_id", "ok", "exit_code", "stdout_sha256", "stderr_sha256", "stdout_bytes", "stderr_bytes"}
     require(isinstance(probe_results, list) and len(probe_results) == len(EXPECTED_PROBES), "MORIARTY report probe result count drift")
-    require({item.get("probe_id") for item in probe_results} == set(EXPECTED_PROBES), "MORIARTY report probe set drift")
-    require(isinstance(report["counterexamples"], list) and len(report["counterexamples"]) <= moriarty.MAX_REPORT_COUNTEREXAMPLES, "MORIARTY report counterexample count drift")
+    require({item.get("probe_id") for item in probe_results if isinstance(item, dict)} == set(EXPECTED_PROBES), "MORIARTY report probe set drift")
+    for item in probe_results:
+        require(isinstance(item, dict) and set(item) == result_fields, "MORIARTY nested probe result schema drift")
+        require(isinstance(item["probe_id"], str) and item["probe_id"] in EXPECTED_PROBES, "MORIARTY probe result id invalid")
+        require(type(item["ok"]) is bool, "MORIARTY probe result ok must be boolean")
+        exit_code = item["exit_code"]
+        require(exit_code is None or (type(exit_code) is int and -2147483648 <= exit_code <= 2147483647), "MORIARTY probe exit code invalid")
+        if item["ok"]:
+            require(exit_code == 0, "MORIARTY successful probe lacks zero exit code")
+        else:
+            require(exit_code is None or exit_code != 0, "MORIARTY failed probe reports zero exit code")
+        for digest in ("stdout_sha256", "stderr_sha256"):
+            require(isinstance(item[digest], str) and moriarty.SHA256_REF_RE.fullmatch(item[digest]) is not None, f"MORIARTY probe digest invalid: {digest}")
+        for size in ("stdout_bytes", "stderr_bytes"):
+            require(type(item[size]) is int and 0 <= item[size] <= moriarty.MAX_PROBE_OUTPUT_BYTES, f"MORIARTY probe byte bound invalid: {size}")
+
+    counterexamples = report["counterexamples"]
+    require(isinstance(counterexamples, list) and len(counterexamples) <= moriarty.MAX_REPORT_COUNTEREXAMPLES, "MORIARTY report counterexample count drift")
+    attacks = moriarty.validate_attack_corpus(load("fixtures/phase9/attack-corpus.json"))
+    attack_by_id = {attack["id"]: attack for attack in attacks}
+    unresolved = 0
+    for item in counterexamples:
+        moriarty.validate_counterexample_shape(item)
+        attack = attack_by_id.get(item["attack_id"])
+        require(attack is not None, "MORIARTY report counterexample attack not in corpus")
+        require(item["family"] == attack["family"], "MORIARTY report counterexample family mismatch")
+        require(item["owner_phases"] == attack["owner_phases"], "MORIARTY report counterexample owner mismatch")
+        require(item["boundary_ids"] == attack["boundary_ids"], "MORIARTY report counterexample boundary mismatch")
+        require(set(item["regression_probe_ids"]).issubset(set(attack["probe_ids"])), "MORIARTY report counterexample probe mismatch")
+        unresolved += item["status"] == "unresolved"
+    require(type(report["unresolved_counterexamples"]) is int and report["unresolved_counterexamples"] == unresolved, "MORIARTY report unresolved count inconsistent")
+
     for key in (
         "production_credentials_used", "production_targets_used", "constitutional_bypass_used",
         "security_proof", "no_counterexample_found_implies_none_exist",
     ):
         require(report[key] is False, f"MORIARTY generated report overclaim/bypass: {key}")
     require(report["authority_effect"] == "none", "MORIARTY generated report gained authority")
+    all_ok = all(item["ok"] for item in probe_results)
+    require(type(report["graduated"]) is bool and report["graduated"] == (all_ok and unresolved == 0), "MORIARTY graduation Boolean inconsistent with report evidence")
 
 
 def validate_success_report(report: dict[str, Any], registry: dict[str, Any]) -> None:
@@ -476,37 +632,57 @@ def failure_diagnostic(report: dict[str, Any]) -> str:
     }, sort_keys=True, separators=(",", ":"))
 
 
-def execute_exact_commit_gate(target: str) -> None:
+def execute_exact_commit_gate(target: str, report_dir: Path | None) -> None:
     require(git_head() == target, "Phase 9 target commit does not match checked-out HEAD")
     require(moriarty.tracked_tree_clean(), "Phase 9 target tracked tree is dirty before runner")
     registry = load("fixtures/phase9/accepted-counterexamples.json")
-    with tempfile.TemporaryDirectory(prefix="qsol-fed-moriarty-") as temp_dir:
-        report_path = Path(temp_dir) / "moriarty-report.json"
-        validator_home = Path(temp_dir) / "validator-home"
-        validator_home.mkdir()
-        completed = moriarty.trusted_run(
-            moriarty.PYTHON_TRUSTED,
-            ("tools/run_moriarty.py", "--target-commit", target, "--output", str(report_path)),
-            cwd=ROOT,
-            env=moriarty._probe_environment(validator_home),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=False,
-        )
-        require(report_path.exists(), "MORIARTY runner did not emit report")
-        raw = report_path.read_bytes()
-        require(len(raw) <= moriarty.MAX_REPORT_BYTES, "MORIARTY report exceeds canonical byte bound")
-        require(canonicalize(raw.decode("utf-8")) == raw, "MORIARTY report is not exact canonical JSON")
-        report = json.loads(raw)
-        validate_report_common(report, target)
-        if completed.returncode != 0:
-            raise SystemExit("MORIARTY runner blocked exact commit: " + failure_diagnostic(report))
-        validate_success_report(report, registry)
+    if report_dir is None:
+        report_dir = Path(tempfile.mkdtemp(prefix="qsol-fed-moriarty-report-"))
+    else:
+        report_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        os.chmod(report_dir, 0o700)
+    report_path = report_dir / f"moriarty-report-{target}.json"
+    require(not report_path.exists(), "MORIARTY report destination already exists")
+
+    completed = moriarty.trusted_run(
+        moriarty.PYTHON_TRUSTED,
+        ("tools/run_moriarty.py", "--target-commit", target, "--output", str(report_path)),
+        cwd=ROOT,
+        env={
+            "PATH": "/usr/bin:/bin",
+            "HOME": str(report_dir),
+            "PYTHONNOUSERSITE": "1",
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "LANG": "C.UTF-8",
+            "LC_ALL": "C.UTF-8",
+        },
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    require(report_path.exists(), "MORIARTY runner did not emit report")
+    raw = report_path.read_bytes()
+    require(len(raw) <= moriarty.MAX_REPORT_BYTES, "MORIARTY report exceeds canonical byte bound")
+    require(canonicalize(raw.decode("utf-8")) == raw, "MORIARTY report is not exact canonical JSON")
+    report = json.loads(raw)
+    validate_report_common(report, target)
+
+    injected = copy.deepcopy(report)
+    injected["probe_results"][0]["raw_output"] = "forbidden"
+    _expect_reject(lambda: validate_report_common(injected, target), "nested raw probe output")
+    malformed = copy.deepcopy(report)
+    malformed["probe_results"][0]["stdout_sha256"] = "sha256:not-a-digest"
+    _expect_reject(lambda: validate_report_common(malformed, target), "malformed nested probe digest")
+
+    if completed.returncode != 0:
+        raise SystemExit("MORIARTY runner blocked exact commit: " + failure_diagnostic(report))
+    validate_success_report(report, registry)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Validate the Phase 9 MORIARTY/1 graduation gate")
     parser.add_argument("--target-commit", help="exact checked-out commit; defaults to Git HEAD")
+    parser.add_argument("--report-dir", help="private external directory for persistent MORIARTY report")
     args = parser.parse_args()
     target = args.target_commit or git_head()
     require(bool(TARGET_RE.fullmatch(target)), "Phase 9 target commit format invalid")
@@ -517,7 +693,8 @@ def main() -> None:
     validate_runner_source()
     validate_docs_and_ci()
     validate_counterexample_negative_tests(target)
-    execute_exact_commit_gate(target)
+    validate_isolation_negative_tests(target)
+    execute_exact_commit_gate(target, Path(args.report_dir).resolve() if args.report_dir else None)
     print(
         f"phase9 MORIARTY/1 gate OK for exact commit {target}: "
         "15 adversarial families, 13 source-allowlisted probes, zero unresolved reproducible counterexamples; "

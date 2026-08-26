@@ -96,7 +96,13 @@
     "constitutional_bypass_used": false,
     "report_is_security_proof": false,
     "no_counterexample_found_means_none_exist": false,
-    "authority_effect": "none"
+    "authority_effect": "none",
+    "isolated_source_export": true,
+    "committed_cargo_lock": true,
+    "opened_executable_binding": true,
+    "cache_only_cargo_home": true,
+    "exclusive_external_report_output": true,
+    "remediation_transition_verified": true
   },
   "claim_rule": "Phase 9 adds adversarial graduation assurance, not a new runtime or protocol capability. The Phase 8 capability map remains unchanged. A MORIARTY report is evidence about execution of the exact reviewed regression surface, not a security proof, authority grant, production-deployment certification, or proof that no counterexample exists.",
   "promotion_requirements": {

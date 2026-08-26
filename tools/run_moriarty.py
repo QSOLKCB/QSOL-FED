@@ -25,6 +25,12 @@ if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 
 from qsol_canonical import serialize  # noqa: E402
+from moriarty_isolation import (  # noqa: E402
+    create_exact_export,
+    create_isolated_cargo_home,
+    proc_fd_path,
+    write_report_exclusive,
+)
 
 PROTOCOL = "MORIARTY/1"
 REPORT_SCHEMA = "moriarty-report/1"
@@ -52,7 +58,7 @@ def fail(message: str) -> NoReturn:
 
 @dataclass(frozen=True)
 class TrustedExecutable:
-    """Preserve argv[0] while binding exec to a validated resolved target."""
+    """Bind a source-owned argv[0] label to an already-open executable inode."""
 
     name: str
     invocation: str
@@ -62,6 +68,7 @@ class TrustedExecutable:
     size: int
     mtime_ns: int
     mode: int
+    fd: int
 
 
 def _directory_chain_safe(path: Path) -> bool:
@@ -104,39 +111,48 @@ def _trusted_executable(name: str, *, preferred: Path | None = None) -> TrustedE
             continue
         if not stat.S_ISREG(target_stat.st_mode) or not (target_stat.st_mode & 0o111):
             continue
+        try:
+            fd = os.open(target, os.O_RDONLY | os.O_CLOEXEC)
+            pinned = os.fstat(fd)
+        except OSError:
+            continue
+        if (
+            pinned.st_dev != target_stat.st_dev
+            or pinned.st_ino != target_stat.st_ino
+            or pinned.st_size != target_stat.st_size
+            or pinned.st_mtime_ns != target_stat.st_mtime_ns
+            or stat.S_IMODE(pinned.st_mode) != stat.S_IMODE(target_stat.st_mode)
+        ):
+            os.close(fd)
+            continue
         return TrustedExecutable(
             name=name,
             invocation=str(invocation),
             executable=str(target),
-            device=target_stat.st_dev,
-            inode=target_stat.st_ino,
-            size=target_stat.st_size,
-            mtime_ns=target_stat.st_mtime_ns,
-            mode=stat.S_IMODE(target_stat.st_mode),
+            device=pinned.st_dev,
+            inode=pinned.st_ino,
+            size=pinned.st_size,
+            mtime_ns=pinned.st_mtime_ns,
+            mode=stat.S_IMODE(pinned.st_mode),
+            fd=fd,
         )
     fail(f"moriarty_trusted_executable_unavailable:{name}")
 
 
 def trusted_executable_matches(trusted: TrustedExecutable) -> bool:
-    """Revalidate the alias and the exact executable that will be passed to exec."""
-    invocation = Path(trusted.invocation)
+    """Verify that the already-open executable descriptor still names the pinned inode."""
     try:
-        target = invocation.resolve(strict=True)
-        target_stat = target.stat()
+        info = os.fstat(trusted.fd)
     except OSError:
         return False
-    if str(target) != trusted.executable:
-        return False
-    if not _directory_chain_safe(invocation) or not _directory_chain_safe(target):
-        return False
     return (
-        stat.S_ISREG(target_stat.st_mode)
-        and bool(target_stat.st_mode & 0o111)
-        and target_stat.st_dev == trusted.device
-        and target_stat.st_ino == trusted.inode
-        and target_stat.st_size == trusted.size
-        and target_stat.st_mtime_ns == trusted.mtime_ns
-        and stat.S_IMODE(target_stat.st_mode) == trusted.mode
+        stat.S_ISREG(info.st_mode)
+        and bool(info.st_mode & 0o111)
+        and info.st_dev == trusted.device
+        and info.st_ino == trusted.inode
+        and info.st_size == trusted.size
+        and info.st_mtime_ns == trusted.mtime_ns
+        and stat.S_IMODE(info.st_mode) == trusted.mode
     )
 
 
@@ -147,9 +163,12 @@ def trusted_run(
 ) -> subprocess.CompletedProcess[bytes]:
     if not trusted_executable_matches(trusted):
         fail(f"moriarty_trusted_executable_changed:{trusted.name}")
+    inherited_fds = tuple(kwargs.pop("pass_fds", ()))
+    pass_fds = tuple(dict.fromkeys((*inherited_fds, trusted.fd)))
     return subprocess.run(
         [trusted.invocation, *args],
-        executable=trusted.executable,
+        executable=proc_fd_path(trusted.fd),
+        pass_fds=pass_fds,
         **kwargs,
     )
 
@@ -179,7 +198,7 @@ PROBES: dict[str, tuple[str, ...]] = {
     "phase6": (PYTHON_EXE, "tools/validate_phase6_gate.py"),
     "phase7": (PYTHON_EXE, "tools/validate_phase7_gate.py"),
     "phase8": (PYTHON_EXE, "tools/validate_phase8_gate.py"),
-    "rust_all": (CARGO_EXE, "test", "--all-targets", "--offline"),
+    "rust_all": (CARGO_EXE, "test", "--all-targets", "--frozen"),
 }
 PROBE_EXECUTABLES: dict[str, TrustedExecutable] = {
     probe_id: (CARGO_TRUSTED if probe_id == "rust_all" else PYTHON_TRUSTED)
@@ -209,9 +228,9 @@ def load_json(path: Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        fail(f"moriarty_json_load_failed:{path.relative_to(ROOT)}:{exc}")
+        fail(f"moriarty_json_load_failed:{path}:{exc}")
     if not isinstance(value, dict):
-        fail(f"moriarty_json_object_required:{path.relative_to(ROOT)}")
+        fail(f"moriarty_json_object_required:{path}")
     return value
 
 
@@ -273,27 +292,16 @@ def git_is_ancestor(ancestor: str, descendant: str) -> bool:
     return git("merge-base", "--is-ancestor", ancestor, descendant).returncode == 0
 
 
-def _probe_environment(home: Path) -> dict[str, str]:
-    cargo_home = REAL_HOME / ".cargo"
-    for credentials in (cargo_home / "credentials", cargo_home / "credentials.toml"):
-        if credentials.exists():
-            fail("moriarty_cargo_credentials_present")
-    safe_path = os.pathsep.join(dict.fromkeys([
-        str(Path(PYTHON_EXE).parent),
-        str(Path(CARGO_EXE).parent),
-        str(Path(RUSTC_EXE).parent),
-        "/usr/local/bin",
-        "/usr/bin",
-        "/bin",
-    ]))
+def _probe_environment(home: Path, cargo_home: Path, target_dir: Path) -> dict[str, str]:
     return {
-        "PATH": safe_path,
+        "PATH": "/usr/bin:/bin",
         "HOME": str(home),
         "CARGO_HOME": str(cargo_home),
         "RUSTUP_HOME": str(REAL_HOME / ".rustup"),
+        "CARGO_TARGET_DIR": str(target_dir),
         "CARGO_NET_OFFLINE": "true",
         "CARGO_TERM_COLOR": "never",
-        "RUSTC": RUSTC_EXE,
+        "RUSTC": proc_fd_path(RUSTC_TRUSTED.fd),
         "RUST_BACKTRACE": "0",
         "PYTHONNOUSERSITE": "1",
         "PYTHONDONTWRITEBYTECODE": "1",
@@ -353,6 +361,15 @@ def validate_attack_corpus(corpus: dict[str, Any]) -> list[dict[str, Any]]:
     return attacks
 
 
+def counterexample_identity_projection(item: dict[str, Any]) -> dict[str, Any]:
+    """Hash immutable discovery/reproduction facts, not mutable resolution state."""
+    return {
+        key: value
+        for key, value in item.items()
+        if key not in {"counterexample_id", "status", "resolution_commit"}
+    }
+
+
 def validate_counterexample_shape(item: Any) -> None:
     if not isinstance(item, dict):
         fail("moriarty_counterexample_not_object")
@@ -381,8 +398,7 @@ def validate_counterexample_shape(item: Any) -> None:
         or not item["boundary_ids"]
         or len(set(item["boundary_ids"])) != len(item["boundary_ids"])
         or not isinstance(item["regression_probe_ids"], list)
-        or not item["regression_probe_ids"]
-        or len(set(item["regression_probe_ids"])) != len(item["regression_probe_ids"])
+        or len(item["regression_probe_ids"]) != 1
         or not all(probe_id in PROBES for probe_id in item["regression_probe_ids"])
         or item["failure_kind"] not in {"exit_nonzero", "timeout", "tool_error"}
         or item["status"] not in {"unresolved", "resolved"}
@@ -395,14 +411,16 @@ def validate_counterexample_shape(item: Any) -> None:
         or not isinstance(item["stderr_sha256"], str)
         or not SHA256_REF_RE.fullmatch(item["stderr_sha256"])
         or not isinstance(item["stdout_bytes"], int)
+        or isinstance(item["stdout_bytes"], bool)
         or not 0 <= item["stdout_bytes"] <= 9007199254740991
         or not isinstance(item["stderr_bytes"], int)
+        or isinstance(item["stderr_bytes"], bool)
         or not 0 <= item["stderr_bytes"] <= 9007199254740991
     ):
         fail("moriarty_counterexample_boundary_invalid")
 
     if item["failure_kind"] == "exit_nonzero":
-        if not isinstance(item["observed_exit_code"], int) or item["observed_exit_code"] == 0:
+        if not isinstance(item["observed_exit_code"], int) or isinstance(item["observed_exit_code"], bool) or item["observed_exit_code"] == 0:
             fail("moriarty_exit_failure_requires_nonzero_exit_code")
     elif item["observed_exit_code"] is not None:
         fail("moriarty_nonexit_failure_exit_code_must_be_null")
@@ -413,9 +431,7 @@ def validate_counterexample_shape(item: Any) -> None:
     elif not isinstance(item["resolution_commit"], str) or not TARGET_RE.fullmatch(item["resolution_commit"]):
         fail("moriarty_resolved_counterexample_missing_resolution_commit")
 
-    projection = dict(item)
-    projection.pop("counterexample_id")
-    if item["counterexample_id"] != canonical_ref(projection):
+    if item["counterexample_id"] != canonical_ref(counterexample_identity_projection(item)):
         fail("moriarty_counterexample_identity_mismatch")
 
 
@@ -502,22 +518,32 @@ def _probe_failure_result(probe_id: str, kind: str, diagnostic: bytes) -> dict[s
     }
 
 
-def run_probe(probe_id: str, home: Path) -> dict[str, Any]:
+def run_probe(
+    probe_id: str,
+    home: Path,
+    source_root: Path,
+    cargo_home: Path,
+    target_dir: Path,
+) -> dict[str, Any]:
     if not tracked_tree_clean():
         return _probe_failure_result(probe_id, "tool_error", b"tracked_tree_dirty_before_probe")
+    home.mkdir(mode=0o700, parents=False, exist_ok=False)
+    target_dir.mkdir(mode=0o700, parents=False, exist_ok=False)
 
     argv = PROBES[probe_id]
     trusted = PROBE_EXECUTABLES[probe_id]
     if not trusted_executable_matches(trusted):
-        return _probe_failure_result(probe_id, "tool_error", b"trusted_executable_changed_before_probe")
+        return _probe_failure_result(probe_id, "tool_error", b"trusted_executable_fd_invalid_before_probe")
     if probe_id == "rust_all" and not trusted_executable_matches(RUSTC_TRUSTED):
-        return _probe_failure_result(probe_id, "tool_error", b"trusted_rustc_changed_before_probe")
+        return _probe_failure_result(probe_id, "tool_error", b"trusted_rustc_fd_invalid_before_probe")
+    pass_fds = (trusted.fd,) if probe_id != "rust_all" else (trusted.fd, RUSTC_TRUSTED.fd)
     try:
         process = subprocess.Popen(
             list(argv),
-            executable=trusted.executable,
-            cwd=ROOT,
-            env=_probe_environment(home),
+            executable=proc_fd_path(trusted.fd),
+            pass_fds=pass_fds,
+            cwd=source_root,
+            env=_probe_environment(home, cargo_home, target_dir),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             start_new_session=True,
@@ -579,9 +605,9 @@ def run_probe(probe_id: str, home: Path) -> dict[str, Any]:
     if not tracked_tree_clean():
         return _probe_failure_result(probe_id, "tool_error", b"tracked_tree_dirty_after_probe")
     if not trusted_executable_matches(trusted):
-        return _probe_failure_result(probe_id, "tool_error", b"trusted_executable_changed_after_probe")
+        return _probe_failure_result(probe_id, "tool_error", b"trusted_executable_fd_invalid_after_probe")
     if probe_id == "rust_all" and not trusted_executable_matches(RUSTC_TRUSTED):
-        return _probe_failure_result(probe_id, "tool_error", b"trusted_rustc_changed_after_probe")
+        return _probe_failure_result(probe_id, "tool_error", b"trusted_rustc_fd_invalid_after_probe")
     if counts["stdout"] > MAX_PROBE_OUTPUT_BYTES or counts["stderr"] > MAX_PROBE_OUTPUT_BYTES:
         failure_kind = "tool_error"
 
@@ -627,11 +653,59 @@ def generated_counterexample(target: str, attack: dict[str, Any], result: dict[s
         "constitutional_bypass_used": False,
         "authority_effect": "none",
     }
-    projection = dict(item)
-    projection.pop("counterexample_id")
-    item["counterexample_id"] = canonical_ref(projection)
+    item["counterexample_id"] = canonical_ref(counterexample_identity_projection(item))
     validate_counterexample_shape(item)
     return item
+
+
+def counterexample_failure_matches(item: dict[str, Any], result: dict[str, Any]) -> bool:
+    return (
+        result["ok"] is False
+        and result["failure_kind"] == item["failure_kind"]
+        and result["exit_code"] == item["observed_exit_code"]
+        and result["stdout_sha256"] == item["stdout_sha256"]
+        and result["stderr_sha256"] == item["stderr_sha256"]
+        and result["stdout_bytes"] == item["stdout_bytes"]
+        and result["stderr_bytes"] == item["stderr_bytes"]
+    )
+
+
+def verify_resolved_counterexamples(
+    accepted: list[dict[str, Any]],
+    workspace: Path,
+    cargo_home: Path,
+) -> None:
+    for index, item in enumerate(accepted):
+        if item["status"] != "resolved":
+            continue
+        probe_id = item["regression_probe_ids"][0]
+        before_source = create_exact_export(
+            item["target_commit"], workspace, lambda *args: git(*args).returncode, f"resolved-{index}-before"
+        )
+        before = run_probe(
+            probe_id,
+            workspace / f"resolved-{index}-before-home",
+            before_source,
+            cargo_home,
+            workspace / f"resolved-{index}-before-target",
+        )
+        if not counterexample_failure_matches(item, before):
+            fail("moriarty_resolution_target_failure_not_reproduced")
+
+        resolution = item["resolution_commit"]
+        assert isinstance(resolution, str)
+        after_source = create_exact_export(
+            resolution, workspace, lambda *args: git(*args).returncode, f"resolved-{index}-after"
+        )
+        after = run_probe(
+            probe_id,
+            workspace / f"resolved-{index}-after-home",
+            after_source,
+            cargo_home,
+            workspace / f"resolved-{index}-after-target",
+        )
+        if after["ok"] is not True or after["exit_code"] != 0:
+            fail("moriarty_resolution_fix_probe_not_green")
 
 
 def report_probe_result(result: dict[str, Any]) -> dict[str, Any]:
@@ -655,32 +729,49 @@ def main() -> int:
     if not tracked_tree_clean():
         fail("moriarty_target_tracked_tree_dirty")
 
-    corpus = load_json(ROOT / "fixtures/phase9/attack-corpus.json")
-    attacks = validate_attack_corpus(corpus)
-    registry = load_json(ROOT / "fixtures/phase9/accepted-counterexamples.json")
-    accepted = validate_registry(registry, attacks, target)
+    with tempfile.TemporaryDirectory(prefix="qsol-fed-moriarty-work-") as work_dir:
+        workspace = Path(work_dir)
+        cargo_home = create_isolated_cargo_home(REAL_HOME / ".cargo", workspace)
+        source_root = create_exact_export(
+            target, workspace, lambda *git_args: git(*git_args).returncode, "target"
+        )
+        if not (source_root / "Cargo.lock").is_file():
+            fail("moriarty_committed_cargo_lock_missing")
 
-    requested_probe_ids: list[str] = []
-    for attack in attacks:
-        requested_probe_ids.extend(attack["probe_ids"])
-    for item in accepted:
-        requested_probe_ids.extend(item["regression_probe_ids"])
+        corpus = load_json(source_root / "fixtures/phase9/attack-corpus.json")
+        attacks = validate_attack_corpus(corpus)
+        registry = load_json(source_root / "fixtures/phase9/accepted-counterexamples.json")
+        accepted = validate_registry(registry, attacks, target)
 
-    ordered_probe_ids: list[str] = []
-    seen_probes: set[str] = set()
-    for probe_id in requested_probe_ids:
-        if probe_id not in seen_probes:
-            seen_probes.add(probe_id)
-            ordered_probe_ids.append(probe_id)
+        requested_probe_ids: list[str] = []
+        for attack in attacks:
+            requested_probe_ids.extend(attack["probe_ids"])
+        for item in accepted:
+            requested_probe_ids.extend(item["regression_probe_ids"])
 
-    probe_users: dict[str, list[dict[str, Any]]] = {probe_id: [] for probe_id in ordered_probe_ids}
-    for attack in attacks:
-        for probe_id in attack["probe_ids"]:
-            probe_users.setdefault(probe_id, []).append(attack)
+        ordered_probe_ids: list[str] = []
+        seen_probes: set[str] = set()
+        for probe_id in requested_probe_ids:
+            if probe_id not in seen_probes:
+                seen_probes.add(probe_id)
+                ordered_probe_ids.append(probe_id)
 
-    with tempfile.TemporaryDirectory(prefix="qsol-fed-moriarty-home-") as home_dir:
-        home = Path(home_dir)
-        results = {probe_id: run_probe(probe_id, home) for probe_id in ordered_probe_ids}
+        probe_users: dict[str, list[dict[str, Any]]] = {probe_id: [] for probe_id in ordered_probe_ids}
+        for attack in attacks:
+            for probe_id in attack["probe_ids"]:
+                probe_users.setdefault(probe_id, []).append(attack)
+
+        results = {
+            probe_id: run_probe(
+                probe_id,
+                workspace / f"home-{probe_id}",
+                source_root,
+                cargo_home,
+                workspace / f"target-{probe_id}",
+            )
+            for probe_id in ordered_probe_ids
+        }
+        verify_resolved_counterexamples(accepted, workspace, cargo_home)
 
     generated: list[dict[str, Any]] = []
     for probe_id, result in results.items():
@@ -726,10 +817,9 @@ def main() -> int:
         fail("moriarty_report_size_exceeded")
 
     output = Path(args.output)
-    if not output.is_absolute():
-        output = ROOT / output
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_bytes(encoded)
+    write_report_exclusive(output, encoded, ROOT)
+    if git_head() != target or not tracked_tree_clean():
+        fail("moriarty_target_changed_during_report_publication")
 
     if report["graduated"]:
         print(

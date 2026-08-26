@@ -27,55 +27,174 @@
     "authority_effect"
   ],
   "properties": {
-    "schema": {"const": "moriarty-counterexample/1"},
-    "counterexample_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
-    "target_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
-    "attack_id": {"type": "string", "pattern": "^MOR-[0-9]{3}$"},
-    "family": {"type": "string", "minLength": 1, "maxLength": 128},
+    "schema": {
+      "const": "moriarty-counterexample/1"
+    },
+    "counterexample_id": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "target_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "attack_id": {
+      "type": "string",
+      "pattern": "^MOR-[0-9]{3}$"
+    },
+    "family": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
     "owner_phases": {
       "type": "array",
       "minItems": 1,
       "maxItems": 12,
       "uniqueItems": true,
-      "items": {"type": "string", "minLength": 1, "maxLength": 32}
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 32
+      }
     },
     "boundary_ids": {
       "type": "array",
       "minItems": 1,
       "maxItems": 32,
       "uniqueItems": true,
-      "items": {"type": "string", "pattern": "^[a-z0-9_./-]{1,128}$"}
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9_./-]{1,128}$"
+      }
     },
     "regression_probe_ids": {
       "type": "array",
       "minItems": 1,
-      "maxItems": 16,
+      "maxItems": 1,
       "uniqueItems": true,
-      "items": {"type": "string", "pattern": "^[a-z0-9_]{1,64}$"}
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9_]{1,64}$"
+      }
     },
-    "failure_kind": {"type": "string", "enum": ["exit_nonzero", "timeout", "tool_error"]},
-    "observed_exit_code": {"type": ["integer", "null"], "minimum": -2147483648, "maximum": 2147483647},
-    "stdout_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
-    "stderr_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
-    "stdout_bytes": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
-    "stderr_bytes": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
-    "status": {"type": "string", "enum": ["unresolved", "resolved"]},
-    "resolution_commit": {"type": ["string", "null"], "pattern": "^[0-9a-f]{40}$"},
-    "production_credentials_used": {"const": false},
-    "production_targets_used": {"const": false},
-    "constitutional_bypass_used": {"const": false},
-    "authority_effect": {"const": "none"}
+    "failure_kind": {
+      "type": "string",
+      "enum": [
+        "exit_nonzero",
+        "timeout",
+        "tool_error"
+      ]
+    },
+    "observed_exit_code": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": -2147483648,
+      "maximum": 2147483647
+    },
+    "stdout_sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "stderr_sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "stdout_bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "stderr_bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "unresolved",
+        "resolved"
+      ]
+    },
+    "resolution_commit": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "production_credentials_used": {
+      "const": false
+    },
+    "production_targets_used": {
+      "const": false
+    },
+    "constitutional_bypass_used": {
+      "const": false
+    },
+    "authority_effect": {
+      "const": "none"
+    }
   },
   "allOf": [
     {
-      "if": {"properties": {"failure_kind": {"const": "exit_nonzero"}}, "required": ["failure_kind"]},
-      "then": {"properties": {"observed_exit_code": {"type": "integer", "not": {"const": 0}}}},
-      "else": {"properties": {"observed_exit_code": {"const": null}}}
+      "if": {
+        "properties": {
+          "failure_kind": {
+            "const": "exit_nonzero"
+          }
+        },
+        "required": [
+          "failure_kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "observed_exit_code": {
+            "type": "integer",
+            "not": {
+              "const": 0
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "observed_exit_code": {
+            "const": null
+          }
+        }
+      }
     },
     {
-      "if": {"properties": {"status": {"const": "unresolved"}}, "required": ["status"]},
-      "then": {"properties": {"resolution_commit": {"const": null}}},
-      "else": {"properties": {"resolution_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"}}}
+      "if": {
+        "properties": {
+          "status": {
+            "const": "unresolved"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "resolution_commit": {
+            "const": null
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "resolution_commit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          }
+        }
+      }
     }
   ]
 }

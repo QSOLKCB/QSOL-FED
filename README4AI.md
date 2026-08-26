@@ -224,7 +224,13 @@
     "offline_schema": "schemas/offline-package-v1.schema.json",
     "drill_schema": "schemas/transport-drill-report-v1.schema.json",
     "gate_validator": "tools/validate_phase8_gate.py",
-    "profiles": ["web_socket", "quic", "unix_ipc", "offline_sneakernet", "store_forward"],
+    "profiles": [
+      "web_socket",
+      "quic",
+      "unix_ipc",
+      "offline_sneakernet",
+      "store_forward"
+    ],
     "maximum_frame_bytes": 65536,
     "maximum_store_forward_depth": 1024,
     "maximum_relay_hops": 16,
@@ -262,7 +268,14 @@
     "constitutional_bypass_allowed": false,
     "security_proof": false,
     "no_counterexample_found_implies_none_exist": false,
-    "authority_effect": "none"
+    "authority_effect": "none",
+    "isolated_exact_commit_export": true,
+    "committed_cargo_lock": true,
+    "cargo_frozen": true,
+    "ambient_cargo_config_inherited": false,
+    "opened_executable_descriptor_binding": true,
+    "resolved_counterexample_fail_before_pass_after": true,
+    "persistent_ci_report_artifact": true
   },
   "normative_precedence": [
     "invariants/fed-v1.json",

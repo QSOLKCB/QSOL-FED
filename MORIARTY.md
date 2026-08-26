@@ -30,11 +30,11 @@ The harness receives only the checked-out public repository, repository-owned di
 
 The attack corpus contains **probe IDs**, not command strings. `tools/run_moriarty.py` owns the fixed mapping from those IDs to reviewed repository commands. Unknown probe IDs fail closed, and the Phase 9 validator checks each ID-to-argv mapping rather than merely checking that the ID appears in source.
 
-The runner resolves Python, Git, Cargo, and rustc to absolute executables outside the repository. Probe subprocesses receive an allowlisted environment rather than inheriting arbitrary caller variables: semantic credentials, proxy settings, execution wrappers, `PYTHONPATH`, and similar ambient controls are absent. Cargo credentials are rejected if present.
+The runner resolves Python, Git, Cargo, and rustc outside the repository, opens and validates the executable inode, and executes through `/proc/self/fd` while preserving the intended `argv[0]`. A pathname replacement after validation therefore cannot substitute the executed interpreter or tool. Probe subprocesses receive an allowlisted environment rather than inheriting caller credentials, proxy settings, wrappers, `PYTHONPATH`, or similar ambient controls.
 
 The reference runner uses no shell. Every probe is started in its own process group. A timeout or output-bound failure terminates the complete group so surviving descendants cannot keep consuming resources or mutate the checkout after the result is recorded. Standard output and error are hashed incrementally and capped at 1,048,576 bytes per stream rather than buffered without limit.
 
-The Rust regression probe runs `cargo test --all-targets --offline` with `CARGO_NET_OFFLINE=true`. It may use the local Cargo cache but cannot contact a registry or Git dependency source during MORIARTY execution. QSOL-FED does not currently carry a committed `Cargo.lock`, so Phase 9 does not pretend `--frozen` is available; adding a reviewed lockfile is the path to a later locked-and-offline probe.
+The Rust regression probe runs `cargo test --all-targets --frozen` against the committed `Cargo.lock`. `--frozen` combines locked dependency resolution with offline execution, so Cargo cannot rewrite dependency resolution or contact a registry or Git source. MORIARTY projects only registry cache material into a private cache-only `CARGO_HOME`; user Cargo configuration and credentials are not inherited. Build artifacts go to an external `CARGO_TARGET_DIR`, never into the read-only source export.
 
 ## Exact-commit and clean-tree binding
 
@@ -45,7 +45,7 @@ git rev-parse HEAD == requested target_commit
 tracked index/worktree == clean relative to HEAD
 ```
 
-The clean-tree check runs before probes, around each probe, and before the final report. Untracked build outputs such as `target/` are not part of the exact-commit claim; tracked validator or probe changes are. A dirty tracked tree cannot graduate an unchanged Git SHA.
+The clean-tree check still rejects tracked source/index drift, but probes do not execute from that mutable checkout. The runner creates a read-only exact-commit export from `git archive`, rejects archive links/special files, and executes every fixed probe from that export. Untracked files, including an untracked repository-local `.cargo/config.toml`, are therefore absent from the execution tree rather than merely ignored by `git diff`.
 
 The CI checkout explicitly selects the pull-request head SHA on pull requests and `github.sha` on pushes, fetches complete history for remediation ancestry checks, and removes persisted checkout credentials. This avoids GitHub's synthetic PR merge commit when making an exact-commit assurance statement.
 
@@ -124,7 +124,7 @@ For a resolved record, `resolution_commit is the fix commit`. The runner verifie
 3. the fix commit descends from the vulnerable finding target;
 4. the fix commit is itself an ancestor of the exact commit currently being reviewed.
 
-A syntactically plausible but nonexistent SHA is therefore not remediation evidence. An unresolved accepted finding blocks graduation, but its regression probes still execute before the final graduation decision so a fix can demonstrate that the regression has gone green.
+A syntactically plausible but nonexistent SHA is therefore not remediation evidence. In addition, a resolved record is replayed in isolated exports: its single fixed regression probe must reproduce the recorded failure kind, exit semantics, hashes, and byte counts at `target_commit`, then return zero at `resolution_commit`. This is explicit fail-before/pass-after remediation evidence. `counterexample_id` hashes only immutable discovery/reproduction facts, so the finding identity remains stable through resolution. An unresolved accepted finding blocks graduation, but its regression still executes before the final decision.
 
 The accepted registry is capped at 32 records. Combined accepted and generated counterexamples are capped at 48 per report, and the entire canonical report is capped at 65,536 bytes. The declared registry state therefore cannot silently grow beyond the canonical report profile it is supposed to graduate under.
 
@@ -151,7 +151,7 @@ The operator never gets a mechanism to add an arbitrary runtime command merely b
 
 `moriarty-report/1` binds the exact target commit, independently rechecked canonical attack-corpus identity, provider-neutral operator profile, all executed fixed probe results, accepted and newly generated counterexamples, unresolved count, graduation Boolean, and explicit non-authority/non-proof fields.
 
-A successful report requires every fixed probe to return zero and every accepted counterexample to be resolved. If the runner returns nonzero, the gate validates the common report structure first and emits a compact diagnostic containing failed probe IDs, exit codes, output hashes/byte counts, counterexample IDs and unresolved state before CI exits. The temporary full report need not survive for its reproduction metadata to remain visible in the job log.
+A successful report requires every fixed probe to return zero and every accepted counterexample to be resolved. The gate mirrors the closed nested report schema for each probe result and counterexample, rejects undeclared raw-output fields, malformed digests, invalid byte counts, and inconsistent graduation state. Reports are created exclusively with no-follow semantics inside a private external directory, never inside the repository or through a pre-existing destination, and CI uploads the report artifact even when graduation fails.
 
 ```text
 production_credentials_used                 = false
@@ -176,7 +176,9 @@ From a clean checkout with the required toolchains and local dependency cache, b
 
 ```bash
 TARGET="$(git rev-parse HEAD)"
-python3 tools/validate_phase9_gate.py --target-commit "$TARGET"
+REPORT_DIR="$(mktemp -d)"
+chmod 700 "$REPORT_DIR"
+python3 tools/validate_phase9_gate.py --target-commit "$TARGET" --report-dir "$REPORT_DIR"
 ```
 
 To emit the canonical report directly:
@@ -185,7 +187,7 @@ To emit the canonical report directly:
 TARGET="$(git rev-parse HEAD)"
 python3 tools/run_moriarty.py \
   --target-commit "$TARGET" \
-  --output /tmp/moriarty-report.json
+  --output "$REPORT_DIR/moriarty-report.json"
 ```
 
 The report is intentionally ephemeral. Phase 11 may archive the report associated with the final frozen release, but repository source does not pre-claim that an unexecuted future commit has passed.
