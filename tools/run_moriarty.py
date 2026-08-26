@@ -61,21 +61,27 @@ def _trusted_executable(name: str, *, preferred: Path | None = None) -> str:
         REAL_HOME / ".cargo" / "bin" / name,
     ])
     for candidate in candidates:
+        invocation = candidate.absolute()
         try:
-            path = candidate.resolve(strict=True)
+            target = invocation.resolve(strict=True)
         except OSError:
             continue
-        if not path.is_file() or not os.access(path, os.X_OK):
+        if not target.is_file() or not os.access(invocation, os.X_OK):
             continue
-        if path == ROOT or ROOT in path.parents:
+        if target == ROOT or ROOT in target.parents or invocation == ROOT or ROOT in invocation.parents:
             continue
         try:
-            mode = path.parent.stat().st_mode
+            invocation_mode = invocation.parent.stat().st_mode
+            target_mode = target.parent.stat().st_mode
         except OSError:
             continue
-        if mode & stat.S_IWOTH:
+        if invocation_mode & stat.S_IWOTH or target_mode & stat.S_IWOTH:
             continue
-        return str(path)
+        # Validate the resolved target, but preserve the original trusted path for
+        # invocation. Rustup-style multicall shims select Cargo/Rustc behavior from
+        # argv[0], so executing the resolved `rustup` target directly would change
+        # the command's semantics even though the symlink itself is trusted.
+        return str(invocation)
     fail(f"moriarty_trusted_executable_unavailable:{name}")
 
 
