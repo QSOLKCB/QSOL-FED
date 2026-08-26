@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qsol.example/schemas/moriarty-attack-corpus-v1.schema.json",
+  "title": "MORIARTY/1 attack corpus",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "protocol",
+    "attacks",
+    "production_credentials_allowed",
+    "production_targets_allowed",
+    "constitutional_bypass_allowed",
+    "authority_effect"
+  ],
+  "properties": {
+    "schema": {"const": "moriarty-attack-corpus/1"},
+    "protocol": {"const": "MORIARTY/1"},
+    "attacks": {
+      "type": "array",
+      "minItems": 15,
+      "maxItems": 15,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "family", "owner_phases", "boundary_ids", "probe_ids"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^MOR-[0-9]{3}$"},
+          "family": {
+            "type": "string",
+            "enum": [
+              "canonical_parser_differentials",
+              "signature_domain_key_role_confusion",
+              "replay_downgrade_clock",
+              "http_rate_proxy_ddos_shape",
+              "ssrf_decompression",
+              "crash_fsync_restart",
+              "lifecycle_partition_history",
+              "import_provenance_authority_laundering",
+              "adapter_confusion",
+              "holodeck_escape",
+              "safeguard_persuasion",
+              "nested_world_amplification",
+              "assembly_capture_representation",
+              "transport_nat_relay_store_forward_archive",
+              "cross_phase_contradictions"
+            ]
+          },
+          "owner_phases": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 12,
+            "uniqueItems": true,
+            "items": {"type": "string", "enum": ["0", "1", "2", "3", "4", "5A", "5", "5C", "6", "7", "8", "cross-phase"]}
+          },
+          "boundary_ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 32,
+            "uniqueItems": true,
+            "items": {"type": "string", "pattern": "^[a-z0-9_./-]{1,128}$"}
+          },
+          "probe_ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "uniqueItems": true,
+            "items": {"type": "string", "pattern": "^[a-z0-9_]{1,64}$"}
+          }
+        }
+      }
+    },
+    "production_credentials_allowed": {"const": false},
+    "production_targets_allowed": {"const": false},
+    "constitutional_bypass_allowed": {"const": false},
+    "authority_effect": {"const": "none"}
+  }
+}
