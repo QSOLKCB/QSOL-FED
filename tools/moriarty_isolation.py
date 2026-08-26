@@ -123,7 +123,15 @@ def enable_child_subreaper() -> None:
 
 
 def _landlock_rights_for(path: Path, rights: int) -> int:
-    return rights if path.is_dir() else rights & ~_LANDLOCK_ACCESS_FS_READ_DIR
+    if path.is_dir():
+        return rights
+    file_rights = (
+        _LANDLOCK_ACCESS_FS_EXECUTE
+        | _LANDLOCK_ACCESS_FS_WRITE_FILE
+        | _LANDLOCK_ACCESS_FS_READ_FILE
+        | _LANDLOCK_ACCESS_FS_TRUNCATE
+    )
+    return rights & file_rights
 
 
 def _add_landlock_rule(libc: ctypes.CDLL, ruleset_fd: int, path: Path, rights: int) -> None:
