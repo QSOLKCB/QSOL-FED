@@ -72,13 +72,22 @@
   "counterexample_policy": {
     "accepted_schema": "moriarty-counterexample/1",
     "accepted_findings_are_reproducible": true,
+    "accepted_findings_require_observed_local_failure": true,
+    "accepted_findings_bind_to_attack_corpus": true,
     "accepted_findings_name_attack_family": true,
     "accepted_findings_name_owning_phases": true,
     "accepted_findings_name_boundary_ids": true,
     "accepted_findings_name_fixed_regression_probes": true,
+    "regression_probes_must_be_subset_of_attack_probes": true,
+    "external_findings_are_candidates_only": true,
+    "candidate_can_enter_accepted_registry_without_local_reproduction": false,
     "unresolved_accepted_finding_blocks_graduation": true,
     "resolved_finding_remains_in_registry": true,
     "resolved_finding_becomes_regression": true,
+    "resolution_commit_is_fix_commit": true,
+    "resolution_commit_must_exist": true,
+    "resolution_commit_descends_from_finding_target": true,
+    "resolution_commit_is_in_reviewed_history": true,
     "finding_may_create_authority": false,
     "finding_may_contain_production_credentials": false,
     "finding_may_target_production_system": false
@@ -94,5 +103,5 @@
     "no_counterexample_found_implies_none_exist": false,
     "authority_effect": "none"
   },
-  "phase9_gate": "For the exact checked-out commit, the provider-neutral fixed-probe MORIARTY/1 harness must execute the constitutional gate, every historical Phase 0-8 gate, the complete Rust all-targets regression suite, and every accepted counterexample regression probe. No unresolved reproducible counterexample may cross a constitutional, authority, provenance, sandbox, cryptographic, replay, storage, transport, adapter, Assembly, or resource-safety boundary. MORIARTY adds assurance machinery only and does not promote the Phase 8 capability surface."
+  "phase9_gate": "For the exact checked-out commit, the provider-neutral fixed-probe MORIARTY/1 harness must execute the constitutional gate, every historical Phase 0-8 gate, the complete Rust all-targets regression suite, and every accepted counterexample regression probe. Accepted records require an observed deterministic local probe failure and must bind semantically to the referenced attack-corpus entry; external observations remain candidates until reproduced locally. Resolved records must name a real fix commit descending from the vulnerable target and reachable in the reviewed target history. No unresolved reproducible counterexample may cross a constitutional, authority, provenance, sandbox, cryptographic, replay, storage, transport, adapter, Assembly, or resource-safety boundary. MORIARTY adds assurance machinery only and does not promote the Phase 8 capability surface."
 }
