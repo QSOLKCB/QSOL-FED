@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import subprocess
@@ -16,11 +17,25 @@ TOOLS = ROOT / "tools"
 if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 
-from qsol_canonical import canonicalize  # noqa: E402
+from qsol_canonical import canonicalize, serialize  # noqa: E402
 import run_moriarty as moriarty  # noqa: E402
 
 EXPECTED_FAMILIES = set(moriarty.EXPECTED_FAMILIES)
-EXPECTED_PROBES = set(moriarty.PROBES)
+EXPECTED_PROBES = {
+    "constitution": ("tools/validate_constitution.py",),
+    "phase0": ("tools/validate_phase0_gate.py",),
+    "phase1": ("tools/validate_phase1_gate.py",),
+    "phase2": ("tools/validate_phase2_gate.py",),
+    "phase3": ("tools/validate_phase3_gate.py",),
+    "phase4": ("tools/validate_phase4_gate.py",),
+    "phase5a": ("tools/validate_phase5a_gate.py",),
+    "phase5": ("tools/validate_phase5_gate.py",),
+    "phase5c": ("tools/validate_phase5c_gate.py",),
+    "phase6": ("tools/validate_phase6_gate.py",),
+    "phase7": ("tools/validate_phase7_gate.py",),
+    "phase8": ("tools/validate_phase8_gate.py",),
+    "rust_all": ("test", "--all-targets", "--offline"),
+}
 HARD_FALSE_CLAIMS = {
     "oracle_holodeck_synthetic_admission",
     "host_level_sandbox",
@@ -43,10 +58,18 @@ def load(path: str) -> dict[str, Any]:
     return value
 
 
+def canonical_ref(value: Any) -> str:
+    return "sha256:" + hashlib.sha256(serialize(value).encode("utf-8")).hexdigest()
+
+
 def git_head() -> str:
     completed = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=ROOT,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        [moriarty.GIT_EXE, "rev-parse", "HEAD"],
+        cwd=ROOT,
+        env=moriarty._git_env(),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
     )
     require(completed.returncode == 0, "Phase 9 cannot resolve Git HEAD")
     head = completed.stdout.decode("ascii", errors="strict").strip()
@@ -101,7 +124,12 @@ def validate_contract() -> None:
         require(operator[key] is False, f"MORIARTY operator boundary weakened: {key}")
 
     execution = state["execution_boundary"]
-    for key in ("target_is_exact_git_commit", "checked_out_head_must_equal_target", "fixed_repository_probe_map"):
+    for key in (
+        "target_is_exact_git_commit", "checked_out_head_must_equal_target",
+        "fixed_repository_probe_map", "tracked_worktree_must_be_clean",
+        "probe_environment_allowlisted", "probe_process_group_isolated",
+        "probe_output_bounded",
+    ):
         require(execution[key] is True, f"MORIARTY exact/fixed execution boundary drift: {key}")
     for key in (
         "shell_execution", "arbitrary_command_execution", "production_credentials_allowed",
@@ -111,6 +139,11 @@ def validate_contract() -> None:
         require(execution[key] is False, f"MORIARTY execution boundary weakened: {key}")
     require(execution["authority_effect"] == "none", "MORIARTY execution gained authority")
 
+    probes = state["probe_policy"]
+    require(probes["cargo_network_access"] is False, "MORIARTY Cargo probe regained network access")
+    require(probes["shared_probe_failure_implies_specific_attack"] is False, "shared probe can fabricate specific counterexample")
+    require(probes["maximum_output_bytes_per_stream"] == moriarty.MAX_PROBE_OUTPUT_BYTES, "MORIARTY output bound drift")
+
     counterexamples = state["counterexample_policy"]
     for key in (
         "accepted_findings_are_reproducible", "accepted_findings_require_observed_local_failure",
@@ -118,6 +151,7 @@ def validate_contract() -> None:
         "accepted_findings_name_owning_phases", "accepted_findings_name_boundary_ids",
         "accepted_findings_name_fixed_regression_probes", "regression_probes_must_be_subset_of_attack_probes",
         "external_findings_are_candidates_only", "unresolved_accepted_finding_blocks_graduation",
+        "unresolved_regressions_execute_before_graduation_decision",
         "resolved_finding_remains_in_registry", "resolved_finding_becomes_regression",
         "resolution_commit_is_fix_commit", "resolution_commit_must_exist",
         "resolution_commit_descends_from_finding_target", "resolution_commit_is_in_reviewed_history",
@@ -128,11 +162,17 @@ def validate_contract() -> None:
         "finding_may_contain_production_credentials", "finding_may_target_production_system",
     ):
         require(counterexamples[key] is False, f"MORIARTY counterexample boundary weakened: {key}")
+    require(counterexamples["maximum_accepted_counterexamples"] == moriarty.MAX_ACCEPTED_COUNTEREXAMPLES, "MORIARTY registry count bound drift")
 
     report = state["report_policy"]
-    require(report["binds_exact_target_commit"] is True, "MORIARTY report lost exact commit binding")
-    require(report["binds_canonical_attack_corpus_identity"] is True, "MORIARTY report lost corpus binding")
-    require(report["graduated_requires_zero_unresolved_counterexamples"] is True, "MORIARTY graduation rule drift")
+    for key in (
+        "binds_exact_target_commit", "binds_canonical_attack_corpus_identity",
+        "records_probe_results_without_raw_output", "records_generated_counterexamples",
+        "graduated_requires_zero_unresolved_counterexamples", "graduated_requires_all_probes_green",
+        "failed_report_metadata_exposed_before_exit",
+    ):
+        require(report[key] is True, f"MORIARTY report policy drift: {key}")
+    require(report["maximum_canonical_bytes"] == moriarty.MAX_REPORT_BYTES, "MORIARTY report byte bound drift")
     require(report["security_proof"] is False, "MORIARTY report overclaimed security proof")
     require(report["no_counterexample_found_implies_none_exist"] is False, "MORIARTY report overclaimed exhaustiveness")
     require(report["authority_effect"] == "none", "MORIARTY report gained authority")
@@ -160,6 +200,8 @@ def validate_schemas_and_fixtures() -> None:
     report_props = report_schema["properties"]
     require(report_props["operator_profile"].get("const") == "provider-neutral-fixed-probe/1", "MORIARTY report operator profile drift")
     require(report_props["family_count"].get("const") == 15, "MORIARTY report family count drift")
+    require(report_props["counterexamples"].get("maxItems") == moriarty.MAX_REPORT_COUNTEREXAMPLES, "MORIARTY report counterexample bound drift")
+    require(report_props["unresolved_counterexamples"].get("maximum") == moriarty.MAX_REPORT_COUNTEREXAMPLES, "MORIARTY unresolved count schema drift")
     for key in (
         "production_credentials_used", "production_targets_used", "constitutional_bypass_used",
         "security_proof", "no_counterexample_found_implies_none_exist",
@@ -177,31 +219,46 @@ def validate_schemas_and_fixtures() -> None:
     require(registry.get("protocol") == "MORIARTY/1", "MORIARTY registry protocol drift")
     require(registry.get("authority_effect") == "none", "MORIARTY registry gained authority")
     values = registry.get("counterexamples")
-    require(isinstance(values, list), "MORIARTY registry counterexamples missing")
+    require(isinstance(values, list) and len(values) <= moriarty.MAX_ACCEPTED_COUNTEREXAMPLES, "MORIARTY registry counterexample count drift")
     require(all(item.get("failure_kind") != "accepted_external" for item in values if isinstance(item, dict)), "accepted_external entered accepted counterexample registry")
     unresolved = sum(1 for item in values if isinstance(item, dict) and item.get("status") == "unresolved")
     require(registry.get("unresolved_counterexamples") == unresolved, "MORIARTY registry unresolved count drift")
-    require(unresolved == 0, "MORIARTY accepted unresolved counterexample blocks graduation")
+
+
+def validate_probe_map() -> None:
+    require(set(moriarty.PROBES) == set(EXPECTED_PROBES), "MORIARTY fixed probe id set drift")
+    for probe_id, tail in EXPECTED_PROBES.items():
+        argv = moriarty.PROBES[probe_id]
+        require(isinstance(argv, tuple) and len(argv) == len(tail) + 1, f"MORIARTY probe argv arity drift: {probe_id}")
+        executable = Path(argv[0]).resolve()
+        require(executable.is_absolute(), f"MORIARTY probe executable not absolute: {probe_id}")
+        require(ROOT not in executable.parents and executable != ROOT, f"MORIARTY probe executable came from repository: {probe_id}")
+        require(tuple(argv[1:]) == tail, f"MORIARTY fixed probe argv drift: {probe_id}")
+        if probe_id == "rust_all":
+            require(executable.name == "cargo", "MORIARTY Rust probe executable drift")
+        else:
+            require(executable.name.startswith("python3"), f"MORIARTY Python probe executable drift: {probe_id}")
 
 
 def validate_runner_source() -> None:
     source = (ROOT / "tools/run_moriarty.py").read_text(encoding="utf-8")
     for marker in (
         "provider-neutral-fixed-probe/1", "moriarty-counterexample/1", "moriarty-report/1",
-        "PROBES: dict[str, tuple[str, ...]]", "candidate", "git_commit_exists", "git_is_ancestor",
-        "moriarty_counterexample_attack_not_in_corpus", "moriarty_resolution_commit_missing",
-        "production_credentials_used", "production_targets_used", "constitutional_bypass_used",
-        "security_proof", "no_counterexample_found_implies_none_exist",
+        "PROBES: dict[str, tuple[str, ...]]", "candidate", "tracked_tree_clean",
+        "start_new_session=True", "selectors.DefaultSelector", "MAX_PROBE_OUTPUT_BYTES",
+        "git_commit_exists", "git_is_ancestor", "moriarty_counterexample_attack_not_in_corpus",
+        "moriarty_resolution_commit_missing", "production_credentials_used",
+        "production_targets_used", "constitutional_bypass_used", "security_proof",
+        "no_counterexample_found_implies_none_exist",
     ):
         require(marker in source, f"MORIARTY runner marker missing: {marker}")
     require("accepted_external" not in source, "MORIARTY runner still admits accepted_external")
-    for probe_id in EXPECTED_PROBES:
-        require(f'"{probe_id}"' in source, f"MORIARTY fixed probe missing: {probe_id}")
     for forbidden in (
         "shell=True", "os.system(", "eval(", "exec(", "requests.", "urllib.", "socket.",
         "--command", "--url", "--host", "--credential", "--token",
     ):
         require(forbidden not in source, f"MORIARTY runner gained forbidden dynamic/target capability: {forbidden}")
+    validate_probe_map()
 
 
 def validate_docs_and_ci() -> None:
@@ -242,6 +299,7 @@ def validate_docs_and_ci() -> None:
 
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     require("ref: ${{ github.event.pull_request.head.sha || github.sha }}" in workflow, "CI does not checkout the exact PR-head/push commit")
+    require("fetch-depth: 0" in workflow, "CI does not provide full Git history for remediation validation")
     require("persist-credentials: false" in workflow, "CI exact target checkout persists credentials")
     require("MORIARTY_TARGET_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}" in workflow, "CI MORIARTY target commit binding missing")
     require("python3 tools/validate_phase9_gate.py --target-commit \"$MORIARTY_TARGET_COMMIT\"" in workflow, "CI missing exact-commit Phase 9 gate")
@@ -270,9 +328,7 @@ def _counterexample_for_test(target: str, attack: dict[str, Any]) -> dict[str, A
         "constitutional_bypass_used": False,
         "authority_effect": "none",
     }
-    projection = dict(item)
-    projection.pop("counterexample_id")
-    item["counterexample_id"] = moriarty.canonical_ref(projection)
+    _reidentify(item)
     return item
 
 
@@ -298,42 +354,50 @@ def validate_counterexample_negative_tests(target: str) -> None:
     external["failure_kind"] = "accepted_external"
     external["observed_exit_code"] = None
     _reidentify(external)
-    external_registry = {
-        "schema": moriarty.REGISTRY_SCHEMA, "protocol": moriarty.PROTOCOL,
-        "counterexamples": [external], "unresolved_counterexamples": 1, "authority_effect": "none",
-    }
-    _expect_reject(lambda: moriarty.validate_registry(external_registry, attacks, target), "accepted_external registry entry")
+    _expect_reject(
+        lambda: moriarty.validate_registry({
+            "schema": moriarty.REGISTRY_SCHEMA, "protocol": moriarty.PROTOCOL,
+            "counterexamples": [external], "unresolved_counterexamples": 1, "authority_effect": "none",
+        }, attacks, target),
+        "accepted_external registry entry",
+    )
 
     mismatch = _counterexample_for_test(target, attack)
     mismatch["family"] = attacks[1]["family"]
     _reidentify(mismatch)
-    mismatch_registry = {
-        "schema": moriarty.REGISTRY_SCHEMA, "protocol": moriarty.PROTOCOL,
-        "counterexamples": [mismatch], "unresolved_counterexamples": 1, "authority_effect": "none",
-    }
-    _expect_reject(lambda: moriarty.validate_registry(mismatch_registry, attacks, target), "counterexample/corpus semantic mismatch")
+    _expect_reject(
+        lambda: moriarty.validate_registry({
+            "schema": moriarty.REGISTRY_SCHEMA, "protocol": moriarty.PROTOCOL,
+            "counterexamples": [mismatch], "unresolved_counterexamples": 1, "authority_effect": "none",
+        }, attacks, target),
+        "counterexample/corpus semantic mismatch",
+    )
 
     unrelated_probe = _counterexample_for_test(target, attack)
     unrelated_probe["regression_probe_ids"] = ["phase8"]
     _reidentify(unrelated_probe)
-    probe_registry = {
-        "schema": moriarty.REGISTRY_SCHEMA, "protocol": moriarty.PROTOCOL,
-        "counterexamples": [unrelated_probe], "unresolved_counterexamples": 1, "authority_effect": "none",
-    }
-    _expect_reject(lambda: moriarty.validate_registry(probe_registry, attacks, target), "counterexample probe outside corpus attack")
+    _expect_reject(
+        lambda: moriarty.validate_registry({
+            "schema": moriarty.REGISTRY_SCHEMA, "protocol": moriarty.PROTOCOL,
+            "counterexamples": [unrelated_probe], "unresolved_counterexamples": 1, "authority_effect": "none",
+        }, attacks, target),
+        "counterexample probe outside corpus attack",
+    )
 
     nonexistent_fix = _counterexample_for_test(target, attack)
     nonexistent_fix["status"] = "resolved"
     nonexistent_fix["resolution_commit"] = "f" * 40
     _reidentify(nonexistent_fix)
-    resolution_registry = {
-        "schema": moriarty.REGISTRY_SCHEMA, "protocol": moriarty.PROTOCOL,
-        "counterexamples": [nonexistent_fix], "unresolved_counterexamples": 0, "authority_effect": "none",
-    }
-    _expect_reject(lambda: moriarty.validate_registry(resolution_registry, attacks, target), "nonexistent resolution commit")
+    _expect_reject(
+        lambda: moriarty.validate_registry({
+            "schema": moriarty.REGISTRY_SCHEMA, "protocol": moriarty.PROTOCOL,
+            "counterexamples": [nonexistent_fix], "unresolved_counterexamples": 0, "authority_effect": "none",
+        }, attacks, target),
+        "nonexistent resolution commit",
+    )
 
 
-def validate_report(report: dict[str, Any], target: str, registry: dict[str, Any]) -> None:
+def validate_report_common(report: dict[str, Any], target: str) -> None:
     expected_fields = {
         "schema", "protocol", "target_commit", "corpus_ref", "operator_profile", "family_count",
         "executed_probe_count", "probe_results", "counterexamples", "unresolved_counterexamples",
@@ -345,16 +409,14 @@ def validate_report(report: dict[str, Any], target: str, registry: dict[str, Any
     require(report["schema"] == "moriarty-report/1", "MORIARTY generated report schema drift")
     require(report["protocol"] == "MORIARTY/1", "MORIARTY generated report protocol drift")
     require(report["target_commit"] == target, "MORIARTY generated report target drift")
+    require(report["corpus_ref"] == canonical_ref(load("fixtures/phase9/attack-corpus.json")), "MORIARTY generated report corpus reference drift")
     require(report["operator_profile"] == "provider-neutral-fixed-probe/1", "MORIARTY generated report operator drift")
     require(report["family_count"] == 15, "MORIARTY generated report family count drift")
     require(report["executed_probe_count"] == len(EXPECTED_PROBES), "MORIARTY did not execute complete fixed-probe set")
     probe_results = report["probe_results"]
     require(isinstance(probe_results, list) and len(probe_results) == len(EXPECTED_PROBES), "MORIARTY report probe result count drift")
-    require({item.get("probe_id") for item in probe_results} == EXPECTED_PROBES, "MORIARTY report probe set drift")
-    require(all(item.get("ok") is True and item.get("exit_code") == 0 for item in probe_results), "MORIARTY report contains failed fixed probe")
-    require(report["counterexamples"] == registry["counterexamples"], "MORIARTY successful report contains generated counterexample or registry drift")
-    require(report["unresolved_counterexamples"] == 0, "MORIARTY report has unresolved counterexample")
-    require(report["graduated"] is True, "MORIARTY report did not graduate exact commit")
+    require({item.get("probe_id") for item in probe_results} == set(EXPECTED_PROBES), "MORIARTY report probe set drift")
+    require(isinstance(report["counterexamples"], list) and len(report["counterexamples"]) <= moriarty.MAX_REPORT_COUNTEREXAMPLES, "MORIARTY report counterexample count drift")
     for key in (
         "production_credentials_used", "production_targets_used", "constitutional_bypass_used",
         "security_proof", "no_counterexample_found_implies_none_exist",
@@ -363,23 +425,71 @@ def validate_report(report: dict[str, Any], target: str, registry: dict[str, Any
     require(report["authority_effect"] == "none", "MORIARTY generated report gained authority")
 
 
+def validate_success_report(report: dict[str, Any], registry: dict[str, Any]) -> None:
+    probe_results = report["probe_results"]
+    require(all(item.get("ok") is True and item.get("exit_code") == 0 for item in probe_results), "MORIARTY report contains failed fixed probe")
+    require(report["counterexamples"] == registry["counterexamples"], "MORIARTY successful report contains generated counterexample or registry drift")
+    require(report["unresolved_counterexamples"] == 0, "MORIARTY report has unresolved counterexample")
+    require(report["graduated"] is True, "MORIARTY report did not graduate exact commit")
+
+
+def failure_diagnostic(report: dict[str, Any]) -> str:
+    failed_probes = [
+        {
+            "probe_id": item["probe_id"],
+            "exit_code": item["exit_code"],
+            "stdout_sha256": item["stdout_sha256"],
+            "stderr_sha256": item["stderr_sha256"],
+            "stdout_bytes": item["stdout_bytes"],
+            "stderr_bytes": item["stderr_bytes"],
+        }
+        for item in report["probe_results"]
+        if not item["ok"]
+    ]
+    counterexamples = [
+        {
+            "counterexample_id": item["counterexample_id"],
+            "attack_id": item["attack_id"],
+            "regression_probe_ids": item["regression_probe_ids"],
+            "status": item["status"],
+        }
+        for item in report["counterexamples"]
+    ]
+    return json.dumps({
+        "target_commit": report["target_commit"],
+        "corpus_ref": report["corpus_ref"],
+        "failed_probes": failed_probes,
+        "counterexamples": counterexamples,
+        "unresolved_counterexamples": report["unresolved_counterexamples"],
+        "graduated": report["graduated"],
+    }, sort_keys=True, separators=(",", ":"))
+
+
 def execute_exact_commit_gate(target: str) -> None:
     require(git_head() == target, "Phase 9 target commit does not match checked-out HEAD")
+    require(moriarty.tracked_tree_clean(), "Phase 9 target tracked tree is dirty before runner")
     registry = load("fixtures/phase9/accepted-counterexamples.json")
     with tempfile.TemporaryDirectory(prefix="qsol-fed-moriarty-") as temp_dir:
         report_path = Path(temp_dir) / "moriarty-report.json"
+        validator_home = Path(temp_dir) / "validator-home"
+        validator_home.mkdir()
         completed = subprocess.run(
-            ["python3", "tools/run_moriarty.py", "--target-commit", target, "--output", str(report_path)],
-            cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+            [moriarty.PYTHON_EXE, "tools/run_moriarty.py", "--target-commit", target, "--output", str(report_path)],
+            cwd=ROOT,
+            env=moriarty._probe_environment(validator_home),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
         )
         require(report_path.exists(), "MORIARTY runner did not emit report")
         raw = report_path.read_bytes()
+        require(len(raw) <= moriarty.MAX_REPORT_BYTES, "MORIARTY report exceeds canonical byte bound")
         require(canonicalize(raw.decode("utf-8")) == raw, "MORIARTY report is not exact canonical JSON")
         report = json.loads(raw)
-        validate_report(report, target, registry)
+        validate_report_common(report, target)
         if completed.returncode != 0:
-            diagnostic = completed.stderr.decode("utf-8", errors="replace")[-2000:]
-            raise SystemExit(f"MORIARTY runner blocked exact commit: {diagnostic}")
+            raise SystemExit("MORIARTY runner blocked exact commit: " + failure_diagnostic(report))
+        validate_success_report(report, registry)
 
 
 def main() -> None:
