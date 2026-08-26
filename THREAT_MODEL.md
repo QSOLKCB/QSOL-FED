@@ -20,6 +20,8 @@ Assume a peer may be malicious, compromised, buggy, stale, spoofed, replaying ol
 
 Also assume local adapters and AI models can be wrong. Model confidence is not a security primitive.
 
+Phase 9 additionally assumes that a repository-aware adversarial operator may deliberately search across phase boundaries for contradictions, authority laundering, parser splits, unsafe restart behavior, transport confusion, Assembly capture, or Holodeck escape paths. The operator is untrusted input to the review process, not an execution or authority principal.
+
 ## Primary threats
 
 ### T1. Authority injection
@@ -62,7 +64,7 @@ A valid signature is interpreted as truth, identity semantics or authorization.
 
 Captured valid envelopes are resent to produce duplicate effects.
 
-**Mitigation:** future message identity, expiry and replay store; v1 does not claim production networking before this exists.
+**Mitigation:** durable message identity, expiry and replay state; replay freshness remains separate from authority and local admission.
 
 ### T8. Downgrade
 
@@ -74,7 +76,7 @@ A peer forces an older protocol/capability mode that weakens constitutional prot
 
 Oversized/deep JSON, decompression bombs, object floods or expensive verification consume resources.
 
-**Mitigation:** bounded framing, depth, size, rate and cache policies before production listener exposure.
+**Mitigation:** bounded framing, depth, size, rate, queue and cache policies; deterministic exhaustion drills cover API, Holodeck and transport surfaces.
 
 ### T10. SSRF / confused deputy
 
@@ -92,32 +94,72 @@ Credentials leak into payloads, logs, prompts or exported provenance.
 
 Different implementations sign or hash semantically equivalent but byte-different structures.
 
-**Mitigation:** freeze canonicalization with cross-language vectors before claiming wire interoperability.
+**Mitigation:** frozen canonicalization, hostile fixtures and cross-language golden vectors.
 
 ### T13. Sybil / peer swarm
 
 Many identities attempt to manufacture apparent consensus or exhaust resources.
 
-**Mitigation:** Federation does not equate peer count with truth or authority; local peering/rate policies remain sovereign.
+**Mitigation:** Federation does not equate peer count with truth or authority; local peering/rate policies remain sovereign. Assembly registry uniqueness is not overclaimed as proof of real-world principal uniqueness.
 
 ### T14. Compromised trusted peer
 
 A previously trusted key behaves maliciously.
 
-**Mitigation:** trust never bypasses Prime Directive invariants; future revocation/rotation mechanisms; local quarantine.
+**Mitigation:** trust never bypasses Prime Directive invariants; key lifecycle, compromise/recovery/revocation and local quarantine remain authoritative across transports.
 
 ### T15. Local adapter privilege escalation
 
 A NEXUS/ORACLE/ARK adapter accidentally maps foreign data into local authority-bearing operations.
 
-**Mitigation:** adapter calls occur after Prime Directive admission and must preserve the same invariant IDs in conformance tests.
+**Mitigation:** adapter calls preserve the same invariant IDs as the core node and remain data/observation/preservation membranes rather than authority bridges.
 
-## Out of scope for bootstrap
+### T16. Cross-phase contradiction
 
-PR #1 does not claim mitigation by implementation for network attacks that require a live listener, cryptographic identity stack, durable replay database or production key management. Those remain roadmap gates.
+Two individually valid phase contracts compose into a path that weakens an earlier invariant, for example transport changing identity semantics, Assembly output becoming a member-local command, or archival presence changing provenance meaning.
+
+**Mitigation:** MORIARTY/1 maps explicit cross-phase attack families to every historical phase gate plus the complete Rust regression suite. A reproducible contradiction reopens the owning phase and becomes a permanent regression.
+
+### T17. Adversarial-operator confused deputy
+
+A model or human reviewer proposes a command, URL, credential, target, or constitutional bypass and the security harness executes it merely because it was supplied as an adversarial test.
+
+**Mitigation:** the Phase 9 attack corpus contains source-owned probe IDs only. The runner owns a closed fixed argv map, invokes no shell, accepts no operator-selected command/network target/credential, and binds execution to the exact checked-out commit.
+
+### T18. Security-report overclaim
+
+A green adversarial run is described as proof that no vulnerability or counterexample exists.
+
+**Mitigation:** every report hard-codes `security_proof = false` and `no_counterexample_found_implies_none_exist = false`.
+
+## Current non-claims
+
+The repository now implements historical identity, replay, reference API, state, Holodeck, adapter, SDK, Assembly and transport-resilience gates, but it still does not claim:
+
+- production networking;
+- arbitrary remote execution;
+- host-level sandbox isolation;
+- deployed interoperable federation;
+- Holodeck synthetic output as ORACLE evidence;
+- universal security merely because MORIARTY/1 is green.
+
+Those claims require their own explicit evidence and reviewed promotion path. Phase 9 intentionally changes none of them.
+
+## MORIARTY/1 adversarial boundary
+
+MORIARTY receives public repository blueprints and disposable repository fixtures only. It receives no production credentials, production targets, private infrastructure endpoints, member-local authority handles, or constitutional bypass.
+
+Accepted findings use `moriarty-counterexample/1`. A finding remains blocking until locally reproduced, assigned to its owning phase/boundary, repaired, and preserved as a regression.
+
+```text
+COUNTEREXAMPLE != AUTHORITY
+ADVERSARIAL OPERATOR != EXECUTION AUTHORITY
+MORIARTY REPORT != SECURITY PROOF
+NO COUNTEREXAMPLE FOUND != NO COUNTEREXAMPLE EXISTS
+```
 
 ## Security invariant
 
 The most important threat-model rule is intentionally boring:
 
-> No amount of remote agreement is itself permission to cross a local authority boundary.
+> No amount of remote agreement, simulated persuasion, adversarial confidence, or green-report ceremony is itself permission to cross a local authority boundary.
