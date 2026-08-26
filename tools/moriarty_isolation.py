@@ -204,7 +204,12 @@ def write_report_exclusive(output: Path, encoded: bytes, repository_root: Path) 
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC
         if hasattr(os, "O_NOFOLLOW"):
             flags |= os.O_NOFOLLOW
-        fd = os.open(output.name, flags, 0o600, dir_fd=directory_fd)
+        try:
+            fd = os.open(output.name, flags, 0o600, dir_fd=directory_fd)
+        except FileExistsError:
+            fail("moriarty_report_output_exists")
+        except OSError:
+            fail("moriarty_report_output_open_failed")
         try:
             view = memoryview(encoded)
             while view:
