@@ -6,6 +6,7 @@ import ctypes
 import errno
 import hashlib
 import io
+import json
 import os
 import stat
 import sys
@@ -479,14 +480,47 @@ def create_verified_cargo_template(real_cargo_home: Path, workspace: Path, cargo
     return template
 
 
+def _owned_cargo_config(workspace: Path) -> bytes:
+    """Return the exact harness-owned Cargo config for one disposable probe home.
+
+    Rust descendants inherit the probe's Landlock domain, so they intentionally
+    cannot discover their own `/proc/<pid>` subtree. Supplying the already-staged
+    toolchain sysroot explicitly removes rustc's need to infer it through
+    `/proc/self/exe` while keeping the parent/host `/proc` credential boundary
+    closed. The config also reiterates Cargo's offline requirement.
+    """
+    sysroot = (workspace / "rust-runtime").resolve(strict=True)
+    return (
+        "[build]\n"
+        f"rustflags = [\"--sysroot\", {json.dumps(str(sysroot))}]\n"
+        "[net]\n"
+        "offline = true\n"
+    ).encode("utf-8")
+
+
 def create_isolated_cargo_home(template: Path, workspace: Path, label: str) -> Path:
     cargo_home = workspace / f"cargo-home-{label}"
     cargo_home.mkdir(mode=0o700, parents=False, exist_ok=False)
     _copy_regular_tree(template, cargo_home)
-    if (cargo_home / "config.toml").exists() or (cargo_home / "credentials.toml").exists():
+    config_path = cargo_home / "config.toml"
+    credentials_path = cargo_home / "credentials.toml"
+    if config_path.exists() or credentials_path.exists():
         fail("moriarty_cargo_home_ambient_config_or_credentials")
     if (cargo_home / "registry" / "src").exists():
         fail("moriarty_cargo_home_preunpacked_source_forbidden")
+    config = _owned_cargo_config(workspace)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(config_path, flags, 0o600)
+    try:
+        view = memoryview(config)
+        while view:
+            written = os.write(fd, view)
+            view = view[written:]
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    if config_path.read_bytes() != config or credentials_path.exists():
+        fail("moriarty_cargo_home_owned_config_mismatch")
     return cargo_home
 
 
