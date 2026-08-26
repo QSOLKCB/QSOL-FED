@@ -481,36 +481,40 @@ def create_verified_cargo_template(real_cargo_home: Path, workspace: Path, cargo
 
 
 def _owned_cargo_config(workspace: Path) -> bytes:
-    """Return the exact harness-owned Cargo config for one disposable probe home.
+    """Return harness-owned Cargo settings without importing user configuration.
 
-    Rust descendants inherit the probe's Landlock domain, so they intentionally
-    cannot discover their own `/proc/<pid>` subtree. Supplying the already-staged
-    toolchain sysroot explicitly removes rustc's need to infer it through
-    `/proc/self/exe` while keeping the parent/host `/proc` credential boundary
-    closed. The config also reiterates Cargo's offline requirement.
+    The real runner stages Rust under `workspace/rust-runtime` before creating
+    per-probe homes. When that runtime is present, explicitly pass its sysroot so
+    rustc descendants do not need `/proc/self/exe` for toolchain discovery. The
+    validator also exercises this helper before staging Rust, so the sysroot
+    stanza is conditional while the offline policy remains unconditional.
     """
-    sysroot = (workspace / "rust-runtime").resolve(strict=True)
-    return (
-        "[build]\n"
-        f"rustflags = [\"--sysroot\", {json.dumps(str(sysroot))}]\n"
-        "[net]\n"
-        "offline = true\n"
-    ).encode("utf-8")
+    lines = []
+    rust_runtime = workspace / "rust-runtime"
+    if rust_runtime.is_dir():
+        sysroot = rust_runtime.resolve(strict=True)
+        lines.extend([
+            "[build]\n",
+            f"rustflags = [\"--sysroot\", {json.dumps(str(sysroot))}]\n",
+        ])
+    lines.extend(["[net]\n", "offline = true\n"])
+    return "".join(lines).encode("utf-8")
 
 
 def create_isolated_cargo_home(template: Path, workspace: Path, label: str) -> Path:
     cargo_home = workspace / f"cargo-home-{label}"
     cargo_home.mkdir(mode=0o700, parents=False, exist_ok=False)
     _copy_regular_tree(template, cargo_home)
-    config_path = cargo_home / "config.toml"
+    config_toml = cargo_home / "config.toml"
+    legacy_config = cargo_home / "config"
     credentials_path = cargo_home / "credentials.toml"
-    if config_path.exists() or credentials_path.exists():
+    if config_toml.exists() or legacy_config.exists() or credentials_path.exists():
         fail("moriarty_cargo_home_ambient_config_or_credentials")
     if (cargo_home / "registry" / "src").exists():
         fail("moriarty_cargo_home_preunpacked_source_forbidden")
     config = _owned_cargo_config(workspace)
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
-    fd = os.open(config_path, flags, 0o600)
+    fd = os.open(legacy_config, flags, 0o600)
     try:
         view = memoryview(config)
         while view:
@@ -519,7 +523,7 @@ def create_isolated_cargo_home(template: Path, workspace: Path, label: str) -> P
         os.fsync(fd)
     finally:
         os.close(fd)
-    if config_path.read_bytes() != config or credentials_path.exists():
+    if legacy_config.read_bytes() != config or config_toml.exists() or credentials_path.exists():
         fail("moriarty_cargo_home_owned_config_mismatch")
     return cargo_home
 
