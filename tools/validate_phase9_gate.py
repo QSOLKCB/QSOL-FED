@@ -358,10 +358,14 @@ def validate_runner_source() -> None:
         require(marker in source, f"MORIARTY runner marker missing: {marker}")
     require("accepted_external" not in source, "MORIARTY runner still admits accepted_external")
     for forbidden in (
-        "shell=True", "os.system(", "eval(", "exec(", "requests.", "urllib.", "socket.",
+        "shell=True", "os.system(", "eval(", "requests.", "urllib.", "socket.",
         "--command", "--url", "--host", "--credential", "--token",
     ):
         require(forbidden not in source, f"MORIARTY runner gained forbidden dynamic/target capability: {forbidden}")
+    require(
+        re.search(r"(?<![A-Za-z0-9_])exec\s*\(", source) is None,
+        "MORIARTY runner gained forbidden standalone exec call",
+    )
     validate_probe_map()
 
 
