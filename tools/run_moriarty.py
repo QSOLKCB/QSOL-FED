@@ -25,12 +25,11 @@ ATTACK_CORPUS_SCHEMA = "moriarty-attack-corpus/1"
 REGISTRY_SCHEMA = "moriarty-counterexample-registry/1"
 OPERATOR_PROFILE = "provider-neutral-fixed-probe/1"
 TARGET_RE = re.compile(r"^[0-9a-f]{40}$")
+SHA256_REF_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 TIMEOUT_SECONDS = 300
 
-# This is intentionally source-owned and closed. The attack corpus may select only
-# these probe identifiers. It cannot inject commands, shells, network targets, or
-# credentials into the harness. A model/human candidate finding must first be reduced
-# to one of these reviewed local regression probes before MORIARTY executes it.
+# Source-owned and closed. Candidate findings must be reduced to one of these
+# deterministic local probes before they are eligible for the accepted registry.
 PROBES: dict[str, tuple[str, ...]] = {
     "constitution": ("python3", "tools/validate_constitution.py"),
     "phase0": ("python3", "tools/validate_phase0_gate.py"),
@@ -88,14 +87,18 @@ def bytes_ref(value: bytes) -> str:
     return "sha256:" + hashlib.sha256(value).hexdigest()
 
 
-def git_head() -> str:
-    completed = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
+def git(*args: str) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(
+        ["git", *args],
         cwd=ROOT,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
     )
+
+
+def git_head() -> str:
+    completed = git("rev-parse", "HEAD")
     if completed.returncode != 0:
         fail("moriarty_git_head_unavailable")
     try:
@@ -105,6 +108,14 @@ def git_head() -> str:
     if not TARGET_RE.fullmatch(head):
         fail("moriarty_git_head_invalid")
     return head
+
+
+def git_commit_exists(commit: str) -> bool:
+    return bool(TARGET_RE.fullmatch(commit)) and git("cat-file", "-e", f"{commit}^{{commit}}").returncode == 0
+
+
+def git_is_ancestor(ancestor: str, descendant: str) -> bool:
+    return git("merge-base", "--is-ancestor", ancestor, descendant).returncode == 0
 
 
 def validate_attack_corpus(corpus: dict[str, Any]) -> list[dict[str, Any]]:
@@ -158,7 +169,77 @@ def validate_attack_corpus(corpus: dict[str, Any]) -> list[dict[str, Any]]:
     return attacks
 
 
-def validate_registry(registry: dict[str, Any]) -> list[dict[str, Any]]:
+def validate_counterexample_shape(item: Any) -> None:
+    if not isinstance(item, dict):
+        fail("moriarty_counterexample_not_object")
+    required = {
+        "schema", "counterexample_id", "target_commit", "attack_id", "family",
+        "owner_phases", "boundary_ids", "regression_probe_ids", "failure_kind",
+        "observed_exit_code", "stdout_sha256", "stderr_sha256", "stdout_bytes",
+        "stderr_bytes", "status", "resolution_commit", "production_credentials_used",
+        "production_targets_used", "constitutional_bypass_used", "authority_effect",
+    }
+    if set(item) != required:
+        fail("moriarty_counterexample_field_set_invalid")
+    if (
+        item["schema"] != COUNTEREXAMPLE_SCHEMA
+        or not isinstance(item["counterexample_id"], str)
+        or not SHA256_REF_RE.fullmatch(item["counterexample_id"])
+        or not isinstance(item["target_commit"], str)
+        or not TARGET_RE.fullmatch(item["target_commit"])
+        or not isinstance(item["attack_id"], str)
+        or not re.fullmatch(r"MOR-[0-9]{3}", item["attack_id"])
+        or item["family"] not in EXPECTED_FAMILIES
+        or not isinstance(item["owner_phases"], list)
+        or not item["owner_phases"]
+        or len(set(item["owner_phases"])) != len(item["owner_phases"])
+        or not isinstance(item["boundary_ids"], list)
+        or not item["boundary_ids"]
+        or len(set(item["boundary_ids"])) != len(item["boundary_ids"])
+        or not isinstance(item["regression_probe_ids"], list)
+        or not item["regression_probe_ids"]
+        or len(set(item["regression_probe_ids"])) != len(item["regression_probe_ids"])
+        or not all(probe_id in PROBES for probe_id in item["regression_probe_ids"])
+        or item["failure_kind"] not in {"exit_nonzero", "timeout", "tool_error"}
+        or item["status"] not in {"unresolved", "resolved"}
+        or item["production_credentials_used"] is not False
+        or item["production_targets_used"] is not False
+        or item["constitutional_bypass_used"] is not False
+        or item["authority_effect"] != "none"
+        or not isinstance(item["stdout_sha256"], str)
+        or not SHA256_REF_RE.fullmatch(item["stdout_sha256"])
+        or not isinstance(item["stderr_sha256"], str)
+        or not SHA256_REF_RE.fullmatch(item["stderr_sha256"])
+        or not isinstance(item["stdout_bytes"], int)
+        or not 0 <= item["stdout_bytes"] <= 9007199254740991
+        or not isinstance(item["stderr_bytes"], int)
+        or not 0 <= item["stderr_bytes"] <= 9007199254740991
+    ):
+        fail("moriarty_counterexample_boundary_invalid")
+
+    if item["failure_kind"] == "exit_nonzero":
+        if not isinstance(item["observed_exit_code"], int) or item["observed_exit_code"] == 0:
+            fail("moriarty_exit_failure_requires_nonzero_exit_code")
+    elif item["observed_exit_code"] is not None:
+        fail("moriarty_nonexit_failure_exit_code_must_be_null")
+
+    if item["status"] == "unresolved":
+        if item["resolution_commit"] is not None:
+            fail("moriarty_unresolved_counterexample_has_resolution_commit")
+    elif not isinstance(item["resolution_commit"], str) or not TARGET_RE.fullmatch(item["resolution_commit"]):
+        fail("moriarty_resolved_counterexample_missing_resolution_commit")
+
+    projection = dict(item)
+    projection.pop("counterexample_id")
+    if item["counterexample_id"] != canonical_ref(projection):
+        fail("moriarty_counterexample_identity_mismatch")
+
+
+def validate_registry(
+    registry: dict[str, Any],
+    attacks: list[dict[str, Any]],
+    reviewed_target: str,
+) -> list[dict[str, Any]]:
     if (
         registry.get("schema") != REGISTRY_SCHEMA
         or registry.get("protocol") != PROTOCOL
@@ -168,97 +249,61 @@ def validate_registry(registry: dict[str, Any]) -> list[dict[str, Any]]:
     counterexamples = registry.get("counterexamples")
     if not isinstance(counterexamples, list) or len(counterexamples) > 1024:
         fail("moriarty_counterexample_registry_count_invalid")
+
+    attack_by_id = {attack["id"]: attack for attack in attacks}
     unresolved = 0
     seen_ids: set[str] = set()
     for item in counterexamples:
-        validate_counterexample_shape(item, accepted=True)
+        validate_counterexample_shape(item)
         counterexample_id = item["counterexample_id"]
         if counterexample_id in seen_ids:
             fail("moriarty_counterexample_registry_duplicate")
         seen_ids.add(counterexample_id)
+
+        attack = attack_by_id.get(item["attack_id"])
+        if attack is None:
+            fail("moriarty_counterexample_attack_not_in_corpus")
+        if item["family"] != attack["family"]:
+            fail("moriarty_counterexample_family_mismatch")
+        if item["owner_phases"] != attack["owner_phases"]:
+            fail("moriarty_counterexample_owner_phase_mismatch")
+        if item["boundary_ids"] != attack["boundary_ids"]:
+            fail("moriarty_counterexample_boundary_set_mismatch")
+        if not set(item["regression_probe_ids"]).issubset(set(attack["probe_ids"])):
+            fail("moriarty_counterexample_probe_not_bound_to_attack")
+
+        finding_target = item["target_commit"]
+        if not git_commit_exists(finding_target):
+            fail("moriarty_counterexample_target_commit_missing")
+        if not git_is_ancestor(finding_target, reviewed_target):
+            fail("moriarty_counterexample_target_not_in_reviewed_history")
+
         if item["status"] == "unresolved":
             unresolved += 1
-        else:
-            if not item["resolution_commit"] or not TARGET_RE.fullmatch(item["resolution_commit"]):
-                fail("moriarty_resolved_counterexample_missing_resolution_commit")
-            if any(probe_id not in PROBES for probe_id in item["regression_probe_ids"]):
-                fail("moriarty_resolved_counterexample_unknown_probe")
+            continue
+
+        resolution = item["resolution_commit"]
+        assert isinstance(resolution, str)
+        if resolution == finding_target:
+            fail("moriarty_resolution_commit_must_follow_finding_target")
+        if not git_commit_exists(resolution):
+            fail("moriarty_resolution_commit_missing")
+        if not git_is_ancestor(finding_target, resolution):
+            fail("moriarty_resolution_not_descendant_of_finding_target")
+        if not git_is_ancestor(resolution, reviewed_target):
+            fail("moriarty_resolution_not_in_reviewed_history")
+
     if registry.get("unresolved_counterexamples") != unresolved:
         fail("moriarty_counterexample_registry_unresolved_count_drift")
     return counterexamples
-
-
-def validate_counterexample_shape(item: Any, *, accepted: bool) -> None:
-    if not isinstance(item, dict):
-        fail("moriarty_counterexample_not_object")
-    required = {
-        "schema",
-        "counterexample_id",
-        "target_commit",
-        "attack_id",
-        "family",
-        "owner_phases",
-        "boundary_ids",
-        "regression_probe_ids",
-        "failure_kind",
-        "observed_exit_code",
-        "stdout_sha256",
-        "stderr_sha256",
-        "stdout_bytes",
-        "stderr_bytes",
-        "status",
-        "resolution_commit",
-        "production_credentials_used",
-        "production_targets_used",
-        "constitutional_bypass_used",
-        "authority_effect",
-    }
-    if set(item) != required:
-        fail("moriarty_counterexample_field_set_invalid")
-    if (
-        item["schema"] != COUNTEREXAMPLE_SCHEMA
-        or not isinstance(item["counterexample_id"], str)
-        or not re.fullmatch(r"sha256:[0-9a-f]{64}", item["counterexample_id"])
-        or not isinstance(item["target_commit"], str)
-        or not TARGET_RE.fullmatch(item["target_commit"])
-        or not isinstance(item["attack_id"], str)
-        or not re.fullmatch(r"MOR-[0-9]{3}", item["attack_id"])
-        or item["family"] not in EXPECTED_FAMILIES
-        or not isinstance(item["owner_phases"], list)
-        or not item["owner_phases"]
-        or not isinstance(item["boundary_ids"], list)
-        or not item["boundary_ids"]
-        or not isinstance(item["regression_probe_ids"], list)
-        or not item["regression_probe_ids"]
-        or not all(probe_id in PROBES for probe_id in item["regression_probe_ids"])
-        or item["failure_kind"] not in {"exit_nonzero", "timeout", "tool_error", "accepted_external"}
-        or item["status"] not in {"unresolved", "resolved"}
-        or item["production_credentials_used"] is not False
-        or item["production_targets_used"] is not False
-        or item["constitutional_bypass_used"] is not False
-        or item["authority_effect"] != "none"
-        or not re.fullmatch(r"sha256:[0-9a-f]{64}", item["stdout_sha256"])
-        or not re.fullmatch(r"sha256:[0-9a-f]{64}", item["stderr_sha256"])
-        or not isinstance(item["stdout_bytes"], int)
-        or item["stdout_bytes"] < 0
-        or not isinstance(item["stderr_bytes"], int)
-        or item["stderr_bytes"] < 0
-    ):
-        fail("moriarty_counterexample_boundary_invalid")
-    if accepted and item["failure_kind"] == "accepted_external" and item["observed_exit_code"] is not None:
-        fail("moriarty_external_counterexample_exit_code_must_be_null")
 
 
 def run_probe(probe_id: str) -> dict[str, Any]:
     argv = PROBES[probe_id]
     try:
         completed = subprocess.run(
-            list(argv),
-            cwd=ROOT,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=TIMEOUT_SECONDS,
-            check=False,
+            list(argv), cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=TIMEOUT_SECONDS, check=False,
         )
         return {
             "probe_id": probe_id,
@@ -274,26 +319,16 @@ def run_probe(probe_id: str) -> dict[str, Any]:
         stdout = exc.stdout if isinstance(exc.stdout, bytes) else b""
         stderr = exc.stderr if isinstance(exc.stderr, bytes) else b""
         return {
-            "probe_id": probe_id,
-            "ok": False,
-            "exit_code": None,
-            "failure_kind": "timeout",
-            "stdout_sha256": bytes_ref(stdout),
-            "stderr_sha256": bytes_ref(stderr),
-            "stdout_bytes": len(stdout),
-            "stderr_bytes": len(stderr),
+            "probe_id": probe_id, "ok": False, "exit_code": None, "failure_kind": "timeout",
+            "stdout_sha256": bytes_ref(stdout), "stderr_sha256": bytes_ref(stderr),
+            "stdout_bytes": len(stdout), "stderr_bytes": len(stderr),
         }
     except OSError as exc:
         encoded = str(exc).encode("utf-8", errors="replace")
         return {
-            "probe_id": probe_id,
-            "ok": False,
-            "exit_code": None,
-            "failure_kind": "tool_error",
-            "stdout_sha256": bytes_ref(b""),
-            "stderr_sha256": bytes_ref(encoded),
-            "stdout_bytes": 0,
-            "stderr_bytes": len(encoded),
+            "probe_id": probe_id, "ok": False, "exit_code": None, "failure_kind": "tool_error",
+            "stdout_sha256": bytes_ref(b""), "stderr_sha256": bytes_ref(encoded),
+            "stdout_bytes": 0, "stderr_bytes": len(encoded),
         }
 
 
@@ -323,13 +358,14 @@ def generated_counterexample(target: str, attack: dict[str, Any], result: dict[s
     projection = dict(item)
     projection.pop("counterexample_id")
     item["counterexample_id"] = canonical_ref(projection)
-    validate_counterexample_shape(item, accepted=False)
+    validate_counterexample_shape(item)
     return item
 
 
 def report_probe_result(result: dict[str, Any]) -> dict[str, Any]:
     return {key: result[key] for key in (
-        "probe_id", "ok", "exit_code", "stdout_sha256", "stderr_sha256", "stdout_bytes", "stderr_bytes"
+        "probe_id", "ok", "exit_code", "stdout_sha256", "stderr_sha256",
+        "stdout_bytes", "stderr_bytes",
     )}
 
 
@@ -348,7 +384,7 @@ def main() -> int:
     corpus = load_json(ROOT / "fixtures/phase9/attack-corpus.json")
     attacks = validate_attack_corpus(corpus)
     registry = load_json(ROOT / "fixtures/phase9/accepted-counterexamples.json")
-    accepted = validate_registry(registry)
+    accepted = validate_registry(registry, attacks, target)
 
     requested_probe_ids: list[str] = []
     for attack in attacks:
