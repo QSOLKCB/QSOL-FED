@@ -7,8 +7,8 @@ projection, and exclusive report publication.
 """
 from __future__ import annotations
 
+import hashlib
 import os
-import shutil
 import stat
 import tarfile
 from pathlib import Path
@@ -101,11 +101,7 @@ def create_exact_export(
     run_git: Callable[..., int],
     label: str,
 ) -> Path:
-    """Materialize only tracked bytes from an exact commit and seal them read-only.
-
-    ``run_git`` must execute the source-owned Git command and return its exit code.
-    The callback receives: ("archive", "--format=tar", "--output", PATH, COMMIT).
-    """
+    """Materialize only tracked bytes from an exact commit and seal them read-only."""
     archive_path = workspace / f"{label}.tar"
     source_root = workspace / f"{label}-src"
     if run_git("archive", "--format=tar", "--output", str(archive_path), target_commit) != 0:
@@ -156,15 +152,51 @@ def _copy_regular_tree(source: Path, destination: Path) -> None:
 
 
 def create_isolated_cargo_home(real_cargo_home: Path, workspace: Path) -> Path:
-    """Project only Cargo registry cache material into a private home.
-
-    Configuration, credentials, environment overrides, and arbitrary files from
-    the user's Cargo home are intentionally not copied.
-    """
+    """Project only Cargo registry cache material into a private home."""
     cargo_home = workspace / "cargo-home"
     cargo_home.mkdir(mode=0o700, parents=False, exist_ok=False)
     _copy_regular_tree(real_cargo_home / "registry", cargo_home / "registry")
     return cargo_home
+
+
+def stage_executable_from_fd(source_fd: int, destination: Path) -> Path:
+    """Copy an already-open executable inode into a private immutable named path.
+
+    This is used for Rustup multicall children: Cargo needs a path named ``rustc``
+    so Rustup can dispatch by argv[0], while the bytes still originate from the
+    descriptor that was pinned before any adversarial execution begins.
+    """
+    parent = destination.parent
+    parent.mkdir(mode=0o700, parents=False, exist_ok=False)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    output_fd = os.open(destination, flags, 0o700)
+    source_hash = hashlib.sha256()
+    output_hash = hashlib.sha256()
+    try:
+        source_copy = os.open(proc_fd_path(source_fd), os.O_RDONLY | os.O_CLOEXEC)
+        try:
+            while True:
+                chunk = os.read(source_copy, 65536)
+                if not chunk:
+                    break
+                source_hash.update(chunk)
+                view = memoryview(chunk)
+                while view:
+                    written = os.write(output_fd, view)
+                    output_hash.update(view[:written])
+                    view = view[written:]
+            os.fsync(output_fd)
+        finally:
+            os.close(source_copy)
+    finally:
+        os.close(output_fd)
+    if source_hash.digest() != output_hash.digest():
+        fail("moriarty_staged_executable_digest_mismatch")
+    os.chmod(destination, 0o500)
+    os.chmod(parent, 0o500)
+    return destination
 
 
 def private_directory(path: Path) -> bool:
@@ -172,11 +204,7 @@ def private_directory(path: Path) -> bool:
         info = path.stat()
     except OSError:
         return False
-    return (
-        path.is_dir()
-        and info.st_uid == os.getuid()
-        and stat.S_IMODE(info.st_mode) & 0o077 == 0
-    )
+    return path.is_dir() and info.st_uid == os.getuid() and stat.S_IMODE(info.st_mode) & 0o077 == 0
 
 
 def write_report_exclusive(output: Path, encoded: bytes, repository_root: Path) -> None:
