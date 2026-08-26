@@ -1,0 +1,128 @@
+name: apply-rustc-stage-fix
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Patch Rustup multicall staging
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('tools/run_moriarty.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''from moriarty_isolation import (  # noqa: E402
+              create_exact_export,
+              create_isolated_cargo_home,
+              proc_fd_path,
+              write_report_exclusive,
+          )'''
+          new = '''from moriarty_isolation import (  # noqa: E402
+              create_exact_export,
+              create_isolated_cargo_home,
+              proc_fd_path,
+              stage_executable_from_fd,
+              write_report_exclusive,
+          )'''
+          assert old in text
+          text = text.replace(old, new, 1)
+          old = '''def _probe_environment(home: Path, cargo_home: Path, target_dir: Path) -> dict[str, str]:
+              return {
+                  "PATH": "/usr/bin:/bin",
+                  "HOME": str(home),
+                  "CARGO_HOME": str(cargo_home),
+                  "RUSTUP_HOME": str(REAL_HOME / ".rustup"),
+                  "CARGO_TARGET_DIR": str(target_dir),
+                  "CARGO_NET_OFFLINE": "true",
+                  "CARGO_TERM_COLOR": "never",
+                  "RUSTC": proc_fd_path(RUSTC_TRUSTED.fd),
+                  "RUST_BACKTRACE": "0",
+                  "PYTHONNOUSERSITE": "1",
+                  "PYTHONDONTWRITEBYTECODE": "1",
+                  "LANG": "C.UTF-8",
+                  "LC_ALL": "C.UTF-8",
+              }
+          '''
+          new = '''def _probe_environment(
+              home: Path,
+              cargo_home: Path,
+              target_dir: Path,
+              rustc_path: Path | None = None,
+          ) -> dict[str, str]:
+              environment = {
+                  "PATH": "/usr/bin:/bin",
+                  "HOME": str(home),
+                  "CARGO_HOME": str(cargo_home),
+                  "RUSTUP_HOME": str(REAL_HOME / ".rustup"),
+                  "CARGO_TARGET_DIR": str(target_dir),
+                  "CARGO_NET_OFFLINE": "true",
+                  "CARGO_TERM_COLOR": "never",
+                  "RUST_BACKTRACE": "0",
+                  "PYTHONNOUSERSITE": "1",
+                  "PYTHONDONTWRITEBYTECODE": "1",
+                  "LANG": "C.UTF-8",
+                  "LC_ALL": "C.UTF-8",
+              }
+              if rustc_path is not None:
+                  environment["RUSTC"] = str(rustc_path)
+              return environment
+          '''
+          assert old in text
+          text = text.replace(old, new, 1)
+          old = '''    if probe_id == "rust_all" and not trusted_executable_matches(RUSTC_TRUSTED):
+              return _probe_failure_result(probe_id, "tool_error", b"trusted_rustc_fd_invalid_before_probe")
+          pass_fds = (trusted.fd,) if probe_id != "rust_all" else (trusted.fd, RUSTC_TRUSTED.fd)
+          try:
+              process = subprocess.Popen(
+                  list(argv),
+                  executable=proc_fd_path(trusted.fd),
+                  pass_fds=pass_fds,
+                  cwd=source_root,
+                  env=_probe_environment(home, cargo_home, target_dir),'''
+          new = '''    rustc_path: Path | None = None
+              if probe_id == "rust_all":
+                  if not trusted_executable_matches(RUSTC_TRUSTED):
+                      return _probe_failure_result(probe_id, "tool_error", b"trusted_rustc_fd_invalid_before_probe")
+                  rustc_path = stage_executable_from_fd(
+                      RUSTC_TRUSTED.fd,
+                      target_dir.parent / f"toolchain-{target_dir.name}" / "rustc",
+                  )
+              pass_fds = (trusted.fd,)
+              try:
+                  process = subprocess.Popen(
+                      list(argv),
+                      executable=proc_fd_path(trusted.fd),
+                      pass_fds=pass_fds,
+                      cwd=source_root,
+                      env=_probe_environment(home, cargo_home, target_dir, rustc_path),'''
+          assert old in text
+          text = text.replace(old, new, 1)
+          path.write_text(text, encoding='utf-8')
+
+          validator = Path('tools/validate_phase9_gate.py')
+          vtext = validator.read_text(encoding='utf-8')
+          old = '"create_isolated_cargo_home", "write_report_exclusive", "--frozen", "candidate",'
+          new = '"create_isolated_cargo_home", "stage_executable_from_fd", "write_report_exclusive", "--frozen", "candidate",'
+          assert old in vtext
+          validator.write_text(vtext.replace(old, new, 1), encoding='utf-8')
+          PY
+          python3 -m py_compile tools/run_moriarty.py tools/validate_phase9_gate.py tools/moriarty_isolation.py
+          git diff --check
+      - name: Commit source fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tools/run_moriarty.py tools/validate_phase9_gate.py
+          git commit -m "Preserve Rustup multicall in pinned Phase 9 toolchain"
+          git push origin "HEAD:${{ github.head_ref }}"
