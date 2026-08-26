@@ -28,8 +28,10 @@ from qsol_canonical import serialize  # noqa: E402
 from moriarty_isolation import (  # noqa: E402
     create_exact_export,
     create_isolated_cargo_home,
+    enable_child_subreaper,
+    landlock_abi_version,
+    landlock_write_preexec,
     proc_fd_path,
-    stage_executable_from_fd,
     write_report_exclusive,
 )
 
@@ -47,8 +49,9 @@ MAX_ACCEPTED_COUNTEREXAMPLES = 32
 MAX_REPORT_COUNTEREXAMPLES = 48
 MAX_REPORT_BYTES = 65_536
 
-if os.name != "posix":
-    raise SystemExit("moriarty_requires_posix_process_group_isolation")
+if os.name != "posix" or sys.platform != "linux":
+    raise SystemExit("moriarty_requires_linux_process_and_landlock_isolation")
+enable_child_subreaper()
 
 REAL_HOME = Path(pwd.getpwuid(os.getuid()).pw_dir).resolve()
 
@@ -174,10 +177,139 @@ def trusted_run(
     )
 
 
+def _trusted_exact_path(name: str, path: Path) -> TrustedExecutable:
+    invocation = path.absolute()
+    try:
+        target = invocation.resolve(strict=True)
+        target_stat = target.stat()
+    except OSError:
+        fail(f"moriarty_trusted_exact_path_unavailable:{name}")
+    if not target.is_file() or not os.access(invocation, os.X_OK):
+        fail(f"moriarty_trusted_exact_path_not_executable:{name}")
+    if target == ROOT or ROOT in target.parents or invocation == ROOT or ROOT in invocation.parents:
+        fail(f"moriarty_trusted_exact_path_in_repository:{name}")
+    if not _directory_chain_safe(invocation) or not _directory_chain_safe(target):
+        fail(f"moriarty_trusted_exact_path_directory_unsafe:{name}")
+    if not stat.S_ISREG(target_stat.st_mode) or not (target_stat.st_mode & 0o111):
+        fail(f"moriarty_trusted_exact_path_type_invalid:{name}")
+    fd = os.open(target, os.O_RDONLY | os.O_CLOEXEC)
+    pinned = os.fstat(fd)
+    if (
+        pinned.st_dev != target_stat.st_dev
+        or pinned.st_ino != target_stat.st_ino
+        or pinned.st_size != target_stat.st_size
+        or pinned.st_mtime_ns != target_stat.st_mtime_ns
+        or stat.S_IMODE(pinned.st_mode) != stat.S_IMODE(target_stat.st_mode)
+    ):
+        os.close(fd)
+        fail(f"moriarty_trusted_exact_path_changed:{name}")
+    return TrustedExecutable(
+        name=name,
+        invocation=str(invocation),
+        executable=str(target),
+        device=pinned.st_dev,
+        inode=pinned.st_ino,
+        size=pinned.st_size,
+        mtime_ns=pinned.st_mtime_ns,
+        mode=stat.S_IMODE(pinned.st_mode),
+        fd=fd,
+    )
+
+
+def _trusted_executable_optional(name: str) -> TrustedExecutable | None:
+    try:
+        return _trusted_executable(name)
+    except SystemExit:
+        return None
+
+
+def _same_trusted_inode(left: TrustedExecutable, right: TrustedExecutable) -> bool:
+    return left.device == right.device and left.inode == right.inode
+
+
+def _rustup_discovery_env() -> dict[str, str]:
+    return {
+        "PATH": "/usr/bin:/bin",
+        "HOME": str(REAL_HOME),
+        "RUSTUP_HOME": str(REAL_HOME / ".rustup"),
+        "CARGO_HOME": str(REAL_HOME / ".cargo"),
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+    }
+
+
+def _rustup_active_toolchain(rustup: TrustedExecutable) -> str:
+    completed = trusted_run(
+        rustup,
+        ("show", "active-toolchain"),
+        cwd=REAL_HOME,
+        env=_rustup_discovery_env(),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if completed.returncode != 0:
+        fail("moriarty_rustup_active_toolchain_unavailable")
+    try:
+        toolchain = completed.stdout.decode("utf-8", errors="strict").strip().split()[0]
+    except (UnicodeError, IndexError):
+        fail("moriarty_rustup_active_toolchain_invalid")
+    if not re.fullmatch(r"[A-Za-z0-9._+-]{1,128}", toolchain):
+        fail("moriarty_rustup_active_toolchain_invalid")
+    return toolchain
+
+
+def _rustup_which(rustup: TrustedExecutable, toolchain: str, component: str) -> TrustedExecutable:
+    completed = trusted_run(
+        rustup,
+        ("which", "--toolchain", toolchain, component),
+        cwd=REAL_HOME,
+        env=_rustup_discovery_env(),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if completed.returncode != 0:
+        fail(f"moriarty_rustup_component_unavailable:{component}")
+    try:
+        path = Path(completed.stdout.decode("utf-8", errors="strict").strip())
+    except UnicodeError:
+        fail(f"moriarty_rustup_component_path_invalid:{component}")
+    toolchain_root = (REAL_HOME / ".rustup" / "toolchains").resolve(strict=True)
+    resolved = path.resolve(strict=True)
+    if toolchain_root not in resolved.parents:
+        fail(f"moriarty_rustup_component_outside_toolchains:{component}")
+    return _trusted_exact_path(component, resolved)
+
+
 PYTHON_TRUSTED = _trusted_executable("python3", preferred=Path(sys.executable))
 GIT_TRUSTED = _trusted_executable("git")
-CARGO_TRUSTED = _trusted_executable("cargo")
-RUSTC_TRUSTED = _trusted_executable("rustc")
+CARGO_ENTRY_TRUSTED = _trusted_executable("cargo")
+RUSTC_ENTRY_TRUSTED = _trusted_executable("rustc")
+RUSTUP_TRUSTED = _trusted_executable_optional("rustup")
+RUSTUP_DISCOVERY_USED = False
+RUST_TOOLCHAIN_ID: str | None = None
+
+if RUSTUP_TRUSTED is not None and (
+    _same_trusted_inode(CARGO_ENTRY_TRUSTED, RUSTUP_TRUSTED)
+    or _same_trusted_inode(RUSTC_ENTRY_TRUSTED, RUSTUP_TRUSTED)
+):
+    if not (
+        _same_trusted_inode(CARGO_ENTRY_TRUSTED, RUSTUP_TRUSTED)
+        and _same_trusted_inode(RUSTC_ENTRY_TRUSTED, RUSTUP_TRUSTED)
+    ):
+        fail("moriarty_mixed_rustup_toolchain_entrypoints")
+    RUST_TOOLCHAIN_ID = _rustup_active_toolchain(RUSTUP_TRUSTED)
+    CARGO_TRUSTED = _rustup_which(RUSTUP_TRUSTED, RUST_TOOLCHAIN_ID, "cargo")
+    RUSTC_TRUSTED = _rustup_which(RUSTUP_TRUSTED, RUST_TOOLCHAIN_ID, "rustc")
+    if _same_trusted_inode(CARGO_TRUSTED, RUSTUP_TRUSTED) or _same_trusted_inode(RUSTC_TRUSTED, RUSTUP_TRUSTED):
+        fail("moriarty_rustup_concrete_toolchain_not_pinned")
+    if Path(CARGO_TRUSTED.executable).parent != Path(RUSTC_TRUSTED.executable).parent:
+        fail("moriarty_rustup_toolchain_component_mismatch")
+    RUSTUP_DISCOVERY_USED = True
+else:
+    CARGO_TRUSTED = CARGO_ENTRY_TRUSTED
+    RUSTC_TRUSTED = RUSTC_ENTRY_TRUSTED
 
 PYTHON_EXE = PYTHON_TRUSTED.invocation
 GIT_EXE = GIT_TRUSTED.invocation
@@ -250,6 +382,7 @@ def _git_env() -> dict[str, str]:
         "LC_ALL": "C.UTF-8",
         "GIT_CONFIG_NOSYSTEM": "1",
         "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_NO_REPLACE_OBJECTS": "1",
     }
 
 
@@ -297,27 +430,38 @@ def _probe_environment(
     home: Path,
     cargo_home: Path,
     target_dir: Path,
-    rustc_path: Path | None = None,
+    temp_dir: Path,
+    rustc_fd: int | None = None,
 ) -> dict[str, str]:
     environment = {
         "PATH": "/usr/bin:/bin",
         "HOME": str(home),
         "CARGO_HOME": str(cargo_home),
-        "RUSTUP_HOME": str(REAL_HOME / ".rustup"),
         "CARGO_TARGET_DIR": str(target_dir),
         "CARGO_NET_OFFLINE": "true",
         "CARGO_TERM_COLOR": "never",
         "RUST_BACKTRACE": "0",
         "PYTHONNOUSERSITE": "1",
         "PYTHONDONTWRITEBYTECODE": "1",
+        "TMPDIR": str(temp_dir),
+        "TMP": str(temp_dir),
+        "TEMP": str(temp_dir),
         "LANG": "C.UTF-8",
         "LC_ALL": "C.UTF-8",
     }
-    if rustc_path is not None:
-        environment["RUSTC"] = str(rustc_path)
+    if rustc_fd is not None:
+        environment["RUSTC"] = proc_fd_path(rustc_fd)
     return environment
 
+
 def validate_attack_corpus(corpus: dict[str, Any]) -> list[dict[str, Any]]:
+    expected_corpus_fields = {
+        "schema", "protocol", "attacks", "production_credentials_allowed",
+        "production_targets_allowed", "constitutional_bypass_allowed", "authority_effect",
+    }
+    expected_attack_fields = {"id", "family", "owner_phases", "boundary_ids", "probe_ids"}
+    if set(corpus) != expected_corpus_fields:
+        fail("moriarty_attack_corpus_field_set_invalid")
     if (
         corpus.get("schema") != ATTACK_CORPUS_SCHEMA
         or corpus.get("protocol") != PROTOCOL
@@ -335,6 +479,8 @@ def validate_attack_corpus(corpus: dict[str, Any]) -> list[dict[str, Any]]:
     for attack in attacks:
         if not isinstance(attack, dict):
             fail("moriarty_attack_record_invalid")
+        if set(attack) != expected_attack_fields:
+            fail("moriarty_attack_field_set_invalid")
         attack_id = attack.get("id")
         family = attack.get("family")
         owner_phases = attack.get("owner_phases")
@@ -447,6 +593,11 @@ def validate_registry(
     attacks: list[dict[str, Any]],
     reviewed_target: str,
 ) -> list[dict[str, Any]]:
+    expected_registry_fields = {
+        "schema", "protocol", "counterexamples", "unresolved_counterexamples", "authority_effect",
+    }
+    if set(registry) != expected_registry_fields:
+        fail("moriarty_counterexample_registry_field_set_invalid")
     if (
         registry.get("schema") != REGISTRY_SCHEMA
         or registry.get("protocol") != PROTOCOL
@@ -500,16 +651,81 @@ def validate_registry(
         if not git_is_ancestor(resolution, reviewed_target):
             fail("moriarty_resolution_not_in_reviewed_history")
 
+    if type(registry.get("unresolved_counterexamples")) is not int:
+        fail("moriarty_counterexample_registry_unresolved_type_invalid")
     if registry.get("unresolved_counterexamples") != unresolved:
         fail("moriarty_counterexample_registry_unresolved_count_drift")
     return counterexamples
 
 
-def _kill_process_group(process: subprocess.Popen[bytes]) -> None:
+def _process_parent_map() -> dict[int, int]:
+    parents: dict[int, int] = {}
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            status = (entry / "status").read_text(encoding="utf-8", errors="strict")
+        except (OSError, UnicodeError):
+            continue
+        for line in status.splitlines():
+            if line.startswith("PPid:"):
+                try:
+                    parents[int(entry.name)] = int(line.split()[1])
+                except (ValueError, IndexError):
+                    pass
+                break
+    return parents
+
+
+def _descendant_pids(root_pid: int) -> set[int]:
+    parents = _process_parent_map()
+    descendants: set[int] = set()
+    frontier = {root_pid}
+    while frontier:
+        next_frontier: set[int] = set()
+        for pid, parent in parents.items():
+            if parent in frontier and pid not in descendants:
+                descendants.add(pid)
+                next_frontier.add(pid)
+        frontier = next_frontier
+    return descendants
+
+
+def _kill_probe_tree(process: subprocess.Popen[bytes]) -> None:
     try:
         os.killpg(process.pid, signal.SIGKILL)
     except ProcessLookupError:
         pass
+    # PR_SET_CHILD_SUBREAPER keeps double-fork/setsid escapees under this
+    # harness. Re-scan a few times to close fork-vs-kill races.
+    for _ in range(4):
+        descendants = _descendant_pids(os.getpid())
+        if not descendants:
+            break
+        for pid in sorted(descendants, reverse=True):
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        time.sleep(0.01)
+
+
+def _reap_adopted_children() -> None:
+    while True:
+        try:
+            pid, _ = os.waitpid(-1, os.WNOHANG)
+        except ChildProcessError:
+            return
+        if pid == 0:
+            return
+
+
+def bounded_output_update(digest: Any, count: int, chunk: bytes) -> tuple[int, bool]:
+    remaining = max(0, MAX_PROBE_OUTPUT_BYTES - count)
+    accepted = chunk[:remaining]
+    if accepted:
+        digest.update(accepted)
+    return count + len(accepted), len(chunk) > remaining
 
 
 def _probe_failure_result(probe_id: str, kind: str, diagnostic: bytes) -> dict[str, Any]:
@@ -534,35 +750,40 @@ def run_probe(
 ) -> dict[str, Any]:
     if not tracked_tree_clean():
         return _probe_failure_result(probe_id, "tool_error", b"tracked_tree_dirty_before_probe")
+    if landlock_abi_version() < 3:
+        return _probe_failure_result(probe_id, "tool_error", b"landlock_abi3_unavailable")
     home.mkdir(mode=0o700, parents=False, exist_ok=False)
     target_dir.mkdir(mode=0o700, parents=False, exist_ok=False)
+    temp_dir = target_dir.parent / f"tmp-{target_dir.name}"
+    temp_dir.mkdir(mode=0o700, parents=False, exist_ok=False)
 
     argv = PROBES[probe_id]
     trusted = PROBE_EXECUTABLES[probe_id]
     if not trusted_executable_matches(trusted):
         return _probe_failure_result(probe_id, "tool_error", b"trusted_executable_fd_invalid_before_probe")
-    rustc_path: Path | None = None
+    rustc_fd: int | None = None
+    pass_fds = (trusted.fd,)
     if probe_id == "rust_all":
         if not trusted_executable_matches(RUSTC_TRUSTED):
             return _probe_failure_result(probe_id, "tool_error", b"trusted_rustc_fd_invalid_before_probe")
-        rustc_path = stage_executable_from_fd(
-            RUSTC_TRUSTED.fd,
-            target_dir.parent / f"toolchain-{target_dir.name}" / "rustc",
-        )
-    pass_fds = (trusted.fd,)
+        rustc_fd = RUSTC_TRUSTED.fd
+        pass_fds = (trusted.fd, RUSTC_TRUSTED.fd)
+
+    preexec = landlock_write_preexec((home, cargo_home, target_dir, temp_dir))
     try:
         process = subprocess.Popen(
             list(argv),
             executable=proc_fd_path(trusted.fd),
             pass_fds=pass_fds,
             cwd=source_root,
-            env=_probe_environment(home, cargo_home, target_dir, rustc_path),
+            env=_probe_environment(home, cargo_home, target_dir, temp_dir, rustc_fd),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             start_new_session=True,
+            preexec_fn=preexec,
             bufsize=0,
         )
-    except OSError as exc:
+    except (OSError, subprocess.SubprocessError) as exc:
         return _probe_failure_result(probe_id, "tool_error", str(exc).encode("utf-8", errors="replace"))
 
     assert process.stdout is not None and process.stderr is not None
@@ -572,15 +793,42 @@ def run_probe(
     digests = {"stdout": hashlib.sha256(), "stderr": hashlib.sha256()}
     counts = {"stdout": 0, "stderr": 0}
     deadline = time.monotonic() + TIMEOUT_SECONDS
+    drain_deadline: float | None = None
     failure_kind: str | None = None
 
     try:
         while selector.get_map():
-            remaining = deadline - time.monotonic()
+            now = time.monotonic()
+            remaining = deadline - now
             if remaining <= 0 and failure_kind is None:
                 failure_kind = "timeout"
-                _kill_process_group(process)
-            events = selector.select(timeout=max(0.0, min(0.1, remaining)) if failure_kind is None else 0.1)
+                _kill_probe_tree(process)
+                drain_deadline = now + 2.0
+            if process.poll() is not None and failure_kind is None and selector.get_map():
+                # The direct child exited but a descendant retained a pipe.
+                failure_kind = "tool_error"
+                _kill_probe_tree(process)
+                drain_deadline = now + 2.0
+            if failure_kind is not None and drain_deadline is None:
+                drain_deadline = now + 2.0
+            if drain_deadline is not None and now >= drain_deadline:
+                for key in list(selector.get_map().values()):
+                    try:
+                        selector.unregister(key.fileobj)
+                    except Exception:
+                        pass
+                    try:
+                        key.fileobj.close()
+                    except OSError:
+                        pass
+                break
+
+            timeout = 0.1
+            if failure_kind is None:
+                timeout = max(0.0, min(0.1, remaining))
+            elif drain_deadline is not None:
+                timeout = max(0.0, min(0.1, drain_deadline - now))
+            events = selector.select(timeout=timeout)
             for key, _ in events:
                 stream_name = key.data
                 chunk = os.read(key.fileobj.fileno(), 65_536)
@@ -588,25 +836,27 @@ def run_probe(
                     selector.unregister(key.fileobj)
                     key.fileobj.close()
                     continue
-                counts[stream_name] += len(chunk)
-                digests[stream_name].update(chunk)
-                if counts[stream_name] > MAX_PROBE_OUTPUT_BYTES and failure_kind is None:
+                counts[stream_name], overflow = bounded_output_update(
+                    digests[stream_name], counts[stream_name], chunk
+                )
+                if overflow and failure_kind is None:
                     failure_kind = "tool_error"
-                    _kill_process_group(process)
-            if process.poll() is not None and not events:
-                time.sleep(0.01)
-        remaining = max(0.0, deadline - time.monotonic())
-        try:
-            return_code = process.wait(timeout=remaining)
-        except subprocess.TimeoutExpired:
-            failure_kind = failure_kind or "timeout"
-            _kill_process_group(process)
-            process.wait(timeout=1)
-            return_code = None
-    except subprocess.TimeoutExpired:
-        failure_kind = failure_kind or "timeout"
-        _kill_process_group(process)
-        return_code = None
+                    _kill_probe_tree(process)
+                    drain_deadline = time.monotonic() + 2.0
+
+        if process.poll() is None:
+            wait_budget = 1.0 if failure_kind is not None else max(0.0, deadline - time.monotonic())
+            try:
+                return_code = process.wait(timeout=wait_budget)
+            except subprocess.TimeoutExpired:
+                failure_kind = failure_kind or "timeout"
+                _kill_probe_tree(process)
+                try:
+                    return_code = process.wait(timeout=1.0)
+                except subprocess.TimeoutExpired:
+                    return_code = None
+        else:
+            return_code = process.returncode
     finally:
         selector.close()
         for stream in (process.stdout, process.stderr):
@@ -615,14 +865,18 @@ def run_probe(
             except OSError:
                 pass
 
+    leaked_descendants = _descendant_pids(os.getpid())
+    if leaked_descendants:
+        failure_kind = failure_kind or "tool_error"
+        _kill_probe_tree(process)
+    _reap_adopted_children()
+
     if not tracked_tree_clean():
         return _probe_failure_result(probe_id, "tool_error", b"tracked_tree_dirty_after_probe")
     if not trusted_executable_matches(trusted):
         return _probe_failure_result(probe_id, "tool_error", b"trusted_executable_fd_invalid_after_probe")
     if probe_id == "rust_all" and not trusted_executable_matches(RUSTC_TRUSTED):
         return _probe_failure_result(probe_id, "tool_error", b"trusted_rustc_fd_invalid_after_probe")
-    if counts["stdout"] > MAX_PROBE_OUTPUT_BYTES or counts["stderr"] > MAX_PROBE_OUTPUT_BYTES:
-        failure_kind = "tool_error"
 
     if failure_kind is None and return_code == 0:
         ok = True
@@ -745,15 +999,17 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="qsol-fed-moriarty-work-") as work_dir:
         workspace = Path(work_dir)
         cargo_home = create_isolated_cargo_home(REAL_HOME / ".cargo", workspace)
-        source_root = create_exact_export(
-            target, workspace, lambda *git_args: git(*git_args).returncode, "target"
+        if landlock_abi_version() < 3:
+            fail("moriarty_landlock_abi3_required")
+        control_source = create_exact_export(
+            target, workspace, lambda *git_args: git(*git_args).returncode, "control"
         )
-        if not (source_root / "Cargo.lock").is_file():
+        if not (control_source / "Cargo.lock").is_file():
             fail("moriarty_committed_cargo_lock_missing")
 
-        corpus = load_json(source_root / "fixtures/phase9/attack-corpus.json")
+        corpus = load_json(control_source / "fixtures/phase9/attack-corpus.json")
         attacks = validate_attack_corpus(corpus)
-        registry = load_json(source_root / "fixtures/phase9/accepted-counterexamples.json")
+        registry = load_json(control_source / "fixtures/phase9/accepted-counterexamples.json")
         accepted = validate_registry(registry, attacks, target)
 
         requested_probe_ids: list[str] = []
@@ -774,16 +1030,21 @@ def main() -> int:
             for probe_id in attack["probe_ids"]:
                 probe_users.setdefault(probe_id, []).append(attack)
 
-        results = {
-            probe_id: run_probe(
+        results: dict[str, dict[str, Any]] = {}
+        for probe_index, probe_id in enumerate(ordered_probe_ids):
+            probe_source = create_exact_export(
+                target,
+                workspace,
+                lambda *git_args: git(*git_args).returncode,
+                f"probe-{probe_index}-{probe_id}",
+            )
+            results[probe_id] = run_probe(
                 probe_id,
                 workspace / f"home-{probe_id}",
-                source_root,
+                probe_source,
                 cargo_home,
                 workspace / f"target-{probe_id}",
             )
-            for probe_id in ordered_probe_ids
-        }
         verify_resolved_counterexamples(accepted, workspace, cargo_home)
 
     generated: list[dict[str, Any]] = []

@@ -8,8 +8,10 @@ projection, and exclusive report publication.
 from __future__ import annotations
 
 import hashlib
+import ctypes
 import os
 import stat
+import sys
 import tarfile
 from pathlib import Path
 from typing import Callable, NoReturn
@@ -17,6 +19,129 @@ from typing import Callable, NoReturn
 
 def fail(message: str) -> NoReturn:
     raise SystemExit(message)
+
+
+# Linux Landlock ABI 3 is sufficient for write/truncate/refer denial.
+# The syscall numbers are shared by x86_64 and aarch64 Linux.
+_LANDLOCK_CREATE_RULESET = 444
+_LANDLOCK_ADD_RULE = 445
+_LANDLOCK_RESTRICT_SELF = 446
+_LANDLOCK_CREATE_RULESET_VERSION = 1
+_LANDLOCK_RULE_PATH_BENEATH = 1
+_PR_SET_NO_NEW_PRIVS = 38
+_PR_SET_CHILD_SUBREAPER = 36
+
+_LANDLOCK_ACCESS_FS_WRITE_FILE = 1 << 1
+_LANDLOCK_ACCESS_FS_REMOVE_DIR = 1 << 4
+_LANDLOCK_ACCESS_FS_REMOVE_FILE = 1 << 5
+_LANDLOCK_ACCESS_FS_MAKE_CHAR = 1 << 6
+_LANDLOCK_ACCESS_FS_MAKE_DIR = 1 << 7
+_LANDLOCK_ACCESS_FS_MAKE_REG = 1 << 8
+_LANDLOCK_ACCESS_FS_MAKE_SOCK = 1 << 9
+_LANDLOCK_ACCESS_FS_MAKE_FIFO = 1 << 10
+_LANDLOCK_ACCESS_FS_MAKE_BLOCK = 1 << 11
+_LANDLOCK_ACCESS_FS_MAKE_SYM = 1 << 12
+_LANDLOCK_ACCESS_FS_REFER = 1 << 13
+_LANDLOCK_ACCESS_FS_TRUNCATE = 1 << 14
+_LANDLOCK_WRITE_MASK = (
+    _LANDLOCK_ACCESS_FS_WRITE_FILE
+    | _LANDLOCK_ACCESS_FS_REMOVE_DIR
+    | _LANDLOCK_ACCESS_FS_REMOVE_FILE
+    | _LANDLOCK_ACCESS_FS_MAKE_CHAR
+    | _LANDLOCK_ACCESS_FS_MAKE_DIR
+    | _LANDLOCK_ACCESS_FS_MAKE_REG
+    | _LANDLOCK_ACCESS_FS_MAKE_SOCK
+    | _LANDLOCK_ACCESS_FS_MAKE_FIFO
+    | _LANDLOCK_ACCESS_FS_MAKE_BLOCK
+    | _LANDLOCK_ACCESS_FS_MAKE_SYM
+    | _LANDLOCK_ACCESS_FS_REFER
+    | _LANDLOCK_ACCESS_FS_TRUNCATE
+)
+
+
+class _LandlockRulesetAttr(ctypes.Structure):
+    _fields_ = [("handled_access_fs", ctypes.c_uint64)]
+
+
+class _LandlockPathBeneathAttr(ctypes.Structure):
+    _fields_ = [("allowed_access", ctypes.c_uint64), ("parent_fd", ctypes.c_int32)]
+
+
+def _linux_libc() -> ctypes.CDLL:
+    if sys.platform != "linux" or os.uname().machine not in {"x86_64", "aarch64"}:
+        fail("moriarty_linux_landlock_platform_required")
+    libc = ctypes.CDLL(None, use_errno=True)
+    libc.syscall.restype = ctypes.c_long
+    return libc
+
+
+def landlock_abi_version() -> int:
+    if sys.platform != "linux" or os.uname().machine not in {"x86_64", "aarch64"}:
+        return 0
+    libc = ctypes.CDLL(None, use_errno=True)
+    libc.syscall.restype = ctypes.c_long
+    result = libc.syscall(
+        _LANDLOCK_CREATE_RULESET,
+        ctypes.c_void_p(0),
+        ctypes.c_size_t(0),
+        ctypes.c_uint(_LANDLOCK_CREATE_RULESET_VERSION),
+    )
+    return int(result) if result >= 0 else 0
+
+
+def enable_child_subreaper() -> None:
+    """Keep double-fork/setsid descendants attached to the MORIARTY harness."""
+    libc = _linux_libc()
+    if libc.prctl(_PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) != 0:
+        fail("moriarty_child_subreaper_unavailable")
+
+
+def apply_landlock_write_policy(writable_paths: tuple[Path, ...]) -> None:
+    """Deny filesystem mutation everywhere except explicitly writable roots."""
+    if landlock_abi_version() < 3:
+        raise OSError("moriarty_landlock_abi3_required")
+    libc = _linux_libc()
+    ruleset_attr = _LandlockRulesetAttr(_LANDLOCK_WRITE_MASK)
+    ruleset_fd = libc.syscall(
+        _LANDLOCK_CREATE_RULESET,
+        ctypes.byref(ruleset_attr),
+        ctypes.sizeof(ruleset_attr),
+        0,
+    )
+    if ruleset_fd < 0:
+        raise OSError(ctypes.get_errno(), "landlock_create_ruleset")
+    try:
+        for root in writable_paths:
+            resolved = Path(root).resolve(strict=True)
+            path_fd = os.open(resolved, os.O_PATH | os.O_CLOEXEC)
+            try:
+                rule = _LandlockPathBeneathAttr(_LANDLOCK_WRITE_MASK, path_fd)
+                result = libc.syscall(
+                    _LANDLOCK_ADD_RULE,
+                    ruleset_fd,
+                    _LANDLOCK_RULE_PATH_BENEATH,
+                    ctypes.byref(rule),
+                    0,
+                )
+                if result != 0:
+                    raise OSError(ctypes.get_errno(), f"landlock_add_rule:{resolved}")
+            finally:
+                os.close(path_fd)
+        if libc.prctl(_PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
+            raise OSError(ctypes.get_errno(), "prctl_no_new_privs")
+        if libc.syscall(_LANDLOCK_RESTRICT_SELF, ruleset_fd, 0) != 0:
+            raise OSError(ctypes.get_errno(), "landlock_restrict_self")
+    finally:
+        os.close(ruleset_fd)
+
+
+def landlock_write_preexec(writable_paths: tuple[Path, ...]):
+    roots = tuple(Path(path).resolve(strict=True) for path in writable_paths)
+
+    def _apply() -> None:
+        apply_landlock_write_policy(roots)
+
+    return _apply
 
 
 def proc_fd_path(fd: int) -> str:
