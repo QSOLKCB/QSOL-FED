@@ -63,14 +63,7 @@ def canonical_ref(value: Any) -> str:
 
 
 def git_head() -> str:
-    completed = subprocess.run(
-        [moriarty.GIT_EXE, "rev-parse", "HEAD"],
-        cwd=ROOT,
-        env=moriarty._git_env(),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
+    completed = moriarty.git("rev-parse", "HEAD")
     require(completed.returncode == 0, "Phase 9 cannot resolve Git HEAD")
     head = completed.stdout.decode("ascii", errors="strict").strip()
     require(bool(TARGET_RE.fullmatch(head)), "Phase 9 Git HEAD is not a lowercase 40-hex commit")
@@ -227,26 +220,44 @@ def validate_schemas_and_fixtures() -> None:
 
 def validate_probe_map() -> None:
     require(set(moriarty.PROBES) == set(EXPECTED_PROBES), "MORIARTY fixed probe id set drift")
+    require(set(moriarty.PROBE_EXECUTABLES) == set(EXPECTED_PROBES), "MORIARTY pinned probe executable set drift")
     for probe_id, tail in EXPECTED_PROBES.items():
         argv = moriarty.PROBES[probe_id]
+        trusted = moriarty.PROBE_EXECUTABLES[probe_id]
         require(isinstance(argv, tuple) and len(argv) == len(tail) + 1, f"MORIARTY probe argv arity drift: {probe_id}")
-        executable = Path(argv[0]).resolve()
-        require(executable.is_absolute(), f"MORIARTY probe executable not absolute: {probe_id}")
-        require(ROOT not in executable.parents and executable != ROOT, f"MORIARTY probe executable came from repository: {probe_id}")
+        require(argv[0] == trusted.invocation, f"MORIARTY probe argv0/pinned executable mismatch: {probe_id}")
+        require(Path(trusted.executable).is_absolute(), f"MORIARTY resolved probe executable not absolute: {probe_id}")
+        require(ROOT not in Path(trusted.executable).parents and Path(trusted.executable) != ROOT, f"MORIARTY resolved probe executable came from repository: {probe_id}")
         require(tuple(argv[1:]) == tail, f"MORIARTY fixed probe argv drift: {probe_id}")
+        require(moriarty.trusted_executable_matches(trusted), f"MORIARTY pinned executable revalidation failed: {probe_id}")
         if probe_id == "rust_all":
-            require(argv[0] == moriarty.CARGO_EXE, "MORIARTY Rust probe executable drift")
+            require(trusted == moriarty.CARGO_TRUSTED, "MORIARTY Rust probe executable drift")
+            require(moriarty.trusted_executable_matches(moriarty.RUSTC_TRUSTED), "MORIARTY Rustc executable revalidation failed")
         else:
-            require(argv[0] == moriarty.PYTHON_EXE, f"MORIARTY Python probe executable drift: {probe_id}")
+            require(trusted == moriarty.PYTHON_TRUSTED, f"MORIARTY Python probe executable drift: {probe_id}")
+
+    stale = moriarty.TrustedExecutable(
+        name=moriarty.PYTHON_TRUSTED.name,
+        invocation=moriarty.PYTHON_TRUSTED.invocation,
+        executable=moriarty.PYTHON_TRUSTED.executable,
+        device=moriarty.PYTHON_TRUSTED.device,
+        inode=moriarty.PYTHON_TRUSTED.inode + 1,
+        size=moriarty.PYTHON_TRUSTED.size,
+        mtime_ns=moriarty.PYTHON_TRUSTED.mtime_ns,
+        mode=moriarty.PYTHON_TRUSTED.mode,
+    )
+    require(not moriarty.trusted_executable_matches(stale), "MORIARTY executable identity negative regression failed")
 
 
 def validate_runner_source() -> None:
     source = (ROOT / "tools/run_moriarty.py").read_text(encoding="utf-8")
     for marker in (
         "provider-neutral-fixed-probe/1", "moriarty-counterexample/1", "moriarty-report/1",
-        "PROBES: dict[str, tuple[str, ...]]", "candidate", "tracked_tree_clean",
-        "start_new_session=True", "selectors.DefaultSelector", "MAX_PROBE_OUTPUT_BYTES",
-        "git_commit_exists", "git_is_ancestor", "moriarty_counterexample_attack_not_in_corpus",
+        "PROBES: dict[str, tuple[str, ...]]", "PROBE_EXECUTABLES", "TrustedExecutable",
+        "executable=trusted.executable", "candidate", "tracked_tree_clean",
+        "stat.S_IWGRP", "trusted_executable_matches", "start_new_session=True",
+        "selectors.DefaultSelector", "MAX_PROBE_OUTPUT_BYTES", "git_commit_exists",
+        "git_is_ancestor", "moriarty_counterexample_attack_not_in_corpus",
         "moriarty_resolution_commit_missing", "production_credentials_used",
         "production_targets_used", "constitutional_bypass_used", "security_proof",
         "no_counterexample_found_implies_none_exist",
@@ -473,8 +484,9 @@ def execute_exact_commit_gate(target: str) -> None:
         report_path = Path(temp_dir) / "moriarty-report.json"
         validator_home = Path(temp_dir) / "validator-home"
         validator_home.mkdir()
-        completed = subprocess.run(
-            [moriarty.PYTHON_EXE, "tools/run_moriarty.py", "--target-commit", target, "--output", str(report_path)],
+        completed = moriarty.trusted_run(
+            moriarty.PYTHON_TRUSTED,
+            ("tools/run_moriarty.py", "--target-commit", target, "--output", str(report_path)),
             cwd=ROOT,
             env=moriarty._probe_environment(validator_home),
             stdout=subprocess.PIPE,
