@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://qsol.example/schemas/moriarty-counterexample-v1.schema.json",
-  "title": "MORIARTY/1 reproducible counterexample",
+  "title": "MORIARTY/1 locally reproduced counterexample",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -53,7 +53,7 @@
       "uniqueItems": true,
       "items": {"type": "string", "pattern": "^[a-z0-9_]{1,64}$"}
     },
-    "failure_kind": {"type": "string", "enum": ["exit_nonzero", "timeout", "tool_error", "accepted_external"]},
+    "failure_kind": {"type": "string", "enum": ["exit_nonzero", "timeout", "tool_error"]},
     "observed_exit_code": {"type": ["integer", "null"], "minimum": -2147483648, "maximum": 2147483647},
     "stdout_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
     "stderr_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
@@ -65,5 +65,17 @@
     "production_targets_used": {"const": false},
     "constitutional_bypass_used": {"const": false},
     "authority_effect": {"const": "none"}
-  }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"failure_kind": {"const": "exit_nonzero"}}, "required": ["failure_kind"]},
+      "then": {"properties": {"observed_exit_code": {"type": "integer", "not": {"const": 0}}}},
+      "else": {"properties": {"observed_exit_code": {"const": null}}}
+    },
+    {
+      "if": {"properties": {"status": {"const": "unresolved"}}, "required": ["status"]},
+      "then": {"properties": {"resolution_commit": {"const": null}}},
+      "else": {"properties": {"resolution_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"}}}
+    }
+  ]
 }
