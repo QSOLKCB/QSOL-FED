@@ -1,37 +1,58 @@
 #!/usr/bin/env python3
-import os
-import sys
-import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path('tools').resolve()))
-import moriarty_isolation as iso
-
-print(f'LANDLOCK_ABI={iso.landlock_abi_version()}')
-with tempfile.TemporaryDirectory(prefix='moriarty-landlock-diag-') as temp_dir:
-    root = Path(temp_dir)
-    allowed = root / 'allowed'
-    forbidden = root / 'forbidden'
-    allowed.mkdir(mode=0o700)
-    forbidden.mkdir(mode=0o700)
-    victim = forbidden / 'victim.txt'
-    victim.write_text('original', encoding='utf-8')
-    os.chmod(victim, 0o400)
-    try:
-        iso.apply_landlock_write_policy((allowed,))
-        print('LANDLOCK_APPLY=ok')
-    except BaseException as exc:
-        print(f'LANDLOCK_APPLY=error:{type(exc).__name__}:{exc!r}')
-        raise SystemExit(91)
-    try:
-        os.chmod(victim, 0o600)
-        print('CHMOD=ok')
-    except BaseException as exc:
-        print(f'CHMOD=error:{type(exc).__name__}:{exc!r}')
-    try:
-        victim.write_text('changed', encoding='utf-8')
-        print('WRITE=unexpected-success')
-        raise SystemExit(92)
-    except PermissionError as exc:
-        print(f'WRITE=denied:{exc!r}')
-        raise SystemExit(93)
+path = Path('tools/validate_phase9_gate.py')
+text = path.read_text(encoding='utf-8')
+start = text.index('def validate_kernel_write_denial() -> None:')
+end = text.index('\n\ndef validate_report_common', start)
+replacement = r'''def validate_kernel_write_denial() -> None:
+    require(moriarty.landlock_abi_version() >= 3, "MORIARTY requires Linux Landlock ABI >= 3")
+    with tempfile.TemporaryDirectory(prefix="moriarty-landlock-test-") as temp_dir:
+        root = Path(temp_dir)
+        allowed = root / "allowed"
+        forbidden = root / "forbidden"
+        allowed.mkdir(mode=0o700)
+        forbidden.mkdir(mode=0o700)
+        victim = forbidden / "victim.txt"
+        victim.write_text("original", encoding="utf-8")
+        os.chmod(victim, 0o400)
+        program = r'''
+import os
+import sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+import moriarty_isolation as isolation
+allowed = Path(sys.argv[2])
+victim = Path(sys.argv[3])
+isolation.apply_landlock_write_policy((allowed,))
+os.chmod(victim, 0o600)
+try:
+    victim.write_text("changed", encoding="utf-8")
+except PermissionError:
+    raise SystemExit(0)
+raise SystemExit(2)
+'''
+        completed = subprocess.run(
+            [sys.executable, "-I", "-c", program, str(TOOLS), str(allowed), str(victim)],
+            cwd=ROOT,
+            env={
+                "PATH": "/usr/bin:/bin",
+                "HOME": str(root),
+                "PYTHONNOUSERSITE": "1",
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "LANG": "C.UTF-8",
+                "LC_ALL": "C.UTF-8",
+            },
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=10,
+        )
+        require(
+            completed.returncode == 0,
+            "MORIARTY Landlock write-denial regression failed: "
+            + completed.stderr.decode("utf-8", errors="replace")[:256],
+        )
+        require(victim.read_text(encoding="utf-8") == "original", "MORIARTY Landlock victim changed")
+'''
+path.write_text(text[:start] + replacement + text[end:], encoding='utf-8')
