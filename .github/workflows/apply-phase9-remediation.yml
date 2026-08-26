@@ -21,7 +21,9 @@ jobs:
           python3 tools/apply_phase9_remediation.py
           python3 -m py_compile tools/run_moriarty.py tools/validate_phase9_gate.py tools/moriarty_isolation.py
           git diff --check
-      - name: Commit remediation
+          rm -rf tools/__pycache__
+          git checkout -- .github/workflows/ci.yml .github/workflows/apply-phase9-remediation.yml
+      - name: Commit remediation source changes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
