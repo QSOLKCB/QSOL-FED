@@ -22,39 +22,15 @@ jobs:
           from pathlib import Path
           path = Path('tools/run_moriarty.py')
           text = path.read_text(encoding='utf-8')
-          old = '''from moriarty_isolation import (  # noqa: E402
-              create_exact_export,
-              create_isolated_cargo_home,
-              proc_fd_path,
-              write_report_exclusive,
-          )'''
-          new = '''from moriarty_isolation import (  # noqa: E402
-              create_exact_export,
-              create_isolated_cargo_home,
-              proc_fd_path,
-              stage_executable_from_fd,
-              write_report_exclusive,
-          )'''
-          assert old in text
-          text = text.replace(old, new, 1)
-          old = '''def _probe_environment(home: Path, cargo_home: Path, target_dir: Path) -> dict[str, str]:
-              return {
-                  "PATH": "/usr/bin:/bin",
-                  "HOME": str(home),
-                  "CARGO_HOME": str(cargo_home),
-                  "RUSTUP_HOME": str(REAL_HOME / ".rustup"),
-                  "CARGO_TARGET_DIR": str(target_dir),
-                  "CARGO_NET_OFFLINE": "true",
-                  "CARGO_TERM_COLOR": "never",
-                  "RUSTC": proc_fd_path(RUSTC_TRUSTED.fd),
-                  "RUST_BACKTRACE": "0",
-                  "PYTHONNOUSERSITE": "1",
-                  "PYTHONDONTWRITEBYTECODE": "1",
-                  "LANG": "C.UTF-8",
-                  "LC_ALL": "C.UTF-8",
-              }
-          '''
-          new = '''def _probe_environment(
+
+          if '    stage_executable_from_fd,\n' not in text:
+              marker = '    proc_fd_path,\n'
+              assert marker in text
+              text = text.replace(marker, marker + '    stage_executable_from_fd,\n', 1)
+
+          env_start = text.index('def _probe_environment(')
+          env_end = text.index('\n\ndef validate_attack_corpus', env_start)
+          new_env = '''def _probe_environment(
               home: Path,
               cargo_home: Path,
               target_dir: Path,
@@ -76,21 +52,12 @@ jobs:
               }
               if rustc_path is not None:
                   environment["RUSTC"] = str(rustc_path)
-              return environment
-          '''
-          assert old in text
-          text = text.replace(old, new, 1)
-          old = '''    if probe_id == "rust_all" and not trusted_executable_matches(RUSTC_TRUSTED):
-              return _probe_failure_result(probe_id, "tool_error", b"trusted_rustc_fd_invalid_before_probe")
-          pass_fds = (trusted.fd,) if probe_id != "rust_all" else (trusted.fd, RUSTC_TRUSTED.fd)
-          try:
-              process = subprocess.Popen(
-                  list(argv),
-                  executable=proc_fd_path(trusted.fd),
-                  pass_fds=pass_fds,
-                  cwd=source_root,
-                  env=_probe_environment(home, cargo_home, target_dir),'''
-          new = '''    rustc_path: Path | None = None
+              return environment'''
+          text = text[:env_start] + new_env + text[env_end:]
+
+          block_start = text.index('    if probe_id == "rust_all" and not trusted_executable_matches(RUSTC_TRUSTED):')
+          block_end = text.index('            stdout=subprocess.PIPE,', block_start)
+          new_block = '''    rustc_path: Path | None = None
               if probe_id == "rust_all":
                   if not trusted_executable_matches(RUSTC_TRUSTED):
                       return _probe_failure_result(probe_id, "tool_error", b"trusted_rustc_fd_invalid_before_probe")
@@ -105,17 +72,18 @@ jobs:
                       executable=proc_fd_path(trusted.fd),
                       pass_fds=pass_fds,
                       cwd=source_root,
-                      env=_probe_environment(home, cargo_home, target_dir, rustc_path),'''
-          assert old in text
-          text = text.replace(old, new, 1)
+                      env=_probe_environment(home, cargo_home, target_dir, rustc_path),
+          '''
+          text = text[:block_start] + new_block + text[block_end:]
           path.write_text(text, encoding='utf-8')
 
           validator = Path('tools/validate_phase9_gate.py')
           vtext = validator.read_text(encoding='utf-8')
-          old = '"create_isolated_cargo_home", "write_report_exclusive", "--frozen", "candidate",'
-          new = '"create_isolated_cargo_home", "stage_executable_from_fd", "write_report_exclusive", "--frozen", "candidate",'
-          assert old in vtext
-          validator.write_text(vtext.replace(old, new, 1), encoding='utf-8')
+          marker = '"create_isolated_cargo_home", '
+          if '"stage_executable_from_fd"' not in vtext:
+              assert marker in vtext
+              vtext = vtext.replace(marker, marker + '"stage_executable_from_fd", ', 1)
+          validator.write_text(vtext, encoding='utf-8')
           PY
           python3 -m py_compile tools/run_moriarty.py tools/validate_phase9_gate.py tools/moriarty_isolation.py
           git diff --check
