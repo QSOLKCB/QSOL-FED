@@ -38,15 +38,10 @@ jobs:
           python3 --version
           node --version
       - name: Rust tests, state, Holodeck, adapters, SDKs, Assembly, transports, and fuzz smoke
-        run: cargo test --all-targets
-      - name: Capture generated Cargo lockfile
-        run: |
-          echo '---BEGIN-QSOL-FED-CARGO-LOCK---'
-          cat Cargo.lock
-          echo '---END-QSOL-FED-CARGO-LOCK---'
+        run: cargo test --all-targets --locked
       - name: Phase 6 three-implementation SDK conformance
         run: |
-          cargo run --quiet --bin qsol-fed-sdk-conformance > /tmp/phase6-rust.json
+          cargo run --locked --quiet --bin qsol-fed-sdk-conformance > /tmp/phase6-rust.json
           python3 sdk/python/conformance.py > /tmp/phase6-python.json
           node sdk/typescript/conformance.mjs > /tmp/phase6-js.json
           cmp /tmp/phase6-rust.json /tmp/phase6-python.json
@@ -128,7 +123,7 @@ jobs:
           test "$(sha256sum .deps/QSOL-ORACLE/tools/nexus_membrane_common.py | cut -d' ' -f1)" = "4e4c749b67688678f03692d9533adb64760a3b448b3b804acb9f7f95e986c381"
       - name: Phase 5C live ORACLE process conformance
         run: |
-          cargo run --quiet --bin qsol-fed-oracle -- .deps/QSOL-ORACLE > /tmp/oracle-live-probe.json
+          cargo run --locked --quiet --bin qsol-fed-oracle -- .deps/QSOL-ORACLE > /tmp/oracle-live-probe.json
           python3 - <<'PY'
           import json
           probe=json.load(open('/tmp/oracle-live-probe.json', encoding='utf-8'))
@@ -145,7 +140,7 @@ jobs:
         run: |
           cp -a .deps/QSOL-ORACLE /tmp/QSOL-ORACLE-tampered
           printf '\n# intentional Phase 5C transport tamper\n' >> /tmp/QSOL-ORACLE-tampered/tools/fed_transport.py
-          if cargo run --quiet --bin qsol-fed-oracle -- /tmp/QSOL-ORACLE-tampered; then
+          if cargo run --locked --quiet --bin qsol-fed-oracle -- /tmp/QSOL-ORACLE-tampered; then
             echo "tampered ORACLE donor release was accepted"
             exit 1
           fi
@@ -171,7 +166,7 @@ jobs:
           fp['files_sha256'] = hashlib.sha256(canonical(fp['files'])).hexdigest()
           path.write_text(json.dumps(fp, indent=2) + '\n', encoding='utf-8')
           PY
-          if cargo run --quiet --bin qsol-fed-oracle -- /tmp/QSOL-ORACLE-forged-fingerprint; then
+          if cargo run --locked --quiet --bin qsol-fed-oracle -- /tmp/QSOL-ORACLE-forged-fingerprint; then
             echo "forged ORACLE release fingerprint self-claim was accepted"
             exit 1
           fi
@@ -202,4 +197,15 @@ jobs:
       - name: Phase 9 MORIARTY/1 exact-commit graduation gate
         env:
           MORIARTY_TARGET_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: python3 tools/validate_phase9_gate.py --target-commit "$MORIARTY_TARGET_COMMIT"
+          MORIARTY_REPORT_DIR: ${{ runner.temp }}/moriarty-report
+        run: |
+          install -d -m 700 "$MORIARTY_REPORT_DIR"
+          python3 tools/validate_phase9_gate.py --target-commit "$MORIARTY_TARGET_COMMIT" --report-dir "$MORIARTY_REPORT_DIR"
+      - name: Preserve Phase 9 MORIARTY report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase9-moriarty-report-${{ github.run_id }}
+          path: ${{ runner.temp }}/moriarty-report/*.json
+          if-no-files-found: warn
+          retention-days: 14
