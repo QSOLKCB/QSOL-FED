@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 
 previous = subprocess.run(
     ["git", "show", "HEAD^:tools/apply_phase9_codex_round2.py"],
@@ -14,4 +15,8 @@ new = '''runner_marker_start = validator.index(\"def validate_runner_source() ->
 if previous.count(old) != 1:
     raise SystemExit(f"phase9 Sol wrapper replacement drift:{previous.count(old)}")
 patched = previous.replace(old, new, 1)
-exec(compile(patched, "<phase9-sol-transformer>", "exec"), {"__name__": "__main__"})
+helper_path = str(Path(__file__).resolve())
+exec(
+    compile(patched, "<phase9-sol-transformer>", "exec"),
+    {"__name__": "__main__", "__file__": helper_path},
+)
