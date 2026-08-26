@@ -24,6 +24,12 @@ if patched.count(quote_old) != 1:
     raise SystemExit(f"phase9 Sol wrapper quote replacement drift:{patched.count(quote_old)}")
 patched = patched.replace(quote_old, quote_new, 1)
 
+archive_old = '''docs = replace_once(\n    docs,\n    "The runner creates a fresh exact-commit `git archive` export for every fixed probe, rejects archive links/special files, and applies Linux Landlock",\n    "The runner consumes each exact-commit `git archive` directly from pinned Git stdout with no named intermediate tar, creates a fresh export for every fixed probe, rejects archive links/special files, and applies Linux Landlock",\n    "docs archive",\n)\n'''
+archive_new = '''docs = replace_once(\n    docs,\n    "The runner creates a fresh read-only exact-commit export from `git archive` for every fixed probe, rejects archive links/special files, and applies Linux Landlock",\n    "The runner creates each fresh read-only exact-commit export directly from pinned `git archive` stdout with no named intermediate tar, rejects archive links/special files, and applies Linux Landlock",\n    "docs archive",\n)\n'''
+if patched.count(archive_old) != 1:
+    raise SystemExit(f"phase9 Sol wrapper archive replacement drift:{patched.count(archive_old)}")
+patched = patched.replace(archive_old, archive_new, 1)
+
 helper_path = str(Path(__file__).resolve())
 exec(
     compile(patched, "<phase9-sol-transformer>", "exec"),
