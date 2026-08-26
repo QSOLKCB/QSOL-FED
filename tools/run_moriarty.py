@@ -28,8 +28,8 @@ TARGET_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_REF_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 TIMEOUT_SECONDS = 300
 
-# Source-owned and closed. Candidate findings must be reduced to one of these
-# deterministic local probes before they are eligible for the accepted registry.
+# Source-owned and closed. An external/model candidate finding must be reduced to
+# one of these deterministic local probes before it is eligible for the accepted registry.
 PROBES: dict[str, tuple[str, ...]] = {
     "constitution": ("python3", "tools/validate_constitution.py"),
     "phase0": ("python3", "tools/validate_phase0_gate.py"),
