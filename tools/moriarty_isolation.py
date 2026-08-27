@@ -251,8 +251,8 @@ def apply_network_seccomp_policy() -> None:
     socket_nr, socketpair_nr = _socket_syscalls()
     instructions = [
         _SockFilter(_BPF_LD_W_ABS, 0, 0, 0),
-        _SockFilter(_BPF_JMP_JEQ_K, 0, 1, socket_nr),
-        _SockFilter(_BPF_JMP_JEQ_K, 0, 3, socketpair_nr),
+        _SockFilter(_BPF_JMP_JEQ_K, 2, 0, socket_nr),
+        _SockFilter(_BPF_JMP_JEQ_K, 1, 0, socketpair_nr),
         _SockFilter(_BPF_RET_K, 0, 0, allow),
         _SockFilter(_BPF_LD_W_ABS, 0, 0, _SECCOMP_DATA_ARG0_OFFSET),
         _SockFilter(_BPF_JMP_JEQ_K, 0, 1, _AF_UNIX),
