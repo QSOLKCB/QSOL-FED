@@ -669,6 +669,12 @@ def validate_probe_map() -> None:
             (fake / "src/bin" / name).write_text("", encoding="utf-8")
         (fake / "Cargo.toml").write_text('[package]\nname="qsol-fed"\nversion="0.0.0"\nedition="2024"\n\n[lib]\npath="/dev/null"\n', encoding="utf-8")
         _expect_reject(lambda: moriarty.validate_rust_target_topology(fake), "Cargo target topology override")
+        (fake / "Cargo.toml").write_text('[package]\nname="qsol-fed"\nversion="0.0.0"\nedition="2024"\nbuild="build.rs"\n', encoding="utf-8")
+        (fake / "build.rs").write_text("fn main() {}\n", encoding="utf-8")
+        _expect_reject(lambda: moriarty.validate_rust_target_topology(fake), "repository Cargo build script")
+        (fake / "build.rs").unlink()
+        (fake / "Cargo.toml").write_text('[package]\nname="qsol-fed"\nversion="0.0.0"\nedition="2024"\n\n[dependencies]\nlocal={path="vendor/local"}\n', encoding="utf-8")
+        _expect_reject(lambda: moriarty.validate_rust_target_topology(fake), "repository Cargo path dependency")
     cleanup_root = Path(os.environ["MORIARTY_PROBE_WRITABLE_ROOT"]).resolve(strict=True) / "cleanup-permission-negative"
     require(not cleanup_root.exists(), "cleanup negative-test path already exists")
     locked = cleanup_root / "locked" / "deeper"
@@ -679,6 +685,20 @@ def validate_probe_map() -> None:
     os.chmod(cleanup_root, 0)
     moriarty._force_remove_probe_path(cleanup_root)
     require(not cleanup_root.exists(), "probe cleanup could not reclaim chmod(0) tree")
+
+    with tempfile.TemporaryDirectory(prefix="moriarty-replay-cleanup-negative-") as temp_dir:
+        replay_workspace = Path(temp_dir)
+        replay_source = replay_workspace / "accepted-0-target-src"
+        replay_template = replay_workspace / "accepted-0-target-template"
+        for root in (replay_source, replay_template):
+            nested = root / "sealed" / "nested"
+            nested.mkdir(parents=True)
+            (nested / "payload").write_text("sealed", encoding="utf-8")
+            os.chmod(nested, 0)
+            os.chmod(nested.parent, 0)
+            os.chmod(root, 0)
+        moriarty._cleanup_replay_workspace_paths(replay_workspace, replay_source, replay_template)
+        require(not replay_source.exists() and not replay_template.exists(), "replay workspace cleanup left exact-export/template state")
 
     with tempfile.TemporaryDirectory(prefix="moriarty-python-shadow-") as temp_dir:
         fake = Path(temp_dir)
@@ -709,6 +729,11 @@ def validate_probe_map() -> None:
     system_reads = moriarty._system_read_paths()
     require(Path("/etc") not in system_reads, "MORIARTY recursive /etc read access reintroduced")
     require(all(path.is_file() and not path.is_dir() for path in system_reads), "MORIARTY system read allowlist contains a directory")
+    system_exec_reads = moriarty._system_read_exec_paths()
+    require(Path("/usr") not in system_exec_reads, "MORIARTY recursive /usr read/exec access reintroduced")
+    for path in system_exec_reads:
+        resolved = path.resolve(strict=True)
+        require(resolved != Path("/usr/local") and Path("/usr/local") not in resolved.parents, "MORIARTY /usr/local read/exec exposure reintroduced")
 
     bad_exit = {
         "schema": moriarty.COUNTEREXAMPLE_SCHEMA,
@@ -792,6 +817,7 @@ def validate_runner_source() -> None:
         "_bootstrap_verified_blob", "compile(expected", "ALLOWED_OWNER_PHASES", "_RUNTIME_NORMALIZATIONS", "close_fds=True",
         "probe_writable_tree_within_limits", "probe_quota_root", "MORIARTY_RUST_TOOLCHAIN_ROOT",
         "MORIARTY_CARGO_CACHE_ROOT", "MORIARTY_PROBE_WRITABLE_ROOT", "allow_abbrev=False",
+        "_reject_repository_cargo_execution_hooks", "_cleanup_replay_workspace_paths",
     ):
         require(marker in source, f"MORIARTY runner marker missing: {marker}")
     require("accepted_external" not in source, "MORIARTY runner still admits accepted_external")
@@ -874,6 +900,7 @@ def validate_docs_and_ci() -> None:
     require("sudo mount -t tmpfs" in workflow and "size=2147483648" in workflow, "CI MORIARTY hard writable tmpfs quota missing")
     require("size=1073741824" in workflow and "/mnt/qsol-moriarty-cargo-source" in workflow, "CI MORIARTY Cargo fetch quota missing")
     require("timeout --kill-after=5s 120s" in workflow, "CI MORIARTY Cargo fetch timeout missing")
+    require("MORIARTY_HISTORICAL_PREFETCH_V1" in workflow and "accepted-counterexamples.json" in workflow, "CI historical Rust replay Cargo prefetch missing")
     require("rustup toolchain install 1.97.1" in workflow, "CI MORIARTY exact Rust toolchain acquisition missing")
     require("memory.max" in workflow and "pids.max" in workflow and "MORIARTY_PROBE_CGROUP" in workflow, "CI MORIARTY cgroup aggregate resource envelope missing")
     require("MORIARTY_PROBE_WRITABLE_ROOT: /mnt/qsol-moriarty-probe-writable" in workflow, "CI MORIARTY writable quota binding missing")

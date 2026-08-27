@@ -76,27 +76,167 @@ jobs:
       - name: Prepare authenticated Cargo archives without repository execution
         env:
           MORIARTY_CARGO_CACHE_ROOT: /mnt/qsol-moriarty-cargo-source
+          MORIARTY_TARGET_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
+          # MORIARTY_HISTORICAL_PREFETCH_V1
           FETCH_HOME="$MORIARTY_CARGO_CACHE_ROOT/fetch-home"
-          install -d -m 700 "$FETCH_HOME"
-          /usr/bin/python3 -I - "$GITHUB_WORKSPACE/Cargo.lock" <<'PY'
+          PREFETCH_ROOT="$MORIARTY_CARGO_CACHE_ROOT/prefetch-manifests"
+          EXPECTED_ARCHIVES="$MORIARTY_CARGO_CACHE_ROOT/prefetch-expected.json"
+          install -d -m 700 "$FETCH_HOME" "$PREFETCH_ROOT"
+          /usr/bin/python3 -I - "$GITHUB_WORKSPACE" "$PREFETCH_ROOT" "$EXPECTED_ARCHIVES" <<'PY'
+          import json
+          import os
           import re
+          import subprocess
           import sys
           import tomllib
-          lock_path = sys.argv[1]
-          with open(lock_path, 'rb') as handle:
-              lock = tomllib.load(handle)
-          allowed = 'registry+https://github.com/rust-lang/crates.io-index'
-          for package in lock.get('package', []):
-              source = package.get('source')
-              if source is None:
+          from pathlib import Path
+
+          root = Path(sys.argv[1]).resolve(strict=True)
+          output_root = Path(sys.argv[2]).resolve(strict=True)
+          expected_path = Path(sys.argv[3])
+          target = os.environ["MORIARTY_TARGET_COMMIT"]
+          sha_re = re.compile(r"^[0-9a-f]{40}$")
+          name_re = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
+          version_re = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$")
+          allowed_source = "registry+https://github.com/rust-lang/crates.io-index"
+          git_env = {
+              "PATH": "/usr/bin:/bin",
+              "LANG": "C.UTF-8",
+              "LC_ALL": "C.UTF-8",
+              "GIT_CONFIG_NOSYSTEM": "1",
+              "GIT_CONFIG_GLOBAL": "/dev/null",
+              "GIT_ATTR_NOSYSTEM": "1",
+              "GIT_NO_REPLACE_OBJECTS": "1",
+              "GIT_OPTIONAL_LOCKS": "0",
+              "GIT_CONFIG_COUNT": "3",
+              "GIT_CONFIG_KEY_0": "core.fsmonitor",
+              "GIT_CONFIG_VALUE_0": "false",
+              "GIT_CONFIG_KEY_1": "core.hooksPath",
+              "GIT_CONFIG_VALUE_1": "/dev/null",
+              "GIT_CONFIG_KEY_2": "core.attributesFile",
+              "GIT_CONFIG_VALUE_2": "/dev/null",
+          }
+
+          def git(*args: str, check: bool = True) -> subprocess.CompletedProcess[bytes]:
+              completed = subprocess.run(
+                  ["/usr/bin/git", *args], cwd=root, env=git_env,
+                  stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                  check=False, timeout=20,
+              )
+              if check and completed.returncode != 0:
+                  raise SystemExit(f"historical Cargo prefetch git failure: {' '.join(args)}")
+              return completed
+
+          if sha_re.fullmatch(target) is None or git("rev-parse", "HEAD").stdout.decode("ascii").strip() != target:
+              raise SystemExit("historical Cargo prefetch target mismatch")
+
+          registry_raw = git("show", f"{target}:fixtures/phase9/accepted-counterexamples.json").stdout
+          registry = json.loads(registry_raw.decode("utf-8"))
+          entries = registry.get("counterexamples")
+          if not isinstance(entries, list) or len(entries) > 32:
+              raise SystemExit("historical Cargo prefetch registry invalid")
+
+          commits = [target]
+          for item in entries:
+              if not isinstance(item, dict) or item.get("regression_probe_ids") != ["rust_all"]:
                   continue
-              if source != allowed:
-                  raise SystemExit(f"non-crates.io Cargo source rejected: {source}")
-              checksum = package.get('checksum')
-              if not isinstance(checksum, str) or re.fullmatch(r'[0-9a-f]{64}', checksum) is None:
-                  raise SystemExit('registry package missing canonical SHA-256 checksum')
+              commits.append(item.get("target_commit"))
+              if item.get("status") == "resolved":
+                  commits.append(item.get("resolution_commit"))
+          ordered_commits = []
+          seen = set()
+          for commit in commits:
+              if not isinstance(commit, str) or sha_re.fullmatch(commit) is None:
+                  raise SystemExit("historical Cargo prefetch commit invalid")
+              if commit in seen:
+                  continue
+              seen.add(commit)
+              if git("cat-file", "-t", commit).stdout != b"commit\n":
+                  raise SystemExit("historical Cargo prefetch revision is not a commit")
+              if git("merge-base", "--is-ancestor", commit, target, check=False).returncode != 0:
+                  raise SystemExit("historical Cargo prefetch revision outside target ancestry")
+              ordered_commits.append(commit)
+
+          expected = {}
+          for index, commit in enumerate(ordered_commits):
+              manifest_raw = git("show", f"{commit}:Cargo.toml").stdout
+              lock_raw = git("show", f"{commit}:Cargo.lock").stdout
+              try:
+                  manifest = tomllib.loads(manifest_raw.decode("utf-8"))
+                  lock = tomllib.loads(lock_raw.decode("utf-8"))
+              except (UnicodeError, tomllib.TOMLDecodeError):
+                  raise SystemExit("historical Cargo prefetch TOML invalid")
+
+              package = manifest.get("package")
+              if not isinstance(package, dict) or package.get("name") != "qsol-fed":
+                  raise SystemExit("historical Cargo prefetch package identity invalid")
+
+              def dep_table_has_path(table):
+                  return isinstance(table, dict) and any(
+                      isinstance(specification, dict) and "path" in specification
+                      for specification in table.values()
+                  )
+
+              topology_reaches_cargo = (
+                  package.get("build") in (None, False)
+                  and "links" not in package
+                  and all(package.get(flag, True) is True for flag in ("autolib", "autobins", "autoexamples", "autotests", "autobenches"))
+                  and not any(key in manifest for key in ("lib", "bin", "example", "test", "bench", "workspace", "patch", "replace"))
+                  and not (isinstance(manifest.get("build-dependencies"), dict) and manifest.get("build-dependencies"))
+                  and not any(dep_table_has_path(manifest.get(name)) for name in ("dependencies", "dev-dependencies", "build-dependencies"))
+              )
+              targets = manifest.get("target")
+              if topology_reaches_cargo and targets is not None:
+                  if not isinstance(targets, dict):
+                      topology_reaches_cargo = False
+                  else:
+                      for target_tables in targets.values():
+                          if not isinstance(target_tables, dict):
+                              topology_reaches_cargo = False
+                              break
+                          if isinstance(target_tables.get("build-dependencies"), dict) and target_tables.get("build-dependencies"):
+                              topology_reaches_cargo = False
+                              break
+                          if any(dep_table_has_path(target_tables.get(name)) for name in ("dependencies", "dev-dependencies", "build-dependencies")):
+                              topology_reaches_cargo = False
+                              break
+              if not topology_reaches_cargo:
+                  continue
+
+              project = output_root / f"commit-{index:02d}-{commit}"
+              (project / "src").mkdir(parents=True)
+              (project / "Cargo.toml").write_bytes(manifest_raw)
+              (project / "Cargo.lock").write_bytes(lock_raw)
+              (project / "src/lib.rs").write_text("// fetch-only synthetic target\n", encoding="utf-8")
+
+              for package_record in lock.get("package", []):
+                  if not isinstance(package_record, dict):
+                      raise SystemExit("historical Cargo lock package invalid")
+                  source = package_record.get("source")
+                  if source is None:
+                      continue
+                  if source != allowed_source:
+                      raise SystemExit(f"non-crates.io historical Cargo source rejected: {source}")
+                  name = package_record.get("name")
+                  version = package_record.get("version")
+                  checksum = package_record.get("checksum")
+                  if (
+                      not isinstance(name, str) or name_re.fullmatch(name) is None
+                      or not isinstance(version, str) or version_re.fullmatch(version) is None
+                      or not isinstance(checksum, str) or re.fullmatch(r"[0-9a-f]{64}", checksum) is None
+                  ):
+                      raise SystemExit("historical Cargo lock registry package invalid")
+                  filename = f"{name}-{version}.crate"
+                  previous = expected.get(filename)
+                  if previous is not None and previous != checksum:
+                      raise SystemExit("historical Cargo archive checksum conflict")
+                  expected[filename] = checksum
+
+          if not expected:
+              raise SystemExit("historical Cargo prefetch package set empty")
+          expected_path.write_text(json.dumps(expected, sort_keys=True, separators=(",", ":")), encoding="utf-8")
           PY
           (
             cd "$MORIARTY_CARGO_CACHE_ROOT"
@@ -109,9 +249,58 @@ jobs:
               RUSTC=/usr/local/qsol-moriarty-rust-toolchain/bin/rustc \
               RUSTDOC=/usr/local/qsol-moriarty-rust-toolchain/bin/rustdoc \
               LANG=C.UTF-8 LC_ALL=C.UTF-8 \
-              /usr/local/qsol-moriarty-rust-toolchain/bin/cargo fetch --locked \
-                --manifest-path "$GITHUB_WORKSPACE/Cargo.toml"
+              /usr/bin/bash -c 'set -euo pipefail; for manifest in "$1"/*/Cargo.toml; do /usr/local/qsol-moriarty-rust-toolchain/bin/cargo fetch --locked --manifest-path "$manifest"; done' \
+              bash "$PREFETCH_ROOT"
           )
+          /usr/bin/python3 -I - "$MORIARTY_CARGO_CACHE_ROOT" "$EXPECTED_ARCHIVES" <<'PY'
+          import hashlib
+          import json
+          import os
+          import stat
+          import sys
+          from pathlib import Path
+
+          cargo_home = Path(sys.argv[1]).resolve(strict=True)
+          expected = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+          cache_root = cargo_home / "registry" / "cache"
+          if not cache_root.is_dir():
+              raise SystemExit("authenticated historical Cargo cache missing")
+          for filename, checksum in expected.items():
+              matched = False
+              for candidate in sorted(cache_root.glob(f"*/{filename}")):
+                  try:
+                      before = candidate.lstat()
+                  except OSError:
+                      continue
+                  if candidate.is_symlink() or not stat.S_ISREG(before.st_mode) or before.st_size > 64 * 1024 * 1024:
+                      continue
+                  fd = os.open(candidate, os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0))
+                  digest = hashlib.sha256()
+                  total = 0
+                  try:
+                      while True:
+                          chunk = os.read(fd, 65536)
+                          if not chunk:
+                              break
+                          total += len(chunk)
+                          if total > 64 * 1024 * 1024:
+                              raise SystemExit("historical Cargo archive exceeds bound")
+                          digest.update(chunk)
+                      after = os.fstat(fd)
+                  finally:
+                      os.close(fd)
+                  if (
+                      before.st_dev == after.st_dev and before.st_ino == after.st_ino
+                      and before.st_size == after.st_size == total
+                      and before.st_mtime_ns == after.st_mtime_ns
+                      and digest.hexdigest() == checksum
+                  ):
+                      matched = True
+                      break
+              if not matched:
+                  raise SystemExit(f"historical Cargo archive missing or unauthenticated: {filename}")
+          PY
+          rm -rf "$PREFETCH_ROOT" "$FETCH_HOME" "$EXPECTED_ARCHIVES"
           test ! -e "$MORIARTY_CARGO_CACHE_ROOT/credentials"
           test ! -e "$MORIARTY_CARGO_CACHE_ROOT/credentials.toml"
           test -d "$MORIARTY_CARGO_CACHE_ROOT/registry/cache"

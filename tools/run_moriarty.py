@@ -745,6 +745,49 @@ EXPECTED_RUST_BIN_TARGETS = frozenset({
 })
 
 
+def _cargo_dependency_table_reject_path(table: Any, label: str) -> None:
+    if table is None:
+        return
+    if not isinstance(table, dict):
+        fail(f"moriarty_cargo_dependency_table_invalid:{label}")
+    for dependency_name, specification in table.items():
+        if not isinstance(dependency_name, str) or not dependency_name:
+            fail(f"moriarty_cargo_dependency_name_invalid:{label}")
+        if isinstance(specification, dict) and "path" in specification:
+            fail(f"moriarty_cargo_path_dependency_forbidden:{label}:{dependency_name}")
+
+
+def _reject_repository_cargo_execution_hooks(manifest: dict[str, Any], source_root: Path) -> None:
+    package = manifest.get("package")
+    if not isinstance(package, dict):
+        fail("moriarty_cargo_package_identity_drift")
+    if package.get("build") not in (None, False) or os.path.lexists(source_root / "build.rs"):
+        fail("moriarty_cargo_package_build_script_forbidden")
+    if "links" in package:
+        fail("moriarty_cargo_package_links_forbidden")
+    if "patch" in manifest or "replace" in manifest:
+        fail("moriarty_cargo_dependency_override_forbidden")
+
+    for table_name in ("dependencies", "dev-dependencies", "build-dependencies"):
+        table = manifest.get(table_name)
+        _cargo_dependency_table_reject_path(table, table_name)
+        if table_name == "build-dependencies" and isinstance(table, dict) and table:
+            fail("moriarty_cargo_build_dependencies_forbidden")
+
+    targets = manifest.get("target")
+    if targets is None:
+        return
+    if not isinstance(targets, dict):
+        fail("moriarty_cargo_target_dependency_table_invalid")
+    for selector, target_tables in targets.items():
+        if not isinstance(selector, str) or not isinstance(target_tables, dict):
+            fail("moriarty_cargo_target_dependency_table_invalid")
+        for table_name in ("dependencies", "dev-dependencies", "build-dependencies"):
+            table = target_tables.get(table_name)
+            _cargo_dependency_table_reject_path(table, f"target:{selector}:{table_name}")
+            if table_name == "build-dependencies" and isinstance(table, dict) and table:
+                fail("moriarty_cargo_target_build_dependencies_forbidden")
+
 def validate_rust_target_topology(source_root: Path) -> None:
     """Freeze the source-owned Cargo target surface used by rust_all."""
     manifest_path = source_root / "Cargo.toml"
@@ -768,6 +811,7 @@ def validate_rust_target_topology(source_root: Path) -> None:
     package = manifest.get("package")
     if not isinstance(package, dict) or package.get("name") != "qsol-fed":
         fail("moriarty_cargo_package_identity_drift")
+    _reject_repository_cargo_execution_hooks(manifest, source_root)
     for flag in ("autolib", "autobins", "autoexamples", "autotests", "autobenches"):
         if package.get(flag, True) is not True:
             fail(f"moriarty_cargo_auto_target_disabled:{flag}")
@@ -1172,7 +1216,9 @@ def _probe_environment(
 
 
 def _system_read_exec_paths() -> tuple[Path, ...]:
-    return tuple(path for path in (Path("/usr"), Path("/bin"), Path("/lib"), Path("/lib64")) if path.exists())
+    # Closed runtime roots only. Never grant recursive /usr or /usr/local access.
+    candidates = (Path("/usr/bin"), Path("/usr/lib"), Path("/bin"), Path("/lib"), Path("/lib64"))
+    return tuple(path for path in candidates if path.exists())
 
 
 def _system_read_paths() -> tuple[Path, ...]:
@@ -1942,6 +1988,15 @@ def _run_probe_with_cleanup(
         _cleanup_probe_writable_paths(home, cargo_home, target_dir, temp_dir)
 
 
+def _cleanup_replay_workspace_paths(workspace: Path, *paths: Path) -> None:
+    root = Path(workspace).absolute()
+    for path in paths:
+        absolute = Path(path).absolute()
+        if absolute == root or not absolute.is_relative_to(root):
+            fail("moriarty_replay_cleanup_path_escape")
+        _force_remove_probe_path(absolute)
+
+
 def _run_counterexample_replay_probe(
     item: dict[str, Any],
     index: int,
@@ -1956,33 +2011,58 @@ def _run_counterexample_replay_probe(
 ) -> dict[str, Any]:
     probe_id = item["regression_probe_ids"][0]
     label = f"accepted-{index}-{phase}"
-    source = create_exact_export(commit, workspace, git_archive_bytes, label)
-    if probe_id == "rust_all" and not (source / "Cargo.lock").is_file():
-        fail(f"moriarty_replay_{phase}_cargo_lock_missing")
-    template = (
-        create_verified_cargo_template(
-            CARGO_CACHE_HOME,
-            workspace,
-            source / "Cargo.lock",
-            f"{label}-template",
-        )
-        if probe_id == "rust_all"
-        else workspace
-    )
+    source_path = workspace / f"{label}-src"
+    template_path = workspace / f"{label}-template"
     writable_root = _probe_writable_root()
-    cargo_home = _fresh_cargo_home(probe_id, template, writable_root, label, rust_runtime)
-    return _run_probe_with_cleanup(
-        probe_id,
-        writable_root / f"{label}-home",
-        source,
-        cargo_home,
-        writable_root / f"{label}-target",
-        python_exec,
-        cargo_exec,
-        rustc_exec,
-        rustdoc_exec,
-        rust_runtime,
-    )
+    home = writable_root / f"{label}-home"
+    cargo_home_path = writable_root / f"cargo-home-{label}"
+    target_dir = writable_root / f"{label}-target"
+    temp_dir = writable_root / f"tmp-{label}-target"
+    try:
+        source = create_exact_export(commit, workspace, git_archive_bytes, label)
+        if probe_id == "rust_all" and not (source / "Cargo.lock").is_file():
+            fail(f"moriarty_replay_{phase}_cargo_lock_missing")
+
+        topology_valid = True
+        if probe_id == "rust_all":
+            try:
+                validate_rust_target_topology(source)
+            except SystemExit:
+                # run_probe repeats this precheck and records the exact bounded
+                # harness-precheck failure; no Cargo archive template is needed.
+                topology_valid = False
+
+        if probe_id == "rust_all" and topology_valid:
+            template = create_verified_cargo_template(
+                CARGO_CACHE_HOME,
+                workspace,
+                source / "Cargo.lock",
+                f"{label}-template",
+            )
+            cargo_home = _fresh_cargo_home(probe_id, template, writable_root, label, rust_runtime)
+        elif probe_id == "rust_all":
+            cargo_home = cargo_home_path
+        else:
+            cargo_home = _fresh_cargo_home(probe_id, workspace, writable_root, label, rust_runtime)
+
+        return _run_probe_with_cleanup(
+            probe_id,
+            home,
+            source,
+            cargo_home,
+            target_dir,
+            python_exec,
+            cargo_exec,
+            rustc_exec,
+            rustdoc_exec,
+            rust_runtime,
+        )
+    finally:
+        _cleanup_probe_writable_paths(home, cargo_home_path, target_dir, temp_dir)
+        replay_paths = [source_path]
+        if probe_id == "rust_all":
+            replay_paths.append(template_path)
+        _cleanup_replay_workspace_paths(workspace, *replay_paths)
 
 
 def verify_accepted_counterexamples(
