@@ -181,7 +181,8 @@ def verify_frozen_roadmap_contract() -> None:
         "Prime Directive admission",
         "signature/trust/authority separation",
         "transport identity/provenance independence",
-        "No unresolved `sorry` / `admit` in the graduation theorem set.",
+        "No unresolved `sorry`/`admit` is permitted in the graduation theorem set",
+        "assumptions must be named and theorem-to-contract traceability complete",
         "LEAN THEOREM != DEPLOYMENT SECURITY PROOF",
         "FORMAL MODEL != UNSTATED REAL-WORLD ASSUMPTION",
     ]
