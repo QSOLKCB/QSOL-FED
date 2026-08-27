@@ -1,0 +1,41 @@
+name: phase10-finalize
+
+on:
+  push:
+    branches:
+      - formal/phase10-lean-v0.11
+
+permissions:
+  contents: write
+
+concurrency:
+  group: phase10-finalize
+  cancel-in-progress: true
+
+jobs:
+  finalize:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Synchronize Phase 10 contracts
+        run: |
+          set -euo pipefail
+          python3 tools/finalize_phase10_contracts.py
+          python3 -m py_compile tools/validate_phase10_gate.py
+          python3 tools/validate_phase10_gate.py
+          python3 tools/validate_phase10_gate.py --json
+          git diff --check
+      - name: Commit finished Phase 10 candidate
+        run: |
+          set -euo pipefail
+          git config user.name "Trent Slade"
+          git config user.email "73952179+EmergentMonk@users.noreply.github.com"
+          git rm tools/finalize_phase10_contracts.py .github/workflows/phase10-finalize.yml
+          git add -A
+          git diff --cached --check
+          git commit -m "Complete Phase 10 Lean formalization contract"
+          echo "RETAINED_COMMIT=$(git rev-parse HEAD)"
+          git push origin HEAD:formal/phase10-lean-v0.11
