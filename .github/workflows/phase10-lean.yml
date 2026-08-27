@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - formal/phase10-lean-v0.11
+      - main
   pull_request:
 
 permissions:
