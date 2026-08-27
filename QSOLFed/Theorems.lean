@@ -81,6 +81,14 @@ theorem import_does_not_change_trust (id : ForeignIdentity) :
 
 /-! Lifecycle monotonicity -/
 
+private theorem append_assoc_structural {α : Type} (a b c : List α) :
+    (a ++ b) ++ c = a ++ (b ++ c) := by
+  induction a with
+  | nil => rfl
+  | cons x xs ih =>
+      change x :: ((xs ++ b) ++ c) = x :: (xs ++ (b ++ c))
+      exact congrArg (fun ys => x :: ys) ih
+
 theorem lifecycle_append_is_monotone
     (old : List PeerLifecycle) (event : PeerLifecycle) :
     Prefix old (old ++ [event]) := by
@@ -97,7 +105,7 @@ theorem lifecycle_prefix_is_transitive
           calc
             c = b ++ tail2 := hc
             _ = (a ++ tail1) ++ tail2 := congrArg (fun xs => xs ++ tail2) hb
-            _ = a ++ (tail1 ++ tail2) := List.append_assoc a tail1 tail2
+            _ = a ++ (tail1 ++ tail2) := append_assoc_structural a tail1 tail2
 
 /-! Partition sovereignty -/
 
