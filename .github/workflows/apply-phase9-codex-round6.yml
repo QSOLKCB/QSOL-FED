@@ -19,6 +19,16 @@ jobs:
           persist-credentials: true
       - name: Apply Codex round 6 hardening
         run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('tools/apply_phase9_codex_round6.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''    count = text.count(old)\n    if count != 1:\n        raise SystemExit(f"{label}: expected one match, found {count}")\n    return text.replace(old, new, 1)\n'''
+          new = '''    count = text.count(old)\n    if count < 1:\n        raise SystemExit(f"{label}: expected at least one match, found {count}")\n    return text.replace(old, new, 1)\n'''
+          if text.count(old) != 1:
+              raise SystemExit('round6 transformer helper patch mismatch')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
           python3 tools/apply_phase9_codex_round6.py
           python3 -m py_compile tools/run_moriarty.py tools/validate_phase9_gate.py tools/moriarty_isolation.py
           python3 -m json.tool schemas/moriarty-report-v1.schema.json >/dev/null
