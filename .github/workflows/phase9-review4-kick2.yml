@@ -1,0 +1,320 @@
+name: phase9-review4-kick2
+
+on:
+  pull_request:
+    types: [synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/phase9-moriarty-graduation
+          fetch-depth: 0
+      - name: Apply structural review repair
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import copy
+          import json
+
+          run = Path('tools/run_moriarty.py')
+          source = run.read_text(encoding='utf-8')
+          if 'moriarty_cargo_project_config_forbidden' not in source:
+              anchor = '    package = manifest.get("package")\n'
+              if source.count(anchor) != 1:
+                  raise SystemExit('Cargo package anchor drift')
+              insert = '''    cargo_config_root = source_root / ".cargo"
+    for config_name in ("config", "config.toml"):
+        config_path = cargo_config_root / config_name
+        try:
+            os.lstat(config_path)
+        except FileNotFoundError:
+            continue
+        except OSError:
+            fail("moriarty_cargo_project_config_unreadable")
+        fail(f"moriarty_cargo_project_config_forbidden:{config_name}")
+'''
+              source = source.replace(anchor, insert + anchor, 1)
+
+          if 'def _force_remove_probe_path(' not in source:
+              start = source.index('def _cleanup_probe_writable_paths(*paths: Path) -> None:\n')
+              end = source.index('\ndef _run_probe_with_cleanup(', start)
+              cleanup = '''def _force_remove_probe_path(path: Path) -> None:
+    """Remove a disposable probe path even after probe-controlled chmod(0)."""
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        return
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+        return
+    try:
+        os.chmod(path, 0o700, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    try:
+        with os.scandir(path) as entries:
+            children = [entry.name for entry in entries]
+    except FileNotFoundError:
+        return
+    for name in children:
+        child = path / name
+        try:
+            child_info = os.lstat(child)
+        except FileNotFoundError:
+            continue
+        if stat.S_ISDIR(child_info.st_mode) and not stat.S_ISLNK(child_info.st_mode):
+            _force_remove_probe_path(child)
+        else:
+            try:
+                child.unlink()
+            except FileNotFoundError:
+                pass
+            except IsADirectoryError:
+                _force_remove_probe_path(child)
+    try:
+        path.rmdir()
+    except FileNotFoundError:
+        pass
+
+
+def _cleanup_probe_writable_paths(*paths: Path) -> None:
+    root = _probe_writable_root()
+    for path in paths:
+        absolute = Path(path).absolute()
+        if absolute == root or not absolute.is_relative_to(root):
+            fail("moriarty_probe_cleanup_path_escape")
+        _force_remove_probe_path(absolute)
+'''
+              source = source[:start] + cleanup + source[end:]
+          run.write_text(source, encoding='utf-8')
+
+          isolation = Path('tools/moriarty_isolation.py')
+          source = isolation.read_text(encoding='utf-8')
+          if 'def _proc_status_unprivileged(' not in source:
+              marker = 'def probe_isolation_preexec(\n'
+              pos = source.index(marker)
+              helper = '''def _proc_status_unprivileged(status_text: str) -> bool:
+    fields: dict[str, str] = {}
+    for raw_line in status_text.splitlines():
+        if ":" not in raw_line:
+            continue
+        key, value = raw_line.split(":", 1)
+        fields[key] = value.strip()
+    try:
+        uids = tuple(int(value) for value in fields["Uid"].split())
+        gids = tuple(int(value) for value in fields["Gid"].split())
+        capabilities = tuple(
+            int(fields[key], 16)
+            for key in ("CapInh", "CapPrm", "CapEff", "CapAmb")
+        )
+    except (KeyError, ValueError):
+        return False
+    return (
+        len(uids) == 4
+        and len(gids) == 4
+        and len(set(uids)) == 1
+        and len(set(gids)) == 1
+        and uids[0] != 0
+        and gids[0] != 0
+        and all(value == 0 for value in capabilities)
+    )
+
+
+def require_unprivileged_probe_launcher() -> None:
+    if sys.platform != "linux":
+        fail("moriarty_linux_isolation_platform_required")
+    try:
+        status_text = Path("/proc/self/status").read_text(encoding="ascii")
+    except (OSError, UnicodeError):
+        fail("moriarty_launcher_privilege_status_unavailable")
+    if not _proc_status_unprivileged(status_text):
+        fail("moriarty_privileged_probe_launcher_rejected")
+
+
+'''
+              source = source[:pos] + helper + source[pos:]
+              sig = source.index(marker, pos + len(helper))
+              body = source.index('):\n', sig) + 3
+              source = source[:body] + '    require_unprivileged_probe_launcher()\n' + source[body:]
+          isolation.write_text(source, encoding='utf-8')
+
+          schema_path = Path('schemas/moriarty-report-v1.schema.json')
+          schema = json.loads(schema_path.read_text(encoding='utf-8'))
+          probe_conditionals = [
+              {
+                  'if': {'type': 'object', 'properties': {'ok': {'const': True}}, 'required': ['ok']},
+                  'then': {'properties': {
+                      'exit_code': {'const': 0}, 'failure_kind': {'const': None},
+                      'stdout_truncated': {'const': False}, 'stderr_truncated': {'const': False},
+                  }},
+              },
+              {
+                  'if': {'type': 'object', 'properties': {'ok': {'const': False}}, 'required': ['ok']},
+                  'then': {'properties': {'failure_kind': {'enum': ['exit_nonzero', 'timeout', 'tool_error']}}},
+              },
+              {
+                  'if': {'type': 'object', 'properties': {'failure_kind': {'const': 'exit_nonzero'}}, 'required': ['failure_kind']},
+                  'then': {'properties': {'ok': {'const': False}, 'exit_code': {'type': 'integer', 'not': {'const': 0}}}},
+              },
+              {
+                  'if': {'type': 'object', 'properties': {'failure_kind': {'enum': ['timeout', 'tool_error']}}, 'required': ['failure_kind']},
+                  'then': {'properties': {'ok': {'const': False}, 'exit_code': {'const': None}}},
+              },
+              {
+                  'if': {'type': 'object', 'anyOf': [
+                      {'properties': {'stdout_truncated': {'const': True}}, 'required': ['stdout_truncated']},
+                      {'properties': {'stderr_truncated': {'const': True}}, 'required': ['stderr_truncated']},
+                  ]},
+                  'then': {'properties': {'ok': {'const': False}, 'failure_kind': {'const': 'tool_error'}}},
+              },
+          ]
+          probe_item = schema['properties']['probe_results']['items']
+          probe_item['allOf'] = copy.deepcopy(probe_conditionals)
+          replay_item = schema['properties']['remediation_replays']['items']
+          replay_item['properties']['failure_result']['allOf'] = copy.deepcopy(probe_conditionals)
+          replay_item['allOf'] = [
+              {
+                  'if': {'properties': {'ok': {'const': True}}, 'required': ['ok']},
+                  'then': {'properties': {
+                      'target_reproduced': {'const': True}, 'failure_kind': {'const': None},
+                      'failure_result': {'const': None},
+                  }},
+              },
+              {
+                  'if': {'properties': {'ok': {'const': False}}, 'required': ['ok']},
+                  'then': {'properties': {'failure_kind': {'enum': [
+                      'target_failure_not_reproduced', 'resolution_probe_not_green', 'replay_setup_error'
+                  ]}}},
+              },
+              {
+                  'if': {'properties': {'status': {'const': 'unresolved'}}, 'required': ['status']},
+                  'then': {'properties': {'resolution_green': {'const': None}}},
+              },
+              {
+                  'if': {'allOf': [
+                      {'properties': {'status': {'const': 'resolved'}}, 'required': ['status']},
+                      {'properties': {'ok': {'const': True}}, 'required': ['ok']},
+                  ]},
+                  'then': {'properties': {'resolution_green': {'const': True}}},
+              },
+              {
+                  'if': {'properties': {'failure_kind': {'const': 'target_failure_not_reproduced'}}, 'required': ['failure_kind']},
+                  'then': {'properties': {
+                      'ok': {'const': False}, 'target_reproduced': {'const': False},
+                      'failure_result': {'type': 'object'},
+                  }},
+              },
+              {
+                  'if': {'properties': {'failure_kind': {'const': 'resolution_probe_not_green'}}, 'required': ['failure_kind']},
+                  'then': {'properties': {
+                      'ok': {'const': False}, 'target_reproduced': {'const': True},
+                      'resolution_green': {'const': False}, 'failure_result': {'type': 'object'},
+                  }},
+              },
+          ]
+          schema['allOf'] = [{
+              'if': {'properties': {'graduated': {'const': True}}, 'required': ['graduated']},
+              'then': {'properties': {
+                  'unresolved_counterexamples': {'const': 0},
+                  'probe_results': {'items': {'properties': {'ok': {'const': True}}, 'required': ['ok']}},
+                  'remediation_replays': {'items': {'properties': {'ok': {'const': True}}, 'required': ['ok']}},
+                  'counterexamples': {'items': {'properties': {'status': {'const': 'resolved'}}, 'required': ['status']}},
+              }},
+          }]
+          schema_path.write_text(json.dumps(schema, indent=2) + '\n', encoding='utf-8')
+
+          validator = Path('tools/validate_phase9_gate.py')
+          source = validator.read_text(encoding='utf-8')
+          if 'report probe semantic conditional set drift' not in source:
+              anchor = '    require(set(result_props["failure_kind"].get("enum", [])) == {None, "exit_nonzero", "timeout", "tool_error"}, "report failure-kind schema drift")\n'
+              if source.count(anchor) != 1:
+                  raise SystemExit('report schema assertion anchor drift')
+              block = '''    result_item_schema = report_props["probe_results"]["items"]
+    result_conditionals = result_item_schema.get("allOf")
+    require(isinstance(result_conditionals, list) and len(result_conditionals) == 5, "report probe semantic conditional set drift")
+    success_rule = next((rule for rule in result_conditionals if rule.get("if", {}).get("properties", {}).get("ok", {}).get("const") is True), None)
+    require(success_rule is not None, "report probe success conditional missing")
+    success_props = success_rule.get("then", {}).get("properties", {})
+    require(success_props.get("exit_code", {}).get("const") == 0 and success_props.get("failure_kind", {}).get("const", "missing") is None, "report probe success semantics schema drift")
+    require(success_props.get("stdout_truncated", {}).get("const") is False and success_props.get("stderr_truncated", {}).get("const") is False, "report successful probe truncation schema drift")
+    require(replay_item_schema["properties"]["failure_result"].get("allOf") == result_conditionals, "remediation failure-result semantic conditionals drift")
+    replay_conditionals = replay_item_schema.get("allOf")
+    require(isinstance(replay_conditionals, list) and len(replay_conditionals) == 6, "remediation replay semantic conditional set drift")
+    replay_success = next((rule for rule in replay_conditionals if rule.get("if", {}).get("properties", {}).get("ok", {}).get("const") is True), None)
+    require(replay_success is not None and replay_success.get("then", {}).get("properties", {}).get("target_reproduced", {}).get("const") is True, "remediation success semantics schema drift")
+    report_conditionals = report_schema.get("allOf")
+    require(isinstance(report_conditionals, list) and len(report_conditionals) == 1, "report graduation conditional set drift")
+    graduation_rule = report_conditionals[0]
+    require(graduation_rule.get("if", {}).get("properties", {}).get("graduated", {}).get("const") is True, "report graduation conditional missing")
+    graduation_props = graduation_rule.get("then", {}).get("properties", {})
+    require(graduation_props.get("unresolved_counterexamples", {}).get("const") == 0, "graduated report unresolved-count schema drift")
+    require(graduation_props.get("probe_results", {}).get("items", {}).get("properties", {}).get("ok", {}).get("const") is True, "graduated report probe-green schema drift")
+    require(graduation_props.get("remediation_replays", {}).get("items", {}).get("properties", {}).get("ok", {}).get("const") is True, "graduated report replay-green schema drift")
+    require(graduation_props.get("counterexamples", {}).get("items", {}).get("properties", {}).get("status", {}).get("const") == "resolved", "graduated report counterexample-status schema drift")
+'''
+              source = source.replace(anchor, anchor + block, 1)
+
+          if 'repository Cargo config' not in source:
+              anchor = '        _expect_reject(lambda: moriarty.validate_rust_target_topology(fake), "Cargo target topology override")\n'
+              if source.count(anchor) != 1:
+                  raise SystemExit('Cargo topology negative-test anchor drift')
+              block = '''        (fake / "Cargo.toml").write_text('[package]\\nname="qsol-fed"\\nversion="0.0.0"\\nedition="2024"\\n', encoding="utf-8")
+        (fake / ".cargo").mkdir()
+        (fake / ".cargo/config.toml").write_text('[build]\\nrustc-wrapper="./wrapper.py"\\n', encoding="utf-8")
+        _expect_reject(lambda: moriarty.validate_rust_target_topology(fake), "repository Cargo config")
+'''
+              source = source.replace(anchor, anchor + block, 1)
+
+          if 'probe cleanup could not reclaim chmod(0) tree' not in source:
+              anchor = '    with tempfile.TemporaryDirectory(prefix="moriarty-python-shadow-") as temp_dir:\n'
+              if source.count(anchor) != 1:
+                  raise SystemExit('cleanup negative-test anchor drift')
+              block = '''    cleanup_root = Path(os.environ["MORIARTY_PROBE_WRITABLE_ROOT"]).resolve(strict=True) / "cleanup-permission-negative"
+    require(not cleanup_root.exists(), "cleanup negative-test path already exists")
+    locked = cleanup_root / "locked" / "deeper"
+    locked.mkdir(parents=True)
+    (locked / "payload").write_text("probe-controlled", encoding="utf-8")
+    os.chmod(locked, 0)
+    os.chmod(locked.parent, 0)
+    os.chmod(cleanup_root, 0)
+    moriarty._cleanup_probe_writable_paths(cleanup_root)
+    require(not cleanup_root.exists(), "probe cleanup could not reclaim chmod(0) tree")
+
+'''
+              source = source.replace(anchor, block + anchor, 1)
+
+          if 'canonical CI launcher is privileged' not in source:
+              anchor = '    isolation = moriarty._moriarty_isolation\n'
+              if source.count(anchor) != 1:
+                  raise SystemExit('privilege negative-test anchor drift')
+              block = '''    safe_status = "Uid:\\t1000\\t1000\\t1000\\t1000\\nGid:\\t1000\\t1000\\t1000\\t1000\\nCapInh:\\t0000000000000000\\nCapPrm:\\t0000000000000000\\nCapEff:\\t0000000000000000\\nCapAmb:\\t0000000000000000\\n"
+    require(isolation._proc_status_unprivileged(safe_status), "unprivileged launcher status parser regression failed")
+    require(not isolation._proc_status_unprivileged(safe_status.replace("Uid:\\t1000\\t1000\\t1000\\t1000", "Uid:\\t0\\t0\\t0\\t0")), "root launcher status was accepted")
+    require(not isolation._proc_status_unprivileged(safe_status.replace("CapEff:\\t0000000000000000", "CapEff:\\t0000000000000001")), "capability-bearing launcher status was accepted")
+    require(isolation._proc_status_unprivileged(Path("/proc/self/status").read_text(encoding="ascii")), "canonical CI launcher is privileged")
+'''
+              source = source.replace(anchor, anchor + block, 1)
+          validator.write_text(source, encoding='utf-8')
+          PY
+          python3 -m py_compile tools/run_moriarty.py tools/moriarty_isolation.py tools/validate_phase9_gate.py
+          python3 -m json.tool schemas/moriarty-report-v1.schema.json >/dev/null
+          git diff --check
+          if git diff --quiet -- tools/run_moriarty.py tools/moriarty_isolation.py tools/validate_phase9_gate.py schemas/moriarty-report-v1.schema.json; then
+            echo "Review fixes already applied"
+            exit 0
+          fi
+          git config user.name "QSOL Phase 9 Repair"
+          git config user.email "73952179+EmergentMonk@users.noreply.github.com"
+          git add tools/run_moriarty.py tools/moriarty_isolation.py tools/validate_phase9_gate.py schemas/moriarty-report-v1.schema.json
+          git commit -m "Harden MORIARTY against review round four"
+          git push origin HEAD:agent/phase9-moriarty-graduation
