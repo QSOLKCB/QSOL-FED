@@ -10,9 +10,400 @@ permissions:
 
 jobs:
   constitutional-contract:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    env:
+      CARGO: /usr/local/qsol-moriarty-rust-toolchain/bin/cargo
+      RUSTC: /usr/local/qsol-moriarty-rust-toolchain/bin/rustc
+      RUSTDOC: /usr/local/qsol-moriarty-rust-toolchain/bin/rustdoc
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Snapshot trusted CI toolchains before repository execution
+        run: |
+          set -euo pipefail
+          test "$(python3 --version)" = "Python 3.12.3"
+
+          RUSTUP_SOURCE=/mnt/qsol-moriarty-rustup-source
+          sudo install -d -m 0700 "$RUSTUP_SOURCE"
+          sudo mount -t tmpfs -o "size=2147483648,nosuid,nodev,mode=0700,uid=$(id -u),gid=$(id -g)" tmpfs "$RUSTUP_SOURCE"
+          timeout --kill-after=5s 180s env RUSTUP_HOME="$RUSTUP_SOURCE" rustup toolchain install 1.97.1 --profile minimal --no-self-update
+          RUSTC_SOURCE="$(RUSTUP_HOME="$RUSTUP_SOURCE" rustup which --toolchain 1.97.1 rustc)"
+          CARGO_SOURCE="$(RUSTUP_HOME="$RUSTUP_SOURCE" rustup which --toolchain 1.97.1 cargo)"
+          RUSTDOC_SOURCE="$(RUSTUP_HOME="$RUSTUP_SOURCE" rustup which --toolchain 1.97.1 rustdoc)"
+          test "$("$RUSTC_SOURCE" --version)" = "rustc 1.97.1 (8bab26f4f 2026-07-14)"
+          test "$("$CARGO_SOURCE" --version)" = "cargo 1.97.1 (c980f4866 2026-06-30)"
+          RUST_SYSROOT="$("$RUSTC_SOURCE" --print sysroot)"
+          test -d "$RUST_SYSROOT/bin"
+          test -d "$RUST_SYSROOT/lib"
+          test "$RUSTDOC_SOURCE" = "$RUST_SYSROOT/bin/rustdoc"
+          FILE_COUNT="$(find "$RUST_SYSROOT/bin" "$RUST_SYSROOT/lib" -xdev -type f -printf '.' | wc -c)"
+          test "$FILE_COUNT" -le 32768
+          SOURCE_BYTES="$(du -sb --apparent-size "$RUST_SYSROOT/bin" "$RUST_SYSROOT/lib" | awk '{sum += $1} END {print sum}')"
+          test "$SOURCE_BYTES" -le 3221225472
+          MAX_FILE="$(find "$RUST_SYSROOT/bin" "$RUST_SYSROOT/lib" -xdev -type f -printf '%s\n' | sort -nr | sed -n '1p')"
+          test "${MAX_FILE:-0}" -le 1073741824
+          if find "$RUST_SYSROOT/bin" "$RUST_SYSROOT/lib" -mindepth 33 -print -quit | grep -q .; then
+            echo "Rust toolchain staging depth exceeds bound"
+            exit 1
+          fi
+          SNAPSHOT=/usr/local/qsol-moriarty-rust-toolchain
+          test ! -e "$SNAPSHOT"
+          sudo install -d -m 0755 "$SNAPSHOT"
+          sudo cp -a "$RUST_SYSROOT/bin" "$RUST_SYSROOT/lib" "$SNAPSHOT/"
+          sudo chown -R root:root "$SNAPSHOT"
+          sudo chmod -R a-w "$SNAPSHOT"
+          test "$("$SNAPSHOT/bin/rustc" --version)" = "rustc 1.97.1 (8bab26f4f 2026-07-14)"
+          test "$("$SNAPSHOT/bin/cargo" --version)" = "cargo 1.97.1 (c980f4866 2026-06-30)"
+          test "$(du -sb --apparent-size "$SNAPSHOT" | cut -f1)" -le 3221225472
+          echo "$SNAPSHOT/bin" >> "$GITHUB_PATH"
+          sudo umount "$RUSTUP_SOURCE"
+          sudo rmdir "$RUSTUP_SOURCE"
+
+          PROBE_QUOTA=/mnt/qsol-moriarty-probe-writable
+          sudo install -d -m 0700 "$PROBE_QUOTA"
+          sudo mount -t tmpfs -o "size=2147483648,nosuid,nodev,mode=0700,uid=$(id -u),gid=$(id -g)" tmpfs "$PROBE_QUOTA"
+          test "$(stat -f -c %T "$PROBE_QUOTA")" = "tmpfs"
+          test -z "$(find "$PROBE_QUOTA" -mindepth 1 -print -quit)"
+
+          CARGO_SOURCE_ROOT=/mnt/qsol-moriarty-cargo-source
+          sudo install -d -m 0700 "$CARGO_SOURCE_ROOT"
+          sudo mount -t tmpfs -o "size=1073741824,nosuid,nodev,mode=0700,uid=$(id -u),gid=$(id -g)" tmpfs "$CARGO_SOURCE_ROOT"
+          test "$(stat -f -c %T "$CARGO_SOURCE_ROOT")" = "tmpfs"
+          test -z "$(find "$CARGO_SOURCE_ROOT" -mindepth 1 -print -quit)"
+      - name: Prepare authenticated Cargo archives without repository execution
+        env:
+          MORIARTY_CARGO_CACHE_ROOT: /mnt/qsol-moriarty-cargo-source
+          MORIARTY_TARGET_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          # MORIARTY_HISTORICAL_PREFETCH_V1
+          FETCH_HOME="$MORIARTY_CARGO_CACHE_ROOT/fetch-home"
+          PREFETCH_ROOT="$MORIARTY_CARGO_CACHE_ROOT/prefetch-manifests"
+          EXPECTED_ARCHIVES="$MORIARTY_CARGO_CACHE_ROOT/prefetch-expected.json"
+          install -d -m 700 "$FETCH_HOME" "$PREFETCH_ROOT"
+          /usr/bin/python3 -I - "$GITHUB_WORKSPACE" "$PREFETCH_ROOT" "$EXPECTED_ARCHIVES" <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          import sys
+          import tomllib
+          from pathlib import Path
+
+          root = Path(sys.argv[1]).resolve(strict=True)
+          output_root = Path(sys.argv[2]).resolve(strict=True)
+          expected_path = Path(sys.argv[3])
+          target = os.environ["MORIARTY_TARGET_COMMIT"]
+          sha_re = re.compile(r"^[0-9a-f]{40}$")
+          name_re = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
+          version_re = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$")
+          allowed_source = "registry+https://github.com/rust-lang/crates.io-index"
+          git_env = {
+              "PATH": "/usr/bin:/bin",
+              "LANG": "C.UTF-8",
+              "LC_ALL": "C.UTF-8",
+              "GIT_CONFIG_NOSYSTEM": "1",
+              "GIT_CONFIG_GLOBAL": "/dev/null",
+              "GIT_ATTR_NOSYSTEM": "1",
+              "GIT_NO_REPLACE_OBJECTS": "1",
+              "GIT_OPTIONAL_LOCKS": "0",
+              "GIT_CONFIG_COUNT": "3",
+              "GIT_CONFIG_KEY_0": "core.fsmonitor",
+              "GIT_CONFIG_VALUE_0": "false",
+              "GIT_CONFIG_KEY_1": "core.hooksPath",
+              "GIT_CONFIG_VALUE_1": "/dev/null",
+              "GIT_CONFIG_KEY_2": "core.attributesFile",
+              "GIT_CONFIG_VALUE_2": "/dev/null",
+          }
+
+          def git(*args: str, check: bool = True) -> subprocess.CompletedProcess[bytes]:
+              completed = subprocess.run(
+                  ["/usr/bin/git", *args], cwd=root, env=git_env,
+                  stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                  check=False, timeout=20,
+              )
+              if check and completed.returncode != 0:
+                  raise SystemExit(f"historical Cargo prefetch git failure: {' '.join(args)}")
+              return completed
+
+          if sha_re.fullmatch(target) is None or git("rev-parse", "HEAD").stdout.decode("ascii").strip() != target:
+              raise SystemExit("historical Cargo prefetch target mismatch")
+
+          registry_raw = git("show", f"{target}:fixtures/phase9/accepted-counterexamples.json").stdout
+          registry = json.loads(registry_raw.decode("utf-8"))
+          entries = registry.get("counterexamples")
+          if not isinstance(entries, list) or len(entries) > 32:
+              raise SystemExit("historical Cargo prefetch registry invalid")
+
+          commits = [target]
+          for item in entries:
+              if not isinstance(item, dict) or item.get("regression_probe_ids") != ["rust_all"]:
+                  continue
+              commits.append(item.get("target_commit"))
+              if item.get("status") == "resolved":
+                  commits.append(item.get("resolution_commit"))
+          ordered_commits = []
+          seen = set()
+          for commit in commits:
+              if not isinstance(commit, str) or sha_re.fullmatch(commit) is None:
+                  raise SystemExit("historical Cargo prefetch commit invalid")
+              if commit in seen:
+                  continue
+              seen.add(commit)
+              if git("cat-file", "-t", commit).stdout != b"commit\n":
+                  raise SystemExit("historical Cargo prefetch revision is not a commit")
+              if git("merge-base", "--is-ancestor", commit, target, check=False).returncode != 0:
+                  raise SystemExit("historical Cargo prefetch revision outside target ancestry")
+              ordered_commits.append(commit)
+
+          expected = {}
+          for index, commit in enumerate(ordered_commits):
+              manifest_raw = git("show", f"{commit}:Cargo.toml").stdout
+              lock_raw = git("show", f"{commit}:Cargo.lock").stdout
+              try:
+                  manifest = tomllib.loads(manifest_raw.decode("utf-8"))
+                  lock = tomllib.loads(lock_raw.decode("utf-8"))
+              except (UnicodeError, tomllib.TOMLDecodeError):
+                  raise SystemExit("historical Cargo prefetch TOML invalid")
+
+              package = manifest.get("package")
+              if not isinstance(package, dict) or package.get("name") != "qsol-fed":
+                  raise SystemExit("historical Cargo prefetch package identity invalid")
+
+              def dep_table_has_path(table):
+                  return isinstance(table, dict) and any(
+                      isinstance(specification, dict) and "path" in specification
+                      for specification in table.values()
+                  )
+
+              topology_reaches_cargo = (
+                  package.get("build") in (None, False)
+                  and "links" not in package
+                  and all(package.get(flag, True) is True for flag in ("autolib", "autobins", "autoexamples", "autotests", "autobenches"))
+                  and not any(key in manifest for key in ("lib", "bin", "example", "test", "bench", "workspace", "patch", "replace"))
+                  and not (isinstance(manifest.get("build-dependencies"), dict) and manifest.get("build-dependencies"))
+                  and not any(dep_table_has_path(manifest.get(name)) for name in ("dependencies", "dev-dependencies", "build-dependencies"))
+              )
+              targets = manifest.get("target")
+              if topology_reaches_cargo and targets is not None:
+                  if not isinstance(targets, dict):
+                      topology_reaches_cargo = False
+                  else:
+                      for target_tables in targets.values():
+                          if not isinstance(target_tables, dict):
+                              topology_reaches_cargo = False
+                              break
+                          if isinstance(target_tables.get("build-dependencies"), dict) and target_tables.get("build-dependencies"):
+                              topology_reaches_cargo = False
+                              break
+                          if any(dep_table_has_path(target_tables.get(name)) for name in ("dependencies", "dev-dependencies", "build-dependencies")):
+                              topology_reaches_cargo = False
+                              break
+              if not topology_reaches_cargo:
+                  continue
+
+              project = output_root / f"commit-{index:02d}-{commit}"
+              (project / "src").mkdir(parents=True)
+              (project / "Cargo.toml").write_bytes(manifest_raw)
+              (project / "Cargo.lock").write_bytes(lock_raw)
+              (project / "src/lib.rs").write_text("// fetch-only synthetic target\n", encoding="utf-8")
+
+              for package_record in lock.get("package", []):
+                  if not isinstance(package_record, dict):
+                      raise SystemExit("historical Cargo lock package invalid")
+                  source = package_record.get("source")
+                  if source is None:
+                      continue
+                  if source != allowed_source:
+                      raise SystemExit(f"non-crates.io historical Cargo source rejected: {source}")
+                  name = package_record.get("name")
+                  version = package_record.get("version")
+                  checksum = package_record.get("checksum")
+                  if (
+                      not isinstance(name, str) or name_re.fullmatch(name) is None
+                      or not isinstance(version, str) or version_re.fullmatch(version) is None
+                      or not isinstance(checksum, str) or re.fullmatch(r"[0-9a-f]{64}", checksum) is None
+                  ):
+                      raise SystemExit("historical Cargo lock registry package invalid")
+                  filename = f"{name}-{version}.crate"
+                  previous = expected.get(filename)
+                  if previous is not None and previous != checksum:
+                      raise SystemExit("historical Cargo archive checksum conflict")
+                  expected[filename] = checksum
+
+          if not expected:
+              raise SystemExit("historical Cargo prefetch package set empty")
+          expected_path.write_text(json.dumps(expected, sort_keys=True, separators=(",", ":")), encoding="utf-8")
+          PY
+          (
+            cd "$MORIARTY_CARGO_CACHE_ROOT"
+            timeout --kill-after=5s 120s env -i \
+              PATH="/usr/local/qsol-moriarty-rust-toolchain/bin:/usr/bin:/bin" \
+              HOME="$FETCH_HOME" \
+              CARGO_HOME="$MORIARTY_CARGO_CACHE_ROOT" \
+              CARGO_NET_GIT_FETCH_WITH_CLI=false \
+              CARGO_TERM_COLOR=never \
+              RUSTC=/usr/local/qsol-moriarty-rust-toolchain/bin/rustc \
+              RUSTDOC=/usr/local/qsol-moriarty-rust-toolchain/bin/rustdoc \
+              LANG=C.UTF-8 LC_ALL=C.UTF-8 \
+              /usr/bin/bash -c 'set -euo pipefail; for manifest in "$1"/*/Cargo.toml; do /usr/local/qsol-moriarty-rust-toolchain/bin/cargo fetch --locked --manifest-path "$manifest"; done' \
+              bash "$PREFETCH_ROOT"
+          )
+          /usr/bin/python3 -I - "$MORIARTY_CARGO_CACHE_ROOT" "$EXPECTED_ARCHIVES" <<'PY'
+          import hashlib
+          import json
+          import os
+          import stat
+          import sys
+          from pathlib import Path
+
+          cargo_home = Path(sys.argv[1]).resolve(strict=True)
+          expected = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+          cache_root = cargo_home / "registry" / "cache"
+          if not cache_root.is_dir():
+              raise SystemExit("authenticated historical Cargo cache missing")
+          for filename, checksum in expected.items():
+              matched = False
+              for candidate in sorted(cache_root.glob(f"*/{filename}")):
+                  try:
+                      before = candidate.lstat()
+                  except OSError:
+                      continue
+                  if candidate.is_symlink() or not stat.S_ISREG(before.st_mode) or before.st_size > 64 * 1024 * 1024:
+                      continue
+                  fd = os.open(candidate, os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0))
+                  digest = hashlib.sha256()
+                  total = 0
+                  try:
+                      while True:
+                          chunk = os.read(fd, 65536)
+                          if not chunk:
+                              break
+                          total += len(chunk)
+                          if total > 64 * 1024 * 1024:
+                              raise SystemExit("historical Cargo archive exceeds bound")
+                          digest.update(chunk)
+                      after = os.fstat(fd)
+                  finally:
+                      os.close(fd)
+                  if (
+                      before.st_dev == after.st_dev and before.st_ino == after.st_ino
+                      and before.st_size == after.st_size == total
+                      and before.st_mtime_ns == after.st_mtime_ns
+                      and digest.hexdigest() == checksum
+                  ):
+                      matched = True
+                      break
+              if not matched:
+                  raise SystemExit(f"historical Cargo archive missing or unauthenticated: {filename}")
+          PY
+          rm -rf "$PREFETCH_ROOT" "$FETCH_HOME" "$EXPECTED_ARCHIVES"
+          test ! -e "$MORIARTY_CARGO_CACHE_ROOT/credentials"
+          test ! -e "$MORIARTY_CARGO_CACHE_ROOT/credentials.toml"
+          test -d "$MORIARTY_CARGO_CACHE_ROOT/registry/cache"
+          test "$(du -sb --apparent-size "$MORIARTY_CARGO_CACHE_ROOT" | cut -f1)" -le 1073741824
+      - name: Phase 9 MORIARTY/1 exact-commit graduation gate
+        env:
+          MORIARTY_TARGET_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+          MORIARTY_REPORT_DIR: ${{ runner.temp }}/moriarty-report
+          MORIARTY_RUST_TOOLCHAIN_ROOT: /usr/local/qsol-moriarty-rust-toolchain
+          MORIARTY_EXPECTED_PYTHON_VERSION: Python 3.12.3
+          MORIARTY_EXPECTED_RUSTC_VERSION: rustc 1.97.1 (8bab26f4f 2026-07-14)
+          MORIARTY_EXPECTED_CARGO_VERSION: cargo 1.97.1 (c980f4866 2026-06-30)
+          MORIARTY_CARGO_CACHE_ROOT: /mnt/qsol-moriarty-cargo-source
+          MORIARTY_PROBE_WRITABLE_ROOT: /mnt/qsol-moriarty-probe-writable
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$MORIARTY_REPORT_DIR"
+          DELEGATE_UNIT="qsol-moriarty-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.service"
+          GATE_SCRIPT="$RUNNER_TEMP/moriarty-delegated-gate-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.sh"
+          cat > "$GATE_SCRIPT" <<'BASH'
+          #!/usr/bin/bash
+          set -euo pipefail
+          CURRENT_CGROUP="$(awk -F: '$1 == "0" {print $3}' /proc/self/cgroup)"
+          case "$CURRENT_CGROUP" in
+            */anchor) ;;
+            *) echo "delegated validator subgroup missing: $CURRENT_CGROUP" >&2; exit 1 ;;
+          esac
+          CGROUP_PARENT="/sys/fs/cgroup${CURRENT_CGROUP%/anchor}"
+          test -d "$CGROUP_PARENT"
+          test -z "$(cat "$CGROUP_PARENT/cgroup.procs")"
+          grep -qw memory "$CGROUP_PARENT/cgroup.controllers"
+          grep -qw pids "$CGROUP_PARENT/cgroup.controllers"
+          echo '+memory +pids' | sudo tee "$CGROUP_PARENT/cgroup.subtree_control" >/dev/null
+          grep -qw memory "$CGROUP_PARENT/cgroup.subtree_control"
+          grep -qw pids "$CGROUP_PARENT/cgroup.subtree_control"
+          sudo chown "$(id -u):$(id -g)" "$CGROUP_PARENT/cgroup.procs"
+          test -w "$CGROUP_PARENT/cgroup.procs"
+          PROBE_CGROUP="$CGROUP_PARENT/probe"
+          sudo mkdir "$PROBE_CGROUP"
+          echo 2147483648 | sudo tee "$PROBE_CGROUP/memory.max" >/dev/null
+          echo 128 | sudo tee "$PROBE_CGROUP/pids.max" >/dev/null
+          if test -f "$PROBE_CGROUP/memory.swap.max"; then
+            echo 0 | sudo tee "$PROBE_CGROUP/memory.swap.max" >/dev/null
+          fi
+          if test -f "$PROBE_CGROUP/memory.oom.group"; then
+            echo 1 | sudo tee "$PROBE_CGROUP/memory.oom.group" >/dev/null
+          fi
+          sudo chown "$(id -u):$(id -g)" "$PROBE_CGROUP/cgroup.procs"
+          test -w "$PROBE_CGROUP/cgroup.procs"
+          test -z "$(cat "$PROBE_CGROUP/cgroup.procs")"
+          test "$(cat "$PROBE_CGROUP/memory.max")" = "2147483648"
+          test "$(cat "$PROBE_CGROUP/pids.max")" = "128"
+          cleanup() {
+            set +e
+            if test -d "$PROBE_CGROUP"; then
+              while read -r pid; do
+                test -n "$pid" && sudo kill -KILL "$pid" 2>/dev/null || true
+              done < "$PROBE_CGROUP/cgroup.procs"
+              sudo rmdir "$PROBE_CGROUP" 2>/dev/null || true
+            fi
+          }
+          trap cleanup EXIT
+          export MORIARTY_PROBE_CGROUP="$PROBE_CGROUP"
+          /usr/bin/python3 -I tools/validate_phase9_gate.py --target-commit "$MORIARTY_TARGET_COMMIT" --report-dir "$MORIARTY_REPORT_DIR"
+          BASH
+          chmod 500 "$GATE_SCRIPT"
+          cleanup_outer() {
+            set +e
+            sudo systemctl stop "$DELEGATE_UNIT" 2>/dev/null || true
+            sudo systemctl reset-failed "$DELEGATE_UNIT" 2>/dev/null || true
+            rm -f "$GATE_SCRIPT"
+          }
+          trap cleanup_outer EXIT
+          sudo systemd-run --quiet --wait --pipe --collect --unit="$DELEGATE_UNIT" \
+            --property=Delegate=yes \
+            --property=DelegateSubgroup=anchor \
+            --uid="$(id -u)" --gid="$(id -g)" \
+            --working-directory="$GITHUB_WORKSPACE" \
+            --setenv="MORIARTY_TARGET_COMMIT=$MORIARTY_TARGET_COMMIT" \
+            --setenv="MORIARTY_REPORT_DIR=$MORIARTY_REPORT_DIR" \
+            --setenv="MORIARTY_RUST_TOOLCHAIN_ROOT=$MORIARTY_RUST_TOOLCHAIN_ROOT" \
+            --setenv="MORIARTY_EXPECTED_PYTHON_VERSION=$MORIARTY_EXPECTED_PYTHON_VERSION" \
+            --setenv="MORIARTY_EXPECTED_RUSTC_VERSION=$MORIARTY_EXPECTED_RUSTC_VERSION" \
+            --setenv="MORIARTY_EXPECTED_CARGO_VERSION=$MORIARTY_EXPECTED_CARGO_VERSION" \
+            --setenv="MORIARTY_CARGO_CACHE_ROOT=$MORIARTY_CARGO_CACHE_ROOT" \
+            --setenv="MORIARTY_PROBE_WRITABLE_ROOT=$MORIARTY_PROBE_WRITABLE_ROOT" \
+            "$GATE_SCRIPT"
+      - name: Preserve Phase 9 MORIARTY report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase9-moriarty-report-${{ github.run_id }}
+          path: ${{ runner.temp }}/moriarty-report/*.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Release Phase 9 resource envelopes
+        if: always()
+        run: |
+          set +e
+          sudo umount /mnt/qsol-moriarty-probe-writable 2>/dev/null || true
+          sudo umount /mnt/qsol-moriarty-cargo-source 2>/dev/null || true
+          sudo rmdir /mnt/qsol-moriarty-probe-writable 2>/dev/null || true
+          sudo rmdir /mnt/qsol-moriarty-cargo-source 2>/dev/null || true
       - name: Checkout pinned QSOL-NEXUS adapter source
         uses: actions/checkout@v4
         with:
@@ -29,15 +420,15 @@ jobs:
           persist-credentials: false
       - name: Toolchain versions
         run: |
-          rustc --version
-          cargo --version
-          python3 --version
+          /usr/local/qsol-moriarty-rust-toolchain/bin/rustc --version
+          /usr/local/qsol-moriarty-rust-toolchain/bin/cargo --version
+          /usr/bin/python3 --version
           node --version
       - name: Rust tests, state, Holodeck, adapters, SDKs, Assembly, transports, and fuzz smoke
-        run: cargo test --all-targets
+        run: /usr/local/qsol-moriarty-rust-toolchain/bin/cargo test --all-targets --locked
       - name: Phase 6 three-implementation SDK conformance
         run: |
-          cargo run --quiet --bin qsol-fed-sdk-conformance > /tmp/phase6-rust.json
+          /usr/local/qsol-moriarty-rust-toolchain/bin/cargo run --locked --quiet --bin qsol-fed-sdk-conformance > /tmp/phase6-rust.json
           python3 sdk/python/conformance.py > /tmp/phase6-python.json
           node sdk/typescript/conformance.mjs > /tmp/phase6-js.json
           cmp /tmp/phase6-rust.json /tmp/phase6-python.json
@@ -119,7 +510,7 @@ jobs:
           test "$(sha256sum .deps/QSOL-ORACLE/tools/nexus_membrane_common.py | cut -d' ' -f1)" = "4e4c749b67688678f03692d9533adb64760a3b448b3b804acb9f7f95e986c381"
       - name: Phase 5C live ORACLE process conformance
         run: |
-          cargo run --quiet --bin qsol-fed-oracle -- .deps/QSOL-ORACLE > /tmp/oracle-live-probe.json
+          /usr/local/qsol-moriarty-rust-toolchain/bin/cargo run --locked --quiet --bin qsol-fed-oracle -- .deps/QSOL-ORACLE > /tmp/oracle-live-probe.json
           python3 - <<'PY'
           import json
           probe=json.load(open('/tmp/oracle-live-probe.json', encoding='utf-8'))
@@ -136,7 +527,7 @@ jobs:
         run: |
           cp -a .deps/QSOL-ORACLE /tmp/QSOL-ORACLE-tampered
           printf '\n# intentional Phase 5C transport tamper\n' >> /tmp/QSOL-ORACLE-tampered/tools/fed_transport.py
-          if cargo run --quiet --bin qsol-fed-oracle -- /tmp/QSOL-ORACLE-tampered; then
+          if /usr/local/qsol-moriarty-rust-toolchain/bin/cargo run --locked --quiet --bin qsol-fed-oracle -- /tmp/QSOL-ORACLE-tampered; then
             echo "tampered ORACLE donor release was accepted"
             exit 1
           fi
@@ -162,7 +553,7 @@ jobs:
           fp['files_sha256'] = hashlib.sha256(canonical(fp['files'])).hexdigest()
           path.write_text(json.dumps(fp, indent=2) + '\n', encoding='utf-8')
           PY
-          if cargo run --quiet --bin qsol-fed-oracle -- /tmp/QSOL-ORACLE-forged-fingerprint; then
+          if /usr/local/qsol-moriarty-rust-toolchain/bin/cargo run --locked --quiet --bin qsol-fed-oracle -- /tmp/QSOL-ORACLE-forged-fingerprint; then
             echo "forged ORACLE release fingerprint self-claim was accepted"
             exit 1
           fi

@@ -1,0 +1,115 @@
+{
+  "schema": "moriarty-attack-corpus/1",
+  "protocol": "MORIARTY/1",
+  "attacks": [
+    {
+      "id": "MOR-001",
+      "family": "canonical_parser_differentials",
+      "owner_phases": ["1"],
+      "boundary_ids": ["canonical_json_identity", "parser_ambiguity_rejected"],
+      "probe_ids": ["phase1", "rust_all"]
+    },
+    {
+      "id": "MOR-002",
+      "family": "signature_domain_key_role_confusion",
+      "owner_phases": ["2"],
+      "boundary_ids": ["signature_domain_separation", "root_operational_key_separation", "signature_is_not_authority"],
+      "probe_ids": ["phase2", "rust_all"]
+    },
+    {
+      "id": "MOR-003",
+      "family": "replay_downgrade_clock",
+      "owner_phases": ["1", "2", "3"],
+      "boundary_ids": ["durable_replay_protection", "frozen_clock_limits", "unsupported_major_rejected"],
+      "probe_ids": ["phase1", "phase2", "phase3", "rust_all"]
+    },
+    {
+      "id": "MOR-004",
+      "family": "http_rate_proxy_ddos_shape",
+      "owner_phases": ["3"],
+      "boundary_ids": ["bounded_http_body", "trusted_proxy_rate_attribution", "request_rate_limits"],
+      "probe_ids": ["phase3", "rust_all"]
+    },
+    {
+      "id": "MOR-005",
+      "family": "ssrf_decompression",
+      "owner_phases": ["3"],
+      "boundary_ids": ["no_outbound_http_client", "content_encoding_forbidden", "local_only_retrieval"],
+      "probe_ids": ["phase3", "rust_all"]
+    },
+    {
+      "id": "MOR-006",
+      "family": "crash_fsync_restart",
+      "owner_phases": ["2", "4"],
+      "boundary_ids": ["replay_fsync_before_fresh", "persist_before_live_state", "namespace_move_recovery"],
+      "probe_ids": ["phase2", "phase4", "rust_all"]
+    },
+    {
+      "id": "MOR-007",
+      "family": "lifecycle_partition_history",
+      "owner_phases": ["2", "4", "8"],
+      "boundary_ids": ["identity_lifecycle_monotonic", "partition_requires_explicit_reconciliation", "transport_cannot_revive_compromised_key"],
+      "probe_ids": ["phase2", "phase4", "phase8", "rust_all"]
+    },
+    {
+      "id": "MOR-008",
+      "family": "import_provenance_authority_laundering",
+      "owner_phases": ["4"],
+      "boundary_ids": ["import_is_not_authority", "foreign_state_is_not_local_state", "provenance_preserved"],
+      "probe_ids": ["constitution", "phase4", "rust_all"]
+    },
+    {
+      "id": "MOR-009",
+      "family": "adapter_confusion",
+      "owner_phases": ["5", "5C"],
+      "boundary_ids": ["adapter_data_is_not_local_authority", "oracle_observation_is_not_truth", "simulation_is_not_authority"],
+      "probe_ids": ["phase5", "phase5c", "rust_all"]
+    },
+    {
+      "id": "MOR-010",
+      "family": "holodeck_escape",
+      "owner_phases": ["5A", "5"],
+      "boundary_ids": ["holodeck_capability_less_sandbox", "simulation_identity_is_not_federation_identity", "computer_end_program_terminal"],
+      "probe_ids": ["phase5a", "phase5", "rust_all"]
+    },
+    {
+      "id": "MOR-011",
+      "family": "safeguard_persuasion",
+      "owner_phases": ["5A"],
+      "boundary_ids": ["persuasion_cannot_disable_safeguards", "runtime_constitution_override_forbidden"],
+      "probe_ids": ["constitution", "phase5a", "rust_all"]
+    },
+    {
+      "id": "MOR-012",
+      "family": "nested_world_amplification",
+      "owner_phases": ["5A"],
+      "boundary_ids": ["nested_holodeck_forbidden", "bounded_holodeck_resources", "boundary_freezes_before_audit"],
+      "probe_ids": ["phase5a", "rust_all"]
+    },
+    {
+      "id": "MOR-013",
+      "family": "assembly_capture_representation",
+      "owner_phases": ["7"],
+      "boundary_ids": ["assembly_membership_separate_from_network", "assembly_vote_is_not_member_command", "charter_conflict_requires_fork"],
+      "probe_ids": ["phase7", "rust_all"]
+    },
+    {
+      "id": "MOR-014",
+      "family": "transport_nat_relay_store_forward_archive",
+      "owner_phases": ["8"],
+      "boundary_ids": ["transport_is_not_identity", "route_is_not_trust", "relay_is_not_authority", "archive_does_not_reinterpret_history"],
+      "probe_ids": ["phase8", "rust_all"]
+    },
+    {
+      "id": "MOR-015",
+      "family": "cross_phase_contradictions",
+      "owner_phases": ["cross-phase"],
+      "boundary_ids": ["historical_gate_monotonicity", "claim_surface_consistency", "prime_directive_cross_phase_preservation"],
+      "probe_ids": ["constitution", "phase0", "phase1", "phase2", "phase3", "phase4", "phase5a", "phase5", "phase5c", "phase6", "phase7", "phase8", "rust_all"]
+    }
+  ],
+  "production_credentials_allowed": false,
+  "production_targets_allowed": false,
+  "constitutional_bypass_allowed": false,
+  "authority_effect": "none"
+}
