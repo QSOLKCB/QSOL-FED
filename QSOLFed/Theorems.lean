@@ -89,24 +89,28 @@ theorem lifecycle_append_is_monotone
 theorem lifecycle_prefix_is_transitive
     {α : Type} {a b c : List α} (hab : Prefix a b) (hbc : Prefix b c) :
     Prefix a c := by
-  rcases hab with ⟨ab, rfl⟩
-  rcases hbc with ⟨bc, rfl⟩
-  exact ⟨ab ++ bc, by simp [List.append_assoc]⟩
+  cases hab with
+  | intro tail1 hb =>
+      cases hbc with
+      | intro tail2 hc =>
+          refine ⟨tail1 ++ tail2, ?_⟩
+          rw [hc, hb]
+          simp [List.append_assoc]
 
 /-! Partition sovereignty -/
 
 theorem partition_rejoin_preserves_local_state
-    (local : SovereignState) (sameSnapshot : Bool) :
-    (rejoinPartition local sameSnapshot).localState = local := by
+    (state : SovereignState) (sameSnapshot : Bool) :
+    (rejoinPartition state sameSnapshot).localState = state := by
   cases sameSnapshot <;> rfl
 
 theorem changed_partition_snapshot_requires_reconciliation
-    (local : SovereignState) :
-    (rejoinPartition local false).reconciliationRequired = true := rfl
+    (state : SovereignState) :
+    (rejoinPartition state false).reconciliationRequired = true := rfl
 
 theorem unchanged_partition_snapshot_needs_no_reconciliation
-    (local : SovereignState) :
-    (rejoinPartition local true).reconciliationRequired = false := rfl
+    (state : SovereignState) :
+    (rejoinPartition state true).reconciliationRequired = false := rfl
 
 /-! Canonical identity determinism -/
 
