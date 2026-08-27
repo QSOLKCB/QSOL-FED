@@ -27,12 +27,14 @@ jobs:
           start = text.index("    apply_step = '''      - name: Apply final Phase 9 hardening")
           end_marker = '    text = replace_once(text, apply_step, \'\', "remove self patch step")\n'
           end = text.index(end_marker, start) + len(end_marker)
-          path.write_text(text[:start] + text[end:], encoding='utf-8')
+          text = text[:start] + text[end:]
+          text = text.replace('    patch_ci()\n', '', 1)
+          path.write_text(text, encoding='utf-8')
           PY
           python3 tools/apply_phase9_final_hardening.py
           python3 -m py_compile tools/moriarty_isolation.py tools/run_moriarty.py tools/validate_phase9_gate.py
           git diff --check
-          git rm .github/workflows/apply-phase9-final-hardening.yml
+          rm -rf tools/__pycache__
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
