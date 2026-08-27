@@ -16,12 +16,14 @@ jobs:
       - name: Checkout exact revision
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
 
       - name: Verify immutable source release
         run: |
           set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
           git fetch --force origin refs/tags/v0.11.0:refs/tags/v0.11.0
           test "$(git cat-file -t v0.11.0)" = commit
           test "$(git rev-parse 'v0.11.0^{commit}')" = c953463724cdf218802e66e16f582ae8d600ca47
