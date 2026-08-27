@@ -12,9 +12,9 @@ jobs:
   constitutional-contract:
     runs-on: ubuntu-24.04
     env:
-      CARGO: /opt/qsol-moriarty-rust-toolchain/bin/cargo
-      RUSTC: /opt/qsol-moriarty-rust-toolchain/bin/rustc
-      RUSTDOC: /opt/qsol-moriarty-rust-toolchain/bin/rustdoc
+      CARGO: /usr/local/qsol-moriarty-rust-toolchain/bin/cargo
+      RUSTC: /usr/local/qsol-moriarty-rust-toolchain/bin/rustc
+      RUSTDOC: /usr/local/qsol-moriarty-rust-toolchain/bin/rustdoc
     steps:
       - uses: actions/checkout@v4
         with:
@@ -40,7 +40,7 @@ jobs:
             echo "Rust toolchain staging depth exceeds bound"
             exit 1
           fi
-          SNAPSHOT=/opt/qsol-moriarty-rust-toolchain
+          SNAPSHOT=/usr/local/qsol-moriarty-rust-toolchain
           test ! -e "$SNAPSHOT"
           sudo install -d -m 0755 "$SNAPSHOT"
           sudo cp -a "$RUST_SYSROOT/bin" "$RUST_SYSROOT/lib" "$SNAPSHOT/"
@@ -66,15 +66,15 @@ jobs:
           persist-credentials: false
       - name: Toolchain versions
         run: |
-          /opt/qsol-moriarty-rust-toolchain/bin/rustc --version
-          /opt/qsol-moriarty-rust-toolchain/bin/cargo --version
+          /usr/local/qsol-moriarty-rust-toolchain/bin/rustc --version
+          /usr/local/qsol-moriarty-rust-toolchain/bin/cargo --version
           /usr/bin/python3 --version
           node --version
       - name: Rust tests, state, Holodeck, adapters, SDKs, Assembly, transports, and fuzz smoke
-        run: /opt/qsol-moriarty-rust-toolchain/bin/cargo test --all-targets --locked
+        run: /usr/local/qsol-moriarty-rust-toolchain/bin/cargo test --all-targets --locked
       - name: Phase 6 three-implementation SDK conformance
         run: |
-          /opt/qsol-moriarty-rust-toolchain/bin/cargo run --locked --quiet --bin qsol-fed-sdk-conformance > /tmp/phase6-rust.json
+          /usr/local/qsol-moriarty-rust-toolchain/bin/cargo run --locked --quiet --bin qsol-fed-sdk-conformance > /tmp/phase6-rust.json
           python3 sdk/python/conformance.py > /tmp/phase6-python.json
           node sdk/typescript/conformance.mjs > /tmp/phase6-js.json
           cmp /tmp/phase6-rust.json /tmp/phase6-python.json
@@ -156,7 +156,7 @@ jobs:
           test "$(sha256sum .deps/QSOL-ORACLE/tools/nexus_membrane_common.py | cut -d' ' -f1)" = "4e4c749b67688678f03692d9533adb64760a3b448b3b804acb9f7f95e986c381"
       - name: Phase 5C live ORACLE process conformance
         run: |
-          /opt/qsol-moriarty-rust-toolchain/bin/cargo run --locked --quiet --bin qsol-fed-oracle -- .deps/QSOL-ORACLE > /tmp/oracle-live-probe.json
+          /usr/local/qsol-moriarty-rust-toolchain/bin/cargo run --locked --quiet --bin qsol-fed-oracle -- .deps/QSOL-ORACLE > /tmp/oracle-live-probe.json
           python3 - <<'PY'
           import json
           probe=json.load(open('/tmp/oracle-live-probe.json', encoding='utf-8'))
@@ -173,7 +173,7 @@ jobs:
         run: |
           cp -a .deps/QSOL-ORACLE /tmp/QSOL-ORACLE-tampered
           printf '\n# intentional Phase 5C transport tamper\n' >> /tmp/QSOL-ORACLE-tampered/tools/fed_transport.py
-          if /opt/qsol-moriarty-rust-toolchain/bin/cargo run --locked --quiet --bin qsol-fed-oracle -- /tmp/QSOL-ORACLE-tampered; then
+          if /usr/local/qsol-moriarty-rust-toolchain/bin/cargo run --locked --quiet --bin qsol-fed-oracle -- /tmp/QSOL-ORACLE-tampered; then
             echo "tampered ORACLE donor release was accepted"
             exit 1
           fi
@@ -199,7 +199,7 @@ jobs:
           fp['files_sha256'] = hashlib.sha256(canonical(fp['files'])).hexdigest()
           path.write_text(json.dumps(fp, indent=2) + '\n', encoding='utf-8')
           PY
-          if /opt/qsol-moriarty-rust-toolchain/bin/cargo run --locked --quiet --bin qsol-fed-oracle -- /tmp/QSOL-ORACLE-forged-fingerprint; then
+          if /usr/local/qsol-moriarty-rust-toolchain/bin/cargo run --locked --quiet --bin qsol-fed-oracle -- /tmp/QSOL-ORACLE-forged-fingerprint; then
             echo "forged ORACLE release fingerprint self-claim was accepted"
             exit 1
           fi
@@ -231,7 +231,7 @@ jobs:
         env:
           MORIARTY_TARGET_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
           MORIARTY_REPORT_DIR: ${{ runner.temp }}/moriarty-report
-          MORIARTY_RUST_TOOLCHAIN_ROOT: /opt/qsol-moriarty-rust-toolchain
+          MORIARTY_RUST_TOOLCHAIN_ROOT: /usr/local/qsol-moriarty-rust-toolchain
           MORIARTY_EXPECTED_PYTHON_VERSION: Python 3.12.3
           MORIARTY_EXPECTED_RUSTC_VERSION: rustc 1.97.1 (8bab26f4f 2026-07-14)
           MORIARTY_EXPECTED_CARGO_VERSION: cargo 1.97.1 (c980f4866 2026-06-30)
