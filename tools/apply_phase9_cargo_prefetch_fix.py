@@ -40,19 +40,15 @@ replace_once(
     '''def _fresh_cargo_home(probe_id: str, template: Path, workspace: Path, label: str) -> Path:\n    if probe_id == "rust_all":\n        return create_isolated_cargo_home(template, workspace, label)\n    return create_empty_cargo_home(workspace, label)\n''',
     '''def _fresh_cargo_home(\n    probe_id: str,\n    template: Path,\n    workspace: Path,\n    label: str,\n    rust_runtime: Path | None = None,\n) -> Path:\n    if probe_id == "rust_all":\n        return create_isolated_cargo_home(template, workspace, label, rust_runtime)\n    return create_empty_cargo_home(workspace, label)\n''',
 )
-# Both historical replay and current-target template must use the authenticated prefetch root.
+# Keep Rustup discovery on REAL_HOME; rewrite only the two verified-template constructors.
 text = Path("tools/run_moriarty.py").read_text(encoding="utf-8")
-count = text.count('REAL_HOME / ".cargo"')
-if count != 3:
-    raise SystemExit(f"run_moriarty.py: expected three REAL_HOME Cargo references before cache rewrite, found {count}")
-# Keep the rustup discovery environment's CARGO_HOME unchanged; replace only template construction references.
+template_marker = 'create_verified_cargo_template(\n            REAL_HOME / ".cargo",'
+marker_count = text.count(template_marker)
+if marker_count != 2:
+    raise SystemExit(f"run_moriarty.py: expected two verified-template Cargo roots, found {marker_count}")
 text = text.replace(
-    'create_verified_cargo_template(\n            REAL_HOME / ".cargo",',
+    template_marker,
     'create_verified_cargo_template(\n            CARGO_CACHE_HOME,',
-)
-text = text.replace(
-    'create_verified_cargo_template(\n            REAL_HOME / ".cargo", workspace, control_source / "Cargo.lock"',
-    'create_verified_cargo_template(\n            CARGO_CACHE_HOME, workspace, control_source / "Cargo.lock"',
 )
 Path("tools/run_moriarty.py").write_text(text, encoding="utf-8")
 
