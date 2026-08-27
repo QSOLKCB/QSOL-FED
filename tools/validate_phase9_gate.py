@@ -847,7 +847,7 @@ def validate_isolation_negative_tests(target: str) -> None:
         )
         oversized_index = ambient / "registry" / "index" / "oversized"
         oversized_index.write_bytes(b"")
-        oversized_index.truncate(moriarty._moriarty_isolation.MAX_CARGO_INDEX_BYTES + 1)
+        os.truncate(oversized_index, moriarty._moriarty_isolation.MAX_CARGO_INDEX_BYTES + 1)
         workspace_index = root / "workspace-index"
         workspace_index.mkdir()
         _expect_reject(
