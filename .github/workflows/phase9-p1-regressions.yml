@@ -1,0 +1,35 @@
+name: phase9-p1-regressions
+
+on:
+  pull_request:
+    types: [synchronize]
+
+concurrency:
+  group: phase9-p1-regressions
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Add Phase 9 P1 regressions
+        run: |
+          set -euo pipefail
+          python3 .github/phase9_p1_regressions.py
+          python3 -m py_compile tools/validate_phase9_gate.py tools/moriarty_isolation.py
+          git diff --check
+          test "$(git diff --name-only)" = "tools/validate_phase9_gate.py"
+          git config user.name "Trent Slade"
+          git config user.email "73952179+EmergentMonk@users.noreply.github.com"
+          git add tools/validate_phase9_gate.py
+          git commit -m "Add Phase 9 pidfd keyring and hook regressions"
+          git push origin HEAD:agent/phase9-moriarty-graduation
