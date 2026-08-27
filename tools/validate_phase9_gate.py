@@ -277,7 +277,7 @@ def validate_schemas_and_fixtures() -> None:
     }
     report_fields = {
         "schema", "protocol", "target_commit", "corpus_ref", "operator_profile", "family_count",
-        "executed_probe_count", "probe_results", "counterexamples", "unresolved_counterexamples",
+        "executed_probe_count", "probe_results", "remediation_replays", "counterexamples", "unresolved_counterexamples",
         "graduated", "production_credentials_used", "production_targets_used",
         "constitutional_bypass_used", "security_proof", "no_counterexample_found_implies_none_exist",
         "authority_effect",
@@ -286,11 +286,18 @@ def validate_schemas_and_fixtures() -> None:
         "probe_id", "ok", "exit_code", "failure_kind", "stdout_sha256", "stderr_sha256",
         "stdout_bytes", "stderr_bytes", "stdout_truncated", "stderr_truncated",
     }
+    remediation_replay_fields = {
+        "counterexample_id", "status", "probe_id", "ok", "target_reproduced",
+        "resolution_green", "failure_kind", "failure_result",
+    }
     _require_closed_schema_fields(corpus_schema, corpus_fields, "attack corpus")
     _require_closed_schema_fields(corpus_schema["properties"]["attacks"]["items"], attack_fields, "attack record")
     _require_closed_schema_fields(counterexample_schema, counterexample_fields, "counterexample")
     _require_closed_schema_fields(report_schema, report_fields, "report")
     _require_closed_schema_fields(report_schema["properties"]["probe_results"]["items"], probe_result_fields, "probe result")
+    replay_item_schema = report_schema["properties"]["remediation_replays"]["items"]
+    _require_closed_schema_fields(replay_item_schema, remediation_replay_fields, "remediation replay")
+    _require_closed_schema_fields(replay_item_schema["properties"]["failure_result"], probe_result_fields, "remediation failure result")
 
     corpus_props = corpus_schema["properties"]
     for key in ("production_credentials_allowed", "production_targets_allowed", "constitutional_bypass_allowed"):
@@ -315,6 +322,9 @@ def validate_schemas_and_fixtures() -> None:
     require(report_props["operator_profile"].get("const") == "provider-neutral-fixed-probe/1", "MORIARTY report operator profile drift")
     require(report_props["family_count"].get("const") == 15, "MORIARTY report family count drift")
     require(report_props["counterexamples"].get("maxItems") == moriarty.MAX_REPORT_COUNTEREXAMPLES, "MORIARTY report counterexample bound drift")
+    require(report_props["remediation_replays"].get("maxItems") == moriarty.MAX_ACCEPTED_COUNTEREXAMPLES, "MORIARTY remediation replay count bound drift")
+    replay_props = report_props["remediation_replays"]["items"]["properties"]
+    require(set(replay_props["failure_kind"].get("enum", [])) == {None, "target_failure_not_reproduced", "resolution_probe_not_green", "replay_setup_error"}, "MORIARTY remediation failure-kind schema drift")
     require(report_props["unresolved_counterexamples"].get("maximum") == moriarty.MAX_REPORT_COUNTEREXAMPLES, "MORIARTY unresolved count schema drift")
     result_props = report_props["probe_results"]["items"]["properties"]
     require(result_props["stdout_bytes"].get("maximum") == moriarty.MAX_PROBE_OUTPUT_BYTES, "report stdout bound schema drift")
@@ -384,7 +394,24 @@ def validate_probe_map() -> None:
     digest = hashlib.sha256()
     bounded_count, overflow = moriarty.bounded_output_update(digest, moriarty.MAX_PROBE_OUTPUT_BYTES - 1, b"AB")
     require(bounded_count == moriarty.MAX_PROBE_OUTPUT_BYTES and overflow is True, "MORIARTY output overflow bound regression failed")
-    require(moriarty._normalize_probe_output(b"x /tmp/private-run/a", Path("/tmp/private-run")) == b"x <WORK>/a", "MORIARTY workspace output normalization regression failed")
+    norm_root = Path("/tmp/private-run")
+    normalized_paths = moriarty._normalize_probe_output(
+        b"/tmp/private-run/probe-12-rust_all-src /tmp/private-run/target-12-rust_all /tmp/private-run/home-12-rust_all /tmp/private-run/cargo-home-probe-12-rust_all /tmp/private-run/tmp-target-12-rust_all /tmp/private-run/other",
+        source_root=norm_root / "probe-12-rust_all-src",
+        target_dir=norm_root / "target-12-rust_all",
+        home=norm_root / "home-12-rust_all",
+        cargo_home=norm_root / "cargo-home-probe-12-rust_all",
+        temp_dir=norm_root / "tmp-target-12-rust_all",
+        workspace_root=norm_root,
+    )
+    require(
+        normalized_paths == b"<SOURCE> <TARGET> <HOME> <CARGO_HOME> <TMP> <WORK>/other",
+        "MORIARTY complete per-probe output normalization regression failed",
+    )
+    require(0 < moriarty.MAX_GIT_TREE_DEPTH <= 128, "MORIARTY Git tree depth bound invalid")
+    require(0 < moriarty.MAX_GIT_TREE_ENTRIES <= 65536, "MORIARTY Git tree entry bound invalid")
+    require(0 < moriarty.MAX_GIT_TREE_METADATA_BYTES <= moriarty.MAX_GIT_ARCHIVE_BYTES, "MORIARTY Git tree metadata bound invalid")
+    require(0 < moriarty.MAX_GIT_PATH_BYTES <= 4096, "MORIARTY Git path bound invalid")
 
     bad_exit = {
         "schema": moriarty.COUNTEREXAMPLE_SCHEMA,
@@ -440,7 +467,7 @@ def validate_runner_source() -> None:
         "tracked_tree_clean", "start_new_session=True", "selectors.DefaultSelector",
         "MAX_PROBE_OUTPUT_BYTES", "git_commit_exists", "git_is_ancestor",
         "moriarty_counterexample_attack_not_in_corpus", "moriarty_resolution_commit_missing",
-        "counterexample_identity_projection", "verify_resolved_counterexamples",
+        "counterexample_identity_projection", "verify_accepted_counterexamples",
         "production_credentials_used", "production_targets_used", "constitutional_bypass_used",
         "security_proof", "no_counterexample_found_implies_none_exist", "stdout_truncated", "stderr_truncated",
     ):
@@ -786,7 +813,7 @@ raise SystemExit(0)
 def validate_report_common(report: dict[str, Any], target: str) -> None:
     expected_fields = {
         "schema", "protocol", "target_commit", "corpus_ref", "operator_profile", "family_count",
-        "executed_probe_count", "probe_results", "counterexamples", "unresolved_counterexamples",
+        "executed_probe_count", "probe_results", "remediation_replays", "counterexamples", "unresolved_counterexamples",
         "graduated", "production_credentials_used", "production_targets_used",
         "constitutional_bypass_used", "security_proof", "no_counterexample_found_implies_none_exist",
         "authority_effect",
@@ -829,6 +856,55 @@ def validate_report_common(report: dict[str, Any], target: str) -> None:
         for size in ("stdout_bytes", "stderr_bytes"):
             require(type(item[size]) is int and 0 <= item[size] <= moriarty.MAX_PROBE_OUTPUT_BYTES, f"MORIARTY probe byte bound invalid: {size}")
 
+    remediation_replays = report["remediation_replays"]
+    replay_fields = {
+        "counterexample_id", "status", "probe_id", "ok", "target_reproduced",
+        "resolution_green", "failure_kind", "failure_result",
+    }
+    registry_entries = load("fixtures/phase9/accepted-counterexamples.json")["counterexamples"]
+    registry_by_id = {item["counterexample_id"]: item for item in registry_entries}
+    require(
+        isinstance(remediation_replays, list)
+        and len(remediation_replays) == len(registry_entries)
+        and len(remediation_replays) <= moriarty.MAX_ACCEPTED_COUNTEREXAMPLES,
+        "MORIARTY remediation replay count drift",
+    )
+    replay_ids: set[str] = set()
+    for replay in remediation_replays:
+        require(isinstance(replay, dict) and set(replay) == replay_fields, "MORIARTY remediation replay field-set drift")
+        counterexample_id = replay["counterexample_id"]
+        require(isinstance(counterexample_id, str) and counterexample_id in registry_by_id and counterexample_id not in replay_ids, "MORIARTY remediation replay identity invalid")
+        replay_ids.add(counterexample_id)
+        registry_item = registry_by_id[counterexample_id]
+        require(replay["status"] == registry_item["status"], "MORIARTY remediation replay status drift")
+        require(replay["probe_id"] == registry_item["regression_probe_ids"][0], "MORIARTY remediation replay probe drift")
+        require(type(replay["ok"]) is bool and type(replay["target_reproduced"]) is bool, "MORIARTY remediation replay booleans invalid")
+        require(replay["resolution_green"] is None or type(replay["resolution_green"]) is bool, "MORIARTY remediation resolution flag invalid")
+        require(replay["failure_kind"] in {None, "target_failure_not_reproduced", "resolution_probe_not_green", "replay_setup_error"}, "MORIARTY remediation replay failure kind invalid")
+        failure_result = replay["failure_result"]
+        if failure_result is not None:
+            require(isinstance(failure_result, dict) and set(failure_result) == result_fields, "MORIARTY remediation failure result schema drift")
+            require(failure_result["probe_id"] == replay["probe_id"], "MORIARTY remediation failure result probe drift")
+            require(type(failure_result["ok"]) is bool, "MORIARTY remediation failure result ok invalid")
+            require(failure_result["exit_code"] is None or (type(failure_result["exit_code"]) is int and -2147483648 <= failure_result["exit_code"] <= 2147483647), "MORIARTY remediation failure result exit invalid")
+            require(failure_result["failure_kind"] in {None, "exit_nonzero", "timeout", "tool_error"}, "MORIARTY remediation failure result kind invalid")
+            for digest in ("stdout_sha256", "stderr_sha256"):
+                require(isinstance(failure_result[digest], str) and moriarty.SHA256_REF_RE.fullmatch(failure_result[digest]) is not None, "MORIARTY remediation failure digest invalid")
+            for size in ("stdout_bytes", "stderr_bytes"):
+                require(type(failure_result[size]) is int and 0 <= failure_result[size] <= moriarty.MAX_PROBE_OUTPUT_BYTES, "MORIARTY remediation failure byte bound invalid")
+            require(type(failure_result["stdout_truncated"]) is bool and type(failure_result["stderr_truncated"]) is bool, "MORIARTY remediation failure truncation invalid")
+        if replay["ok"]:
+            require(replay["failure_kind"] is None and failure_result is None and replay["target_reproduced"] is True, "MORIARTY successful remediation replay semantics invalid")
+            if replay["status"] == "resolved":
+                require(replay["resolution_green"] is True, "MORIARTY resolved remediation replay lacks green resolution")
+            else:
+                require(replay["resolution_green"] is None, "MORIARTY unresolved remediation replay gained resolution state")
+        else:
+            require(replay["failure_kind"] is not None, "MORIARTY failed remediation replay lacks failure kind")
+            if replay["failure_kind"] in {"target_failure_not_reproduced", "resolution_probe_not_green"}:
+                require(failure_result is not None, "MORIARTY failed remediation replay lost subprocess metadata")
+    require(replay_ids == set(registry_by_id), "MORIARTY did not replay every accepted registry entry")
+
     counterexamples = report["counterexamples"]
     require(isinstance(counterexamples, list) and len(counterexamples) <= moriarty.MAX_REPORT_COUNTEREXAMPLES, "MORIARTY report counterexample count drift")
     attacks = moriarty.validate_attack_corpus(load("fixtures/phase9/attack-corpus.json"))
@@ -852,13 +928,15 @@ def validate_report_common(report: dict[str, Any], target: str) -> None:
         require(report[key] is False, f"MORIARTY generated report overclaim/bypass: {key}")
     require(report["authority_effect"] == "none", "MORIARTY generated report gained authority")
     all_ok = all(item["ok"] for item in probe_results)
-    require(type(report["graduated"]) is bool and report["graduated"] == (all_ok and unresolved == 0), "MORIARTY graduation Boolean inconsistent with report evidence")
+    all_replays_ok = all(item["ok"] for item in remediation_replays)
+    require(type(report["graduated"]) is bool and report["graduated"] == (all_ok and all_replays_ok and unresolved == 0), "MORIARTY graduation Boolean inconsistent with report evidence")
 
 
 def validate_success_report(report: dict[str, Any], registry: dict[str, Any]) -> None:
     probe_results = report["probe_results"]
     require(all(item.get("ok") is True and item.get("exit_code") == 0 for item in probe_results), "MORIARTY report contains failed fixed probe")
     require(report["counterexamples"] == registry["counterexamples"], "MORIARTY successful report contains generated counterexample or registry drift")
+    require(all(item.get("ok") is True for item in report["remediation_replays"]), "MORIARTY successful report contains failed remediation replay")
     require(report["unresolved_counterexamples"] == 0, "MORIARTY report has unresolved counterexample")
     require(report["graduated"] is True, "MORIARTY report did not graduate exact commit")
 
@@ -893,6 +971,16 @@ def failure_diagnostic(report: dict[str, Any]) -> str:
         "corpus_ref": report["corpus_ref"],
         "failed_probes": failed_probes,
         "counterexamples": counterexamples,
+        "remediation_replay_failures": [
+            {
+                "counterexample_id": item["counterexample_id"],
+                "probe_id": item["probe_id"],
+                "failure_kind": item["failure_kind"],
+                "failure_result": item["failure_result"],
+            }
+            for item in report["remediation_replays"]
+            if not item["ok"]
+        ],
         "unresolved_counterexamples": report["unresolved_counterexamples"],
         "graduated": report["graduated"],
     }, sort_keys=True, separators=(",", ":"))

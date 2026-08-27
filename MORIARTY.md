@@ -194,3 +194,10 @@ The report is intentionally ephemeral. Phase 11 may archive the report associate
 
 
 Runtime hardening notes: probe stdin is always harness-owned `/dev/null`; reproducibility digests normalize only the private per-run MORIARTY workspace prefix; Git commit/tree/blob bytes are rehashed before export; repository-local fsmonitor/hooks are neutralized; non-system Python and non-self-contained direct Rust installations fail closed rather than importing mutable runtime trees. Cargo package archives are hashed through bounded streaming descriptors before admission.
+
+
+### Accepted-counterexample replay evidence
+
+Every accepted registry entry, unresolved or resolved, is replayed at its recorded `target_commit` and must reproduce its stored failure metadata. Resolved entries additionally replay the same fixed probe at `resolution_commit` and require a green result. Per-run source, target, HOME, Cargo-home, and temporary paths are normalized to stable placeholders before digest comparison. Replay mismatch is persisted in `remediation_replays` in the canonical report before the runner exits nonzero; raw subprocess output is never stored.
+
+Exact-export traversal is also aggregate-bounded: tree depth, entry count, cumulative tree metadata, path length, and blob payload all have independent fail-closed limits, and traversal is iterative rather than recursive.

@@ -13,6 +13,7 @@
     "family_count",
     "executed_probe_count",
     "probe_results",
+    "remediation_replays",
     "counterexamples",
     "unresolved_counterexamples",
     "graduated",
@@ -155,6 +156,137 @@
     },
     "authority_effect": {
       "const": "none"
+    },
+    "remediation_replays": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "counterexample_id",
+          "status",
+          "probe_id",
+          "ok",
+          "target_reproduced",
+          "resolution_green",
+          "failure_kind",
+          "failure_result"
+        ],
+        "properties": {
+          "counterexample_id": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "unresolved",
+              "resolved"
+            ]
+          },
+          "probe_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]{1,64}$"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "target_reproduced": {
+            "type": "boolean"
+          },
+          "resolution_green": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "failure_kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              null,
+              "target_failure_not_reproduced",
+              "resolution_probe_not_green",
+              "replay_setup_error"
+            ]
+          },
+          "failure_result": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": false,
+            "required": [
+              "probe_id",
+              "ok",
+              "exit_code",
+              "failure_kind",
+              "stdout_sha256",
+              "stderr_sha256",
+              "stdout_bytes",
+              "stderr_bytes",
+              "stdout_truncated",
+              "stderr_truncated"
+            ],
+            "properties": {
+              "probe_id": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]{1,64}$"
+              },
+              "ok": {
+                "type": "boolean"
+              },
+              "exit_code": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": -2147483648,
+                "maximum": 2147483647
+              },
+              "failure_kind": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  null,
+                  "exit_nonzero",
+                  "timeout",
+                  "tool_error"
+                ]
+              },
+              "stdout_sha256": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "stderr_sha256": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "stdout_bytes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1048576
+              },
+              "stderr_bytes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1048576
+              },
+              "stdout_truncated": {
+                "type": "boolean"
+              },
+              "stderr_truncated": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

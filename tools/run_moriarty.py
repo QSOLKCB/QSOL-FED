@@ -56,6 +56,10 @@ MAX_ACCEPTED_COUNTEREXAMPLES = 32
 MAX_REPORT_COUNTEREXAMPLES = 48
 MAX_REPORT_BYTES = 65_536
 MAX_GIT_ARCHIVE_BYTES = 64 * 1024 * 1024
+MAX_GIT_TREE_METADATA_BYTES = 16 * 1024 * 1024
+MAX_GIT_TREE_ENTRIES = 32_768
+MAX_GIT_TREE_DEPTH = 64
+MAX_GIT_PATH_BYTES = 4096
 MAX_DIAGNOSTIC_SAMPLE_BYTES = 65_536
 POST_EXIT_DRAIN_SECONDS = 2.0
 TERMINATION_DRAIN_SECONDS = 2.0
@@ -565,11 +569,23 @@ def _verified_commit_files(commit: str) -> dict[str, tuple[str, str, bytes]]:
 
     files: dict[str, tuple[str, str, bytes]] = {}
     total_payload = 0
-
-    def walk(tree_id: str, prefix: str) -> None:
-        nonlocal total_payload
-        tree_payload = _verified_git_object("tree", tree_id, MAX_GIT_ARCHIVE_BYTES)
+    total_tree_metadata = 0
+    entry_count = 0
+    # Iterative traversal avoids Python recursion exhaustion on adversarial trees.
+    stack: list[tuple[str, str, int]] = [(root_tree, "", 0)]
+    while stack:
+        tree_id, prefix, depth = stack.pop()
+        if depth > MAX_GIT_TREE_DEPTH:
+            fail("moriarty_git_tree_depth_exceeded")
+        remaining_metadata = MAX_GIT_TREE_METADATA_BYTES - total_tree_metadata
+        if remaining_metadata <= 0:
+            fail("moriarty_git_tree_metadata_exceeded")
+        tree_payload = _verified_git_object("tree", tree_id, remaining_metadata)
+        total_tree_metadata += len(tree_payload)
+        if total_tree_metadata > MAX_GIT_TREE_METADATA_BYTES:
+            fail("moriarty_git_tree_metadata_exceeded")
         cursor = 0
+        child_trees: list[tuple[str, str, int]] = []
         while cursor < len(tree_payload):
             space = tree_payload.find(b" ", cursor)
             nul = tree_payload.find(b"\0", space + 1 if space >= 0 else cursor)
@@ -579,6 +595,9 @@ def _verified_commit_files(commit: str) -> dict[str, tuple[str, str, bytes]]:
             name_bytes = tree_payload[space + 1:nul]
             object_id = tree_payload[nul + 1:nul + 21].hex()
             cursor = nul + 21
+            entry_count += 1
+            if entry_count > MAX_GIT_TREE_ENTRIES:
+                fail("moriarty_git_tree_entry_count_exceeded")
             try:
                 mode = mode_bytes.decode("ascii", errors="strict")
                 name = name_bytes.decode("utf-8", errors="strict")
@@ -587,10 +606,14 @@ def _verified_commit_files(commit: str) -> dict[str, tuple[str, str, bytes]]:
             if not name or name in {".", ".."} or "/" in name or "\\" in name:
                 fail("moriarty_git_tree_entry_name_invalid")
             relative = f"{prefix}/{name}" if prefix else name
+            if len(relative.encode("utf-8")) > MAX_GIT_PATH_BYTES:
+                fail("moriarty_git_tree_path_too_long")
             if relative in files:
                 fail("moriarty_git_tree_duplicate_path")
             if mode == "40000":
-                walk(object_id, relative)
+                if depth >= MAX_GIT_TREE_DEPTH:
+                    fail("moriarty_git_tree_depth_exceeded")
+                child_trees.append((object_id, relative, depth + 1))
             elif mode in {"100644", "100755"}:
                 remaining = MAX_GIT_ARCHIVE_BYTES - total_payload
                 if remaining <= 0:
@@ -604,8 +627,9 @@ def _verified_commit_files(commit: str) -> dict[str, tuple[str, str, bytes]]:
                 fail("moriarty_exact_export_nonregular_entry_forbidden")
         if cursor != len(tree_payload):
             fail("moriarty_git_tree_object_malformed")
+        # Reverse preserves Git tree order while keeping traversal iterative.
+        stack.extend(reversed(child_trees))
 
-    walk(root_tree, "")
     _VERIFIED_TREE_CACHE = (commit, files)
     return files
 
@@ -1121,12 +1145,36 @@ def _classify_rust_failure(stderr: bytes) -> str:
 
 
 
-def _normalize_probe_output(data: bytes, workspace_root: Path) -> bytes:
-    """Remove the private per-run workspace prefix from reproducibility metadata."""
-    root = os.fsencode(str(workspace_root.resolve()))
-    if not root:
-        fail("moriarty_workspace_normalization_root_invalid")
-    return data.replace(root, b"<WORK>")
+def _normalize_probe_output(
+    data: bytes,
+    *,
+    source_root: Path,
+    target_dir: Path,
+    home: Path,
+    cargo_home: Path,
+    temp_dir: Path,
+    workspace_root: Path,
+) -> bytes:
+    """Normalize private per-run paths to stable reproducibility placeholders."""
+    replacements = [
+        (source_root, b"<SOURCE>"),
+        (target_dir, b"<TARGET>"),
+        (home, b"<HOME>"),
+        (cargo_home, b"<CARGO_HOME>"),
+        (temp_dir, b"<TMP>"),
+        (workspace_root, b"<WORK>"),
+    ]
+    encoded: list[tuple[bytes, bytes]] = []
+    for candidate, marker in replacements:
+        raw = os.fsencode(str(candidate.resolve()))
+        if not raw:
+            fail("moriarty_workspace_normalization_path_invalid")
+        encoded.append((raw, marker))
+    normalized = data
+    # Most-specific paths first so a workspace replacement cannot hide a child path.
+    for raw, marker in sorted(encoded, key=lambda item: len(item[0]), reverse=True):
+        normalized = normalized.replace(raw, marker)
+    return normalized
 
 
 def _probe_failure_result(probe_id: str, kind: str, diagnostic: bytes) -> dict[str, Any]:
@@ -1342,7 +1390,15 @@ def run_probe(
             failure_kind = "exit_nonzero"
 
     normalized = {
-        name: _normalize_probe_output(bytes(captured[name]), source_root.parent)
+        name: _normalize_probe_output(
+            bytes(captured[name]),
+            source_root=source_root,
+            target_dir=target_dir,
+            home=home,
+            cargo_home=cargo_home,
+            temp_dir=temp_dir,
+            workspace_root=source_root.parent,
+        )
         for name in ("stdout", "stderr")
     }
     return {
@@ -1400,7 +1456,49 @@ def counterexample_failure_matches(item: dict[str, Any], result: dict[str, Any])
     )
 
 
-def verify_resolved_counterexamples(
+def _run_counterexample_replay_probe(
+    item: dict[str, Any],
+    index: int,
+    phase: str,
+    commit: str,
+    workspace: Path,
+    python_exec: Path,
+    cargo_exec: Path,
+    rustc_exec: Path,
+    rustdoc_exec: Path | None,
+    rust_runtime: Path | None,
+) -> dict[str, Any]:
+    probe_id = item["regression_probe_ids"][0]
+    label = f"accepted-{index}-{phase}"
+    source = create_exact_export(commit, workspace, git_archive_bytes, label)
+    if probe_id == "rust_all" and not (source / "Cargo.lock").is_file():
+        fail(f"moriarty_replay_{phase}_cargo_lock_missing")
+    template = (
+        create_verified_cargo_template(
+            REAL_HOME / ".cargo",
+            workspace,
+            source / "Cargo.lock",
+            f"{label}-template",
+        )
+        if probe_id == "rust_all"
+        else workspace
+    )
+    cargo_home = _fresh_cargo_home(probe_id, template, workspace, label)
+    return run_probe(
+        probe_id,
+        workspace / f"{label}-home",
+        source,
+        cargo_home,
+        workspace / f"{label}-target",
+        python_exec,
+        cargo_exec,
+        rustc_exec,
+        rustdoc_exec,
+        rust_runtime,
+    )
+
+
+def verify_accepted_counterexamples(
     accepted: list[dict[str, Any]],
     workspace: Path,
     python_exec: Path,
@@ -1408,78 +1506,88 @@ def verify_resolved_counterexamples(
     rustc_exec: Path,
     rustdoc_exec: Path | None,
     rust_runtime: Path | None,
-) -> None:
+) -> list[dict[str, Any]]:
+    """Replay every accepted finding and return reportable transition evidence.
+
+    Every entry, including unresolved entries, must reproduce its recorded target
+    failure. Only resolved entries additionally require the same probe to pass at
+    resolution_commit. Replay mismatch is report data, not an early process exit.
+    """
+    records: list[dict[str, Any]] = []
     for index, item in enumerate(accepted):
-        if item["status"] != "resolved":
-            continue
         probe_id = item["regression_probe_ids"][0]
-        before_source = create_exact_export(
-            item["target_commit"], workspace, git_archive_bytes, f"resolved-{index}-before"
-        )
-        if probe_id == "rust_all" and not (before_source / "Cargo.lock").is_file():
-            fail("moriarty_resolution_target_cargo_lock_missing")
-        before_template = (
-            create_verified_cargo_template(
-                REAL_HOME / ".cargo",
+        record: dict[str, Any] = {
+            "counterexample_id": item["counterexample_id"],
+            "status": item["status"],
+            "probe_id": probe_id,
+            "ok": False,
+            "target_reproduced": False,
+            "resolution_green": None,
+            "failure_kind": None,
+            "failure_result": None,
+        }
+        try:
+            before = _run_counterexample_replay_probe(
+                item,
+                index,
+                "target",
+                item["target_commit"],
                 workspace,
-                before_source / "Cargo.lock",
-                f"resolved-{index}-before-template",
+                python_exec,
+                cargo_exec,
+                rustc_exec,
+                rustdoc_exec,
+                rust_runtime,
             )
-            if probe_id == "rust_all"
-            else workspace
-        )
-        before_cargo = _fresh_cargo_home(
-            probe_id, before_template, workspace, f"resolved-{index}-before"
-        )
-        before = run_probe(
-            probe_id,
-            workspace / f"resolved-{index}-before-home",
-            before_source,
-            before_cargo,
-            workspace / f"resolved-{index}-before-target",
-            python_exec,
-            cargo_exec,
-            rustc_exec,
-            rustdoc_exec,
-            rust_runtime,
-        )
-        if not counterexample_failure_matches(item, before):
-            fail("moriarty_resolution_target_failure_not_reproduced")
+        except SystemExit:
+            record["failure_kind"] = "replay_setup_error"
+            records.append(record)
+            continue
+
+        target_reproduced = counterexample_failure_matches(item, before)
+        record["target_reproduced"] = target_reproduced
+        if not target_reproduced:
+            record["failure_kind"] = "target_failure_not_reproduced"
+            record["failure_result"] = report_probe_result(before)
+            records.append(record)
+            continue
+
+        if item["status"] == "unresolved":
+            record["ok"] = True
+            records.append(record)
+            continue
 
         resolution = item["resolution_commit"]
         assert isinstance(resolution, str)
-        after_source = create_exact_export(
-            resolution, workspace, git_archive_bytes, f"resolved-{index}-after"
-        )
-        if probe_id == "rust_all" and not (after_source / "Cargo.lock").is_file():
-            fail("moriarty_resolution_commit_cargo_lock_missing")
-        after_template = (
-            create_verified_cargo_template(
-                REAL_HOME / ".cargo",
+        try:
+            after = _run_counterexample_replay_probe(
+                item,
+                index,
+                "resolution",
+                resolution,
                 workspace,
-                after_source / "Cargo.lock",
-                f"resolved-{index}-after-template",
+                python_exec,
+                cargo_exec,
+                rustc_exec,
+                rustdoc_exec,
+                rust_runtime,
             )
-            if probe_id == "rust_all"
-            else workspace
-        )
-        after_cargo = _fresh_cargo_home(
-            probe_id, after_template, workspace, f"resolved-{index}-after"
-        )
-        after = run_probe(
-            probe_id,
-            workspace / f"resolved-{index}-after-home",
-            after_source,
-            after_cargo,
-            workspace / f"resolved-{index}-after-target",
-            python_exec,
-            cargo_exec,
-            rustc_exec,
-            rustdoc_exec,
-            rust_runtime,
-        )
-        if after["ok"] is not True or after["exit_code"] != 0:
-            fail("moriarty_resolution_fix_probe_not_green")
+        except SystemExit:
+            record["resolution_green"] = False
+            record["failure_kind"] = "replay_setup_error"
+            records.append(record)
+            continue
+
+        resolution_green = after["ok"] is True and after["exit_code"] == 0
+        record["resolution_green"] = resolution_green
+        if not resolution_green:
+            record["failure_kind"] = "resolution_probe_not_green"
+            record["failure_result"] = report_probe_result(after)
+            records.append(record)
+            continue
+        record["ok"] = True
+        records.append(record)
+    return records
 
 
 def report_probe_result(result: dict[str, Any]) -> dict[str, Any]:
@@ -1580,7 +1688,7 @@ def main() -> int:
                 rustdoc_exec,
                 rust_runtime,
             )
-        verify_resolved_counterexamples(
+        remediation_replays = verify_accepted_counterexamples(
             accepted,
             workspace,
             python_exec,
@@ -1601,6 +1709,7 @@ def main() -> int:
     unresolved_accepted = [item for item in accepted if item["status"] == "unresolved"]
     unresolved_count = len(unresolved_accepted) + len(generated)
     all_probes_ok = all(result["ok"] for result in results.values())
+    all_replays_ok = all(item["ok"] for item in remediation_replays)
 
     if git_head() != target or not tracked_tree_clean() or not harness_files_match_target(target):
         fail("moriarty_target_or_harness_changed_during_probes")
@@ -1614,9 +1723,10 @@ def main() -> int:
         "family_count": len(EXPECTED_FAMILIES),
         "executed_probe_count": len(ordered_probe_ids),
         "probe_results": [report_probe_result(results[probe_id]) for probe_id in ordered_probe_ids],
+        "remediation_replays": remediation_replays,
         "counterexamples": accepted + generated,
         "unresolved_counterexamples": unresolved_count,
-        "graduated": unresolved_count == 0 and all_probes_ok,
+        "graduated": unresolved_count == 0 and all_probes_ok and all_replays_ok,
         "production_credentials_used": False,
         "production_targets_used": False,
         "constitutional_bypass_used": False,
@@ -1656,7 +1766,8 @@ def main() -> int:
     print(
         f"MORIARTY/1 blocked exact commit {target}: "
         f"{unresolved_count} unresolved reproducible counterexample(s), "
-        f"{sum(not result['ok'] for result in results.values())} failed probe(s); report={output}",
+        f"{sum(not result['ok'] for result in results.values())} failed probe(s), "
+        f"{sum(not replay['ok'] for replay in remediation_replays)} failed remediation replay(s); report={output}",
         file=sys.stderr,
     )
     return 1
