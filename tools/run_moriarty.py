@@ -6,6 +6,8 @@ import argparse
 from dataclasses import dataclass
 import hashlib
 import io
+import importlib.machinery
+import importlib.util
 import json
 import os
 import pwd
@@ -23,24 +25,152 @@ from typing import Any, NoReturn, Sequence
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ROOT / "tools"
-if str(TOOLS) not in sys.path:
-    sys.path.insert(0, str(TOOLS))
+sys.dont_write_bytecode = True
+_BOOTSTRAP_GIT = Path("/usr/bin/git")
+_BOOTSTRAP_TARGET_RE = re.compile(r"^[0-9a-f]{40}$")
 
-from qsol_canonical import serialize  # noqa: E402
-from moriarty_isolation import (  # noqa: E402
-    create_empty_cargo_home,
-    create_exact_export,
-    create_isolated_cargo_home,
-    create_verified_cargo_template,
-    enable_child_subreaper,
-    landlock_abi_version,
-    network_seccomp_supported,
-    probe_isolation_preexec,
-    proc_fd_path,
-    stage_executable_from_fd,
-    stage_rust_toolchain_runtime,
-    write_report_exclusive,
-)
+
+def _bootstrap_git_env() -> dict[str, str]:
+    return {
+        "PATH": "/usr/bin:/bin",
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_ATTR_NOSYSTEM": "1",
+        "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_OPTIONAL_LOCKS": "0",
+        "GIT_CONFIG_COUNT": "3",
+        "GIT_CONFIG_KEY_0": "core.fsmonitor",
+        "GIT_CONFIG_VALUE_0": "false",
+        "GIT_CONFIG_KEY_1": "core.hooksPath",
+        "GIT_CONFIG_VALUE_1": "/dev/null",
+        "GIT_CONFIG_KEY_2": "core.attributesFile",
+        "GIT_CONFIG_VALUE_2": "/dev/null",
+    }
+
+
+def _bootstrap_git(*args: str) -> subprocess.CompletedProcess[bytes]:
+    if not _BOOTSTRAP_GIT.is_file():
+        raise SystemExit("moriarty_bootstrap_system_git_unavailable")
+    return subprocess.run(
+        [str(_BOOTSTRAP_GIT), *args],
+        cwd=ROOT,
+        env=_bootstrap_git_env(),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        close_fds=True,
+    )
+
+
+def _bootstrap_target() -> str:
+    target: str | None = None
+    if "--target-commit" in sys.argv:
+        index = sys.argv.index("--target-commit")
+        if index + 1 < len(sys.argv):
+            target = sys.argv[index + 1]
+    if target is None:
+        completed = _bootstrap_git("rev-parse", "HEAD")
+        if completed.returncode != 0:
+            raise SystemExit("moriarty_bootstrap_target_unavailable")
+        try:
+            target = completed.stdout.decode("ascii", errors="strict").strip()
+        except UnicodeError:
+            raise SystemExit("moriarty_bootstrap_target_invalid")
+    if _BOOTSTRAP_TARGET_RE.fullmatch(target) is None:
+        raise SystemExit("moriarty_bootstrap_target_invalid")
+    return target
+
+
+def _bootstrap_git_object(kind: str, object_id: str) -> bytes:
+    if _BOOTSTRAP_TARGET_RE.fullmatch(object_id) is None:
+        raise SystemExit("moriarty_bootstrap_object_id_invalid")
+    completed = _bootstrap_git("cat-file", kind, object_id)
+    if completed.returncode != 0:
+        raise SystemExit(f"moriarty_bootstrap_{kind}_read_failed")
+    payload = completed.stdout
+    actual = hashlib.sha1(f"{kind} {len(payload)}\\0".encode("ascii") + payload).hexdigest()
+    if actual != object_id:
+        raise SystemExit(f"moriarty_bootstrap_{kind}_hash_mismatch")
+    return payload
+
+
+def _bootstrap_tree_entry(tree_payload: bytes, wanted: str) -> tuple[str, str]:
+    cursor = 0
+    while cursor < len(tree_payload):
+        space = tree_payload.find(b" ", cursor)
+        nul = tree_payload.find(b"\\0", space + 1 if space >= 0 else cursor)
+        if space <= cursor or nul <= space or nul + 21 > len(tree_payload):
+            raise SystemExit("moriarty_bootstrap_tree_malformed")
+        mode = tree_payload[cursor:space].decode("ascii", errors="strict")
+        name = tree_payload[space + 1:nul].decode("utf-8", errors="strict")
+        object_id = tree_payload[nul + 1:nul + 21].hex()
+        cursor = nul + 21
+        if name == wanted:
+            return mode, object_id
+    raise SystemExit(f"moriarty_bootstrap_path_missing:{wanted}")
+
+
+def _bootstrap_verified_blob(target: str, relative: str) -> bytes:
+    commit_payload = _bootstrap_git_object("commit", target)
+    first_line = commit_payload.split(b"\\n", 1)[0]
+    if not first_line.startswith(b"tree "):
+        raise SystemExit("moriarty_bootstrap_commit_tree_missing")
+    tree_id = first_line[5:].decode("ascii", errors="strict")
+    parts = relative.split("/")
+    for index, part in enumerate(parts):
+        tree_payload = _bootstrap_git_object("tree", tree_id)
+        mode, object_id = _bootstrap_tree_entry(tree_payload, part)
+        if index + 1 < len(parts):
+            if mode != "40000":
+                raise SystemExit("moriarty_bootstrap_path_not_tree")
+            tree_id = object_id
+            continue
+        if mode not in {"100644", "100755"}:
+            raise SystemExit("moriarty_bootstrap_source_not_regular")
+        return _bootstrap_git_object("blob", object_id)
+    raise SystemExit("moriarty_bootstrap_path_invalid")
+
+
+def _load_verified_source_module(name: str, target: str):
+    relative = f"tools/{name}.py"
+    path = ROOT / relative
+    expected = _bootstrap_verified_blob(target, relative)
+    try:
+        actual = path.read_bytes()
+    except OSError:
+        raise SystemExit(f"moriarty_bootstrap_source_unavailable:{name}")
+    if actual != expected:
+        raise SystemExit(f"moriarty_bootstrap_source_mismatch:{name}")
+    loader = importlib.machinery.SourceFileLoader(name, str(path))
+    spec = importlib.util.spec_from_loader(name, loader)
+    if spec is None:
+        raise SystemExit(f"moriarty_bootstrap_spec_unavailable:{name}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    loader.exec_module(module)
+    return module
+
+_BOOTSTRAP_TARGET = _bootstrap_target()
+if Path(__file__).read_bytes() != _bootstrap_verified_blob(_BOOTSTRAP_TARGET, "tools/run_moriarty.py"):
+    raise SystemExit("moriarty_bootstrap_runner_source_mismatch")
+_qsol_canonical = _load_verified_source_module("qsol_canonical", _BOOTSTRAP_TARGET)
+_moriarty_isolation = _load_verified_source_module("moriarty_isolation", _BOOTSTRAP_TARGET)
+serialize = _qsol_canonical.serialize
+create_empty_cargo_home = _moriarty_isolation.create_empty_cargo_home
+create_exact_export = _moriarty_isolation.create_exact_export
+create_isolated_cargo_home = _moriarty_isolation.create_isolated_cargo_home
+create_verified_cargo_template = _moriarty_isolation.create_verified_cargo_template
+enable_child_subreaper = _moriarty_isolation.enable_child_subreaper
+landlock_abi_version = _moriarty_isolation.landlock_abi_version
+network_seccomp_supported = _moriarty_isolation.network_seccomp_supported
+probe_isolation_preexec = _moriarty_isolation.probe_isolation_preexec
+proc_fd_path = _moriarty_isolation.proc_fd_path
+stage_executable_from_fd = _moriarty_isolation.stage_executable_from_fd
+stage_rust_toolchain_runtime = _moriarty_isolation.stage_rust_toolchain_runtime
+write_report_exclusive = _moriarty_isolation.write_report_exclusive
 
 PROTOCOL = "MORIARTY/1"
 REPORT_SCHEMA = "moriarty-report/1"
@@ -54,7 +184,7 @@ TIMEOUT_SECONDS = 300
 MAX_PROBE_OUTPUT_BYTES = 1_048_576
 MAX_ACCEPTED_COUNTEREXAMPLES = 32
 MAX_REPORT_COUNTEREXAMPLES = 48
-MAX_REPORT_BYTES = 65_536
+MAX_REPORT_BYTES = 512 * 1024
 MAX_GIT_ARCHIVE_BYTES = 64 * 1024 * 1024
 MAX_GIT_TREE_METADATA_BYTES = 16 * 1024 * 1024
 MAX_GIT_TREE_ENTRIES = 32_768
@@ -461,6 +591,10 @@ EXPECTED_FAMILIES = {
     "transport_nat_relay_store_forward_archive",
     "cross_phase_contradictions",
 }
+ALLOWED_OWNER_PHASES = frozenset({"0", "1", "2", "3", "4", "5A", "5", "5C", "6", "7", "8", "cross-phase"})
+MAX_OWNER_PHASES = 12
+MAX_BOUNDARY_IDS = 32
+MAX_ATTACK_PROBE_IDS = 16
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -879,15 +1013,15 @@ def validate_attack_corpus(corpus: dict[str, Any]) -> list[dict[str, Any]]:
             or family not in EXPECTED_FAMILIES
             or family in families
             or not isinstance(owner_phases, list)
-            or not owner_phases
-            or not all(isinstance(value, str) and value for value in owner_phases)
+            or not 1 <= len(owner_phases) <= MAX_OWNER_PHASES
+            or not all(isinstance(value, str) and value in ALLOWED_OWNER_PHASES for value in owner_phases)
             or len(set(owner_phases)) != len(owner_phases)
             or not isinstance(boundary_ids, list)
-            or not boundary_ids
+            or not 1 <= len(boundary_ids) <= MAX_BOUNDARY_IDS
             or not all(isinstance(value, str) and re.fullmatch(r"[a-z0-9_./-]{1,128}", value) for value in boundary_ids)
             or len(set(boundary_ids)) != len(boundary_ids)
             or not isinstance(probe_ids, list)
-            or not probe_ids
+            or not 1 <= len(probe_ids) <= MAX_ATTACK_PROBE_IDS
             or not all(isinstance(value, str) and value in PROBES for value in probe_ids)
             or len(set(probe_ids)) != len(probe_ids)
         ):
@@ -930,10 +1064,12 @@ def validate_counterexample_shape(item: Any) -> None:
         or not re.fullmatch(r"MOR-[0-9]{3}", item["attack_id"])
         or item["family"] not in EXPECTED_FAMILIES
         or not isinstance(item["owner_phases"], list)
-        or not item["owner_phases"]
+        or not 1 <= len(item["owner_phases"]) <= MAX_OWNER_PHASES
+        or not all(isinstance(value, str) and value in ALLOWED_OWNER_PHASES for value in item["owner_phases"])
         or len(set(item["owner_phases"])) != len(item["owner_phases"])
         or not isinstance(item["boundary_ids"], list)
-        or not item["boundary_ids"]
+        or not 1 <= len(item["boundary_ids"]) <= MAX_BOUNDARY_IDS
+        or not all(isinstance(value, str) and re.fullmatch(r"[a-z0-9_./-]{1,128}", value) for value in item["boundary_ids"])
         or len(set(item["boundary_ids"])) != len(item["boundary_ids"])
         or not isinstance(item["regression_probe_ids"], list)
         or len(item["regression_probe_ids"]) != 1
@@ -1145,9 +1281,18 @@ def _classify_rust_failure(stderr: bytes) -> str:
 
 
 
+_RUNTIME_NORMALIZATIONS: tuple[tuple[re.Pattern[bytes], bytes], ...] = (
+    (re.compile(rb"(?m)^(\s*Finished .*) in (?:[0-9]+m )?[0-9]+(?:\.[0-9]+)?s$"), rb"\1 in <T>s"),
+    (re.compile(rb"; finished in (?:[0-9]+m )?[0-9]+(?:\.[0-9]+)?s"), rb"; finished in <T>s"),
+    (re.compile(rb"\(pid=[0-9]+\)"), rb"(pid=<PID>)"),
+    (re.compile(rb"(thread '[^'\r\n]*' )\([0-9]+\)"), rb"\1(<TID>)"),
+)
+
+
 def _normalize_probe_output(
     data: bytes,
     *,
+    probe_id: str,
     source_root: Path,
     target_dir: Path,
     home: Path,
@@ -1174,6 +1319,9 @@ def _normalize_probe_output(
     # Most-specific paths first so a workspace replacement cannot hide a child path.
     for raw, marker in sorted(encoded, key=lambda item: len(item[0]), reverse=True):
         normalized = normalized.replace(raw, marker)
+    if probe_id == "rust_all":
+        for pattern, replacement in _RUNTIME_NORMALIZATIONS:
+            normalized = pattern.sub(replacement, normalized)
     return normalized
 
 
@@ -1264,6 +1412,7 @@ def run_probe(
             stderr=subprocess.PIPE,
             start_new_session=True,
             preexec_fn=preexec,
+            close_fds=True,
             bufsize=0,
         )
     except (OSError, subprocess.SubprocessError) as exc:
@@ -1392,6 +1541,7 @@ def run_probe(
     normalized = {
         name: _normalize_probe_output(
             bytes(captured[name]),
+            probe_id=probe_id,
             source_root=source_root,
             target_dir=target_dir,
             home=home,

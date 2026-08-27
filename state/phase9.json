@@ -128,7 +128,7 @@
     "graduated_requires_zero_unresolved_counterexamples": true,
     "graduated_requires_all_probes_green": true,
     "failed_report_metadata_exposed_before_exit": true,
-    "maximum_canonical_bytes": 65536,
+    "maximum_canonical_bytes": 524288,
     "maximum_counterexamples": 48,
     "security_proof": false,
     "no_counterexample_found_implies_none_exist": false,
@@ -138,5 +138,5 @@
     "probe_failure_kind_persisted": true,
     "probe_output_truncation_persisted": true
   },
-  "phase9_gate": "For the exact clean checked-out commit, MORIARTY/1 materializes tracked bytes directly from pinned Git archive output and runs each fixed probe from its own exact export. Linux Landlock enforces read/execute and write allowlists, exposes only the probe's own /proc PID subtree, and seccomp denies socket/network syscalls for the probe and descendants. Python is privately staged; Rustup toolchains are resolved to concrete Cargo/rustc and the complete bin/lib runtime is privately staged before adversarial execution. Cargo uses the committed lockfile, verified registry .crate archives, no ambient unpacked registry source, a fresh per-probe Cargo home, frozen offline resolution, and an external target directory. Resolved findings replay fail-before/pass-after with independent exports and Cargo state. Bounded reports persist failure kind and truncation metadata. No unresolved reproducible counterexample or failed fixed probe may cross graduation. MORIARTY adds assurance only and does not promote the Phase 8 capability surface."
+  "phase9_gate": "For the exact clean checked-out commit, MORIARTY/1 materializes tracked bytes directly from pinned Git archive output and runs each fixed probe from its own exact export. Linux Landlock enforces read/execute and write allowlists, exposes only the probe's own /proc PID subtree, and seccomp denies addressable socket creation/connections, io_uring networking, harness-directed signaling, and process-memory access while permitting only anonymous AF_UNIX socketpair IPC. Python is privately staged; Rustup toolchains are resolved to concrete Cargo/rustc and the complete bin/lib runtime is privately staged before adversarial execution. Cargo uses the committed lockfile, verified registry .crate archives, no ambient unpacked registry source, a fresh per-probe Cargo home, frozen offline resolution, and an external target directory. Resolved findings replay fail-before/pass-after with independent exports and Cargo state. Bounded reports persist failure kind and truncation metadata. No unresolved reproducible counterexample or failed fixed probe may cross graduation. MORIARTY adds assurance only and does not promote the Phase 8 capability surface."
 }

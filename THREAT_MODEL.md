@@ -158,6 +158,32 @@ MORIARTY REPORT != SECURITY PROOF
 NO COUNTEREXAMPLE FOUND != NO COUNTEREXAMPLE EXISTS
 ```
 
+## Residual risks
+
+Phase 9 hardens the adversarial harness but does not eliminate every risk. The following residual risks are acknowledged, bounded, and intentionally not overclaimed as solved.
+
+| ID | Residual risk | Why it remains | Bounding control |
+|----|---------------|----------------|------------------|
+| R1 | Kernel isolation is Linux-specific | Landlock ABI >= 3 and the seccomp policy are implemented only for Linux x86_64/aarch64 | The runner fails closed on any other platform rather than degrading to weaker isolation |
+| R2 | Anonymous local IPC remains permitted | Some runtimes require connected local IPC | Addressable `socket()` and `connect()` are denied; only anonymous `AF_UNIX` `socketpair()` is admitted, so pathname and abstract-namespace services such as Docker/systemd/X11 cannot be named |
+| R3 | Process-tree termination has a scan race | `/proc` descendant discovery is a sample rather than an atomic kernel primitive | Child-subreaper adoption, process-group SIGKILL, repeated rescans, harness-directed signal denial, and a hard two-second pipe-drain deadline bound the escape window |
+| R4 | Git object identity uses SHA-1 | The repository's current Git object format is SHA-1 | Commit/tree/blob bytes are rehashed against their object IDs and replacement objects are disabled; this is exact repository identity, not a general SHA-1 security claim |
+| R5 | Probe output is stored by digest and byte count only | Raw adversary-controlled output is intentionally excluded from reports | Readers must rerun the fixed probe locally to inspect semantics; report artifacts cannot silently launder raw output into authority |
+| R6 | Truncated streams lose tail bytes | Streams are capped at 1,048,576 bytes per probe | Truncation is persisted as explicit `tool_error` metadata with per-stream flags, so capped output cannot masquerade as complete output |
+| R7 | The attack corpus is closed and finite | Fifteen source-owned families cannot enumerate all possible attacks | `no_counterexample_found_implies_none_exist = false` is machine-enforced; external observations remain candidates until reviewed local reproduction |
+| R8 | Shared-probe failures can be ambiguous | Several fixed probes cover multiple attack families | Ambiguous failures block graduation as failed-probe evidence without fabricating family-specific counterexamples |
+| R9 | Host toolchains are trusted at pin time | Python, Git, Cargo, and rustc originate from the host | Bootstrap source bytes are target-verified; executable inode/size/mtime pinning, descriptor-bound execution, staged read-only Rust runtime snapshots, and directory-chain checks bound substitution rather than claiming immunity to an already-compromised host |
+| R10 | The harness runs as the invoking user | Phase 9 does not claim a VM, container, or host-level sandbox (`host_level_sandbox = false`) | Landlock read/exec/write allowlists, self-only `/proc`, addressable-IPC denial, harness-signal denial, and ptrace/process-memory denial bound same-UID reach; kernel privilege escalation remains out of scope |
+| R11 | CI infrastructure is trusted | GitHub-hosted runners, checkout actions, and artifact storage sit outside the MORIARTY kernel boundary | Exact PR-head/push SHA binding, `persist-credentials: false`, hash-verified source bootstrap, and locally rerunnable gates limit what CI compromise can silently forge |
+| R12 | Cargo.lock currency is a maintenance risk | Frozen offline resolution pins dependencies but does not track upstream advisories | Dependency updates are ordinary reviewed commits that must repass every gate; MORIARTY greenness never implies dependency freshness |
+
+None of these residual risks weakens the report semantics: a green MORIARTY report remains evidence about the exact reviewed regression surface only.
+
+```text
+RESIDUAL RISK ACKNOWLEDGED != RESIDUAL RISK ACCEPTED AS AUTHORITY
+BOUNDED EXPOSURE != ZERO EXPOSURE
+```
+
 ## Security invariant
 
 The most important threat-model rule is intentionally boring:

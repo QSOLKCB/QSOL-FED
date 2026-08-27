@@ -6,6 +6,8 @@ import argparse
 import copy
 import os
 import hashlib
+import importlib.machinery
+import importlib.util
 import json
 import re
 import subprocess
@@ -16,11 +18,138 @@ from typing import Any, Callable
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ROOT / "tools"
-if str(TOOLS) not in sys.path:
-    sys.path.insert(0, str(TOOLS))
+sys.dont_write_bytecode = True
+_BOOTSTRAP_GIT = Path("/usr/bin/git")
+_BOOTSTRAP_TARGET_RE = re.compile(r"^[0-9a-f]{40}$")
 
-from qsol_canonical import canonicalize, serialize  # noqa: E402
-import run_moriarty as moriarty  # noqa: E402
+
+def _bootstrap_git_env() -> dict[str, str]:
+    return {
+        "PATH": "/usr/bin:/bin",
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_ATTR_NOSYSTEM": "1",
+        "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_OPTIONAL_LOCKS": "0",
+        "GIT_CONFIG_COUNT": "3",
+        "GIT_CONFIG_KEY_0": "core.fsmonitor",
+        "GIT_CONFIG_VALUE_0": "false",
+        "GIT_CONFIG_KEY_1": "core.hooksPath",
+        "GIT_CONFIG_VALUE_1": "/dev/null",
+        "GIT_CONFIG_KEY_2": "core.attributesFile",
+        "GIT_CONFIG_VALUE_2": "/dev/null",
+    }
+
+
+def _bootstrap_git(*args: str) -> subprocess.CompletedProcess[bytes]:
+    if not _BOOTSTRAP_GIT.is_file():
+        raise SystemExit("moriarty_bootstrap_system_git_unavailable")
+    return subprocess.run(
+        [str(_BOOTSTRAP_GIT), *args],
+        cwd=ROOT,
+        env=_bootstrap_git_env(),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        close_fds=True,
+    )
+
+
+def _bootstrap_target() -> str:
+    target: str | None = None
+    if "--target-commit" in sys.argv:
+        index = sys.argv.index("--target-commit")
+        if index + 1 < len(sys.argv):
+            target = sys.argv[index + 1]
+    if target is None:
+        completed = _bootstrap_git("rev-parse", "HEAD")
+        if completed.returncode != 0:
+            raise SystemExit("moriarty_bootstrap_target_unavailable")
+        try:
+            target = completed.stdout.decode("ascii", errors="strict").strip()
+        except UnicodeError:
+            raise SystemExit("moriarty_bootstrap_target_invalid")
+    if _BOOTSTRAP_TARGET_RE.fullmatch(target) is None:
+        raise SystemExit("moriarty_bootstrap_target_invalid")
+    return target
+
+
+def _bootstrap_git_object(kind: str, object_id: str) -> bytes:
+    if _BOOTSTRAP_TARGET_RE.fullmatch(object_id) is None:
+        raise SystemExit("moriarty_bootstrap_object_id_invalid")
+    completed = _bootstrap_git("cat-file", kind, object_id)
+    if completed.returncode != 0:
+        raise SystemExit(f"moriarty_bootstrap_{kind}_read_failed")
+    payload = completed.stdout
+    actual = hashlib.sha1(f"{kind} {len(payload)}\\0".encode("ascii") + payload).hexdigest()
+    if actual != object_id:
+        raise SystemExit(f"moriarty_bootstrap_{kind}_hash_mismatch")
+    return payload
+
+
+def _bootstrap_tree_entry(tree_payload: bytes, wanted: str) -> tuple[str, str]:
+    cursor = 0
+    while cursor < len(tree_payload):
+        space = tree_payload.find(b" ", cursor)
+        nul = tree_payload.find(b"\\0", space + 1 if space >= 0 else cursor)
+        if space <= cursor or nul <= space or nul + 21 > len(tree_payload):
+            raise SystemExit("moriarty_bootstrap_tree_malformed")
+        mode = tree_payload[cursor:space].decode("ascii", errors="strict")
+        name = tree_payload[space + 1:nul].decode("utf-8", errors="strict")
+        object_id = tree_payload[nul + 1:nul + 21].hex()
+        cursor = nul + 21
+        if name == wanted:
+            return mode, object_id
+    raise SystemExit(f"moriarty_bootstrap_path_missing:{wanted}")
+
+
+def _bootstrap_verified_blob(target: str, relative: str) -> bytes:
+    commit_payload = _bootstrap_git_object("commit", target)
+    first_line = commit_payload.split(b"\\n", 1)[0]
+    if not first_line.startswith(b"tree "):
+        raise SystemExit("moriarty_bootstrap_commit_tree_missing")
+    tree_id = first_line[5:].decode("ascii", errors="strict")
+    parts = relative.split("/")
+    for index, part in enumerate(parts):
+        tree_payload = _bootstrap_git_object("tree", tree_id)
+        mode, object_id = _bootstrap_tree_entry(tree_payload, part)
+        if index + 1 < len(parts):
+            if mode != "40000":
+                raise SystemExit("moriarty_bootstrap_path_not_tree")
+            tree_id = object_id
+            continue
+        if mode not in {"100644", "100755"}:
+            raise SystemExit("moriarty_bootstrap_source_not_regular")
+        return _bootstrap_git_object("blob", object_id)
+    raise SystemExit("moriarty_bootstrap_path_invalid")
+
+
+def _load_verified_source_module(name: str, target: str):
+    relative = f"tools/{name}.py"
+    path = ROOT / relative
+    expected = _bootstrap_verified_blob(target, relative)
+    try:
+        actual = path.read_bytes()
+    except OSError:
+        raise SystemExit(f"moriarty_bootstrap_source_unavailable:{name}")
+    if actual != expected:
+        raise SystemExit(f"moriarty_bootstrap_source_mismatch:{name}")
+    loader = importlib.machinery.SourceFileLoader(name, str(path))
+    spec = importlib.util.spec_from_loader(name, loader)
+    if spec is None:
+        raise SystemExit(f"moriarty_bootstrap_spec_unavailable:{name}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    loader.exec_module(module)
+    return module
+
+_BOOTSTRAP_TARGET = _bootstrap_target()
+_qsol_canonical = _load_verified_source_module("qsol_canonical", _BOOTSTRAP_TARGET)
+moriarty = _load_verified_source_module("run_moriarty", _BOOTSTRAP_TARGET)
+serialize = _qsol_canonical.serialize
 
 EXPECTED_FAMILIES = set(moriarty.EXPECTED_FAMILIES)
 EXPECTED_PROBES = {
@@ -336,6 +465,42 @@ def validate_schemas_and_fixtures() -> None:
     ):
         require(report_props[key].get("const") is False, f"MORIARTY report schema overclaim/bypass: {key}")
     require(report_props["authority_effect"].get("const") == "none", "MORIARTY report schema gained authority")
+    require(moriarty.MAX_REPORT_BYTES == 512 * 1024, "MORIARTY report byte ceiling drift")
+    max_boundary_ids = [f"b{index:02d}" + "x" * 125 for index in range(moriarty.MAX_BOUNDARY_IDS)]
+    max_counterexample = {
+        "schema": moriarty.COUNTEREXAMPLE_SCHEMA, "counterexample_id": "sha256:" + "f" * 64,
+        "target_commit": "f" * 40, "attack_id": "MOR-999", "family": max(moriarty.EXPECTED_FAMILIES, key=len),
+        "owner_phases": list(sorted(moriarty.ALLOWED_OWNER_PHASES)), "boundary_ids": max_boundary_ids,
+        "regression_probe_ids": ["p" * 64], "failure_kind": "exit_nonzero", "observed_exit_code": -2147483648,
+        "stdout_sha256": "sha256:" + "f" * 64, "stderr_sha256": "sha256:" + "f" * 64,
+        "stdout_bytes": moriarty.MAX_PROBE_OUTPUT_BYTES, "stderr_bytes": moriarty.MAX_PROBE_OUTPUT_BYTES,
+        "status": "resolved", "resolution_commit": "e" * 40, "production_credentials_used": False,
+        "production_targets_used": False, "constitutional_bypass_used": False, "authority_effect": "none",
+    }
+    max_result = {
+        "probe_id": "p" * 64, "ok": False, "exit_code": -2147483648, "failure_kind": "exit_nonzero",
+        "stdout_sha256": "sha256:" + "f" * 64, "stderr_sha256": "sha256:" + "f" * 64,
+        "stdout_bytes": moriarty.MAX_PROBE_OUTPUT_BYTES, "stderr_bytes": moriarty.MAX_PROBE_OUTPUT_BYTES,
+        "stdout_truncated": True, "stderr_truncated": True,
+    }
+    max_replay = {
+        "counterexample_id": "sha256:" + "f" * 64, "status": "resolved", "probe_id": "p" * 64,
+        "ok": False, "target_reproduced": False, "resolution_green": False,
+        "failure_kind": "target_failure_not_reproduced", "failure_result": max_result,
+    }
+    max_report = {
+        "schema": moriarty.REPORT_SCHEMA, "protocol": moriarty.PROTOCOL, "target_commit": "f" * 40,
+        "corpus_ref": "sha256:" + "f" * 64, "operator_profile": moriarty.OPERATOR_PROFILE,
+        "family_count": 15, "executed_probe_count": len(EXPECTED_PROBES),
+        "probe_results": [max_result] * len(EXPECTED_PROBES),
+        "remediation_replays": [max_replay] * moriarty.MAX_ACCEPTED_COUNTEREXAMPLES,
+        "counterexamples": [max_counterexample] * moriarty.MAX_REPORT_COUNTEREXAMPLES,
+        "unresolved_counterexamples": moriarty.MAX_REPORT_COUNTEREXAMPLES, "graduated": False,
+        "production_credentials_used": False, "production_targets_used": False,
+        "constitutional_bypass_used": False, "security_proof": False,
+        "no_counterexample_found_implies_none_exist": False, "authority_effect": "none",
+    }
+    require(len(serialize(max_report).encode("utf-8")) <= moriarty.MAX_REPORT_BYTES, "MORIARTY schema-admitted worst-case report exceeds byte ceiling")
 
     corpus = load("fixtures/phase9/attack-corpus.json")
     attacks = moriarty.validate_attack_corpus(corpus)
@@ -345,6 +510,12 @@ def validate_schemas_and_fixtures() -> None:
     attack_extra = copy.deepcopy(corpus)
     attack_extra["attacks"][0]["credential"] = "forbidden"
     _expect_reject(lambda: moriarty.validate_attack_corpus(attack_extra), "undeclared attack-record field")
+    bad_owner = copy.deepcopy(corpus)
+    bad_owner["attacks"][0]["owner_phases"] = ["https://evil.example"]
+    _expect_reject(lambda: moriarty.validate_attack_corpus(bad_owner), "owner phase outside closed enum")
+    owner_schema = corpus_schema["properties"]["attacks"]["items"]["properties"]["owner_phases"]
+    require(set(owner_schema["items"].get("enum", [])) == moriarty.ALLOWED_OWNER_PHASES, "MORIARTY owner phase schema/runner enum drift")
+    require(owner_schema.get("maxItems") == moriarty.MAX_OWNER_PHASES, "MORIARTY owner phase count schema drift")
     require({item["id"] for item in attacks} == {f"MOR-{index:03d}" for index in range(1, 16)}, "MORIARTY attack id set drift")
     require({item["family"] for item in attacks} == EXPECTED_FAMILIES, "MORIARTY corpus family set drift")
 
@@ -397,6 +568,7 @@ def validate_probe_map() -> None:
     norm_root = Path("/tmp/private-run")
     normalized_paths = moriarty._normalize_probe_output(
         b"/tmp/private-run/probe-12-rust_all-src /tmp/private-run/target-12-rust_all /tmp/private-run/home-12-rust_all /tmp/private-run/cargo-home-probe-12-rust_all /tmp/private-run/tmp-target-12-rust_all /tmp/private-run/other",
+        probe_id="rust_all",
         source_root=norm_root / "probe-12-rust_all-src",
         target_dir=norm_root / "target-12-rust_all",
         home=norm_root / "home-12-rust_all",
@@ -408,6 +580,17 @@ def validate_probe_map() -> None:
         normalized_paths == b"<SOURCE> <TARGET> <HOME> <CARGO_HOME> <TMP> <WORK>/other",
         "MORIARTY complete per-probe output normalization regression failed",
     )
+    rust_a = moriarty._normalize_probe_output(
+        b"Finished `test` profile [unoptimized + debuginfo] target(s) in 0.63s\ntest result: FAILED. 1 failed; finished in 0.02s\nthread 'main' (pid=12345)",
+        probe_id="rust_all", source_root=norm_root / "src", target_dir=norm_root / "target",
+        home=norm_root / "home", cargo_home=norm_root / "cargo", temp_dir=norm_root / "tmp", workspace_root=norm_root,
+    )
+    rust_b = moriarty._normalize_probe_output(
+        b"Finished `test` profile [unoptimized + debuginfo] target(s) in 1.18s\ntest result: FAILED. 1 failed; finished in 0.91s\nthread 'main' (pid=54321)",
+        probe_id="rust_all", source_root=norm_root / "src", target_dir=norm_root / "target",
+        home=norm_root / "home", cargo_home=norm_root / "cargo", temp_dir=norm_root / "tmp", workspace_root=norm_root,
+    )
+    require(rust_a == rust_b, "MORIARTY Rust runtime-field normalization regression failed")
     require(0 < moriarty.MAX_GIT_TREE_DEPTH <= 128, "MORIARTY Git tree depth bound invalid")
     require(0 < moriarty.MAX_GIT_TREE_ENTRIES <= 65536, "MORIARTY Git tree entry bound invalid")
     require(0 < moriarty.MAX_GIT_TREE_METADATA_BYTES <= moriarty.MAX_GIT_ARCHIVE_BYTES, "MORIARTY Git tree metadata bound invalid")
@@ -419,7 +602,7 @@ def validate_probe_map() -> None:
         "target_commit": git_head(),
         "attack_id": "MOR-001",
         "family": next(iter(moriarty.EXPECTED_FAMILIES)),
-        "owner_phases": ["phase0"],
+        "owner_phases": ["0"],
         "boundary_ids": ["phase0"],
         "regression_probe_ids": ["phase0"],
         "failure_kind": "exit_nonzero",
@@ -454,6 +637,9 @@ def validate_probe_map() -> None:
 
 def validate_runner_source() -> None:
     source = (ROOT / "tools/run_moriarty.py").read_text(encoding="utf-8")
+    validator_bootstrap = "\n".join((ROOT / "tools/validate_phase9_gate.py").read_text(encoding="utf-8").splitlines()[:180])
+    require("sys.path.insert" not in validator_bootstrap, "Phase 9 validator bootstrap reintroduced checkout import search")
+    require("_bootstrap_verified_blob" in validator_bootstrap and "SourceFileLoader" in validator_bootstrap, "Phase 9 validator bootstrap is not target-byte verified")
     for marker in (
         "provider-neutral-fixed-probe/1", "moriarty-counterexample/1", "moriarty-report/1",
         "PROBES: dict[str, tuple[str, ...]]", "PROBE_EXECUTABLES", "TrustedExecutable",
@@ -470,6 +656,7 @@ def validate_runner_source() -> None:
         "counterexample_identity_projection", "verify_accepted_counterexamples",
         "production_credentials_used", "production_targets_used", "constitutional_bypass_used",
         "security_proof", "no_counterexample_found_implies_none_exist", "stdout_truncated", "stderr_truncated",
+        "_bootstrap_verified_blob", "SourceFileLoader", "ALLOWED_OWNER_PHASES", "_RUNTIME_NORMALIZATIONS", "close_fds=True",
     ):
         require(marker in source, f"MORIARTY runner marker missing: {marker}")
     require("accepted_external" not in source, "MORIARTY runner still admits accepted_external")
@@ -487,6 +674,14 @@ def validate_runner_source() -> None:
 
 def validate_docs_and_ci() -> None:
     docs = (ROOT / "MORIARTY.md").read_text(encoding="utf-8")
+    threat = (ROOT / "THREAT_MODEL.md").read_text(encoding="utf-8")
+    for marker in (
+        "## Residual risks", "anonymous `AF_UNIX` `socketpair()`",
+        "RESIDUAL RISK ACKNOWLEDGED != RESIDUAL RISK ACCEPTED AS AUTHORITY",
+        "BOUNDED EXPOSURE != ZERO EXPOSURE",
+    ):
+        require(marker in threat, f"THREAT_MODEL.md residual-risk marker missing: {marker}")
+
     for marker in (
         "MORIARTY/1", "PROVIDER NEUTRAL", "EXACT COMMIT", "COUNTEREXAMPLE != AUTHORITY",
         "MORIARTY REPORT != SECURITY PROOF", "NO COUNTEREXAMPLE FOUND != NO COUNTEREXAMPLE EXISTS",
@@ -650,6 +845,16 @@ def validate_isolation_negative_tests(target: str) -> None:
             'version = 4\n\n[[package]]\nname = "demo"\nversion = "1.0.0"\nsource = "registry+https://github.com/rust-lang/crates.io-index"\nchecksum = "' + good_sha + '"\n',
             encoding="utf-8",
         )
+        oversized_index = ambient / "registry" / "index" / "oversized"
+        oversized_index.write_bytes(b"")
+        oversized_index.truncate(moriarty._moriarty_isolation.MAX_CARGO_INDEX_BYTES + 1)
+        workspace_index = root / "workspace-index"
+        workspace_index.mkdir()
+        _expect_reject(
+            lambda: moriarty.create_verified_cargo_template(ambient, workspace_index, lock),
+            "oversized Cargo registry index projection",
+        )
+        oversized_index.unlink()
         workspace_bad = root / "workspace-bad"
         workspace_bad.mkdir()
         _expect_reject(
@@ -780,12 +985,38 @@ except OSError as exc:
         raise
 else:
     raise SystemExit(4)
+try:
+    socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+except OSError as exc:
+    if exc.errno != errno.EPERM:
+        raise
+else:
+    raise SystemExit(5)
+left, right = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
+try:
+    try:
+        left.connect("/tmp/moriarty-forbidden.sock")
+    except OSError as exc:
+        if exc.errno != errno.EPERM:
+            raise
+    else:
+        raise SystemExit(6)
+finally:
+    left.close(); right.close()
+try:
+    import os, signal
+    os.kill(int(parent_pid), signal.SIGCONT)
+except OSError as exc:
+    if exc.errno != errno.EPERM:
+        raise
+else:
+    raise SystemExit(7)
 import ctypes
 libc = ctypes.CDLL(None, use_errno=True)
 libc.syscall.restype = ctypes.c_long
 result = libc.syscall(425, 1, ctypes.c_void_p(0))
 if result != -1 or ctypes.get_errno() != errno.EPERM:
-    raise SystemExit(5)
+    raise SystemExit(8)
 raise SystemExit(0)
 """
         preexec = moriarty.probe_isolation_preexec(
@@ -1025,8 +1256,13 @@ def execute_exact_commit_gate(target: str, report_dir: Path | None) -> None:
         )
     raw = report_path.read_bytes()
     require(len(raw) <= moriarty.MAX_REPORT_BYTES, "MORIARTY report exceeds canonical byte bound")
-    require(canonicalize(raw.decode("utf-8")) == raw, "MORIARTY report is not exact canonical JSON")
-    report = json.loads(raw)
+    try:
+        decoded = raw.decode("utf-8", errors="strict")
+        report = json.loads(decoded)
+        canonical = serialize(report).encode("utf-8")
+    except (UnicodeError, json.JSONDecodeError, ValueError, TypeError) as exc:
+        raise SystemExit(f"MORIARTY report canonical parse failed: {exc}")
+    require(canonical == raw, "MORIARTY report is not exact canonical JSON")
     validate_report_common(report, target)
 
     injected = copy.deepcopy(report)

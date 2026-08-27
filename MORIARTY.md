@@ -126,7 +126,7 @@ For a resolved record, `resolution_commit is the fix commit`. The runner verifie
 
 A syntactically plausible but nonexistent SHA is therefore not remediation evidence. In addition, a resolved record is replayed in isolated exports: its single fixed regression probe must reproduce the recorded failure kind, exit semantics, hashes, and byte counts at `target_commit`, then return zero at `resolution_commit`. This is explicit fail-before/pass-after remediation evidence. `counterexample_id` hashes only immutable discovery/reproduction facts, so the finding identity remains stable through resolution. An unresolved accepted finding blocks graduation, but its regression still executes before the final decision.
 
-The accepted registry is capped at 32 records. Combined accepted and generated counterexamples are capped at 48 per report, and the entire canonical report is capped at 65,536 bytes. The declared registry state therefore cannot silently grow beyond the canonical report profile it is supposed to graduate under.
+The accepted registry is capped at 32 records. Combined accepted and generated counterexamples are capped at 48 per report, and the entire canonical report is capped at 524,288 bytes. The Phase 9 validator constructs a schema-maximal synthetic evidence projection and requires it to remain within this ceiling, so every admitted registry/report state remains publishable as bounded failure evidence.
 
 ## External/model-assisted findings
 
@@ -193,7 +193,7 @@ python3 tools/run_moriarty.py \
 The report is intentionally ephemeral. Phase 11 may archive the report associated with the final frozen release, but repository source does not pre-claim that an unexecuted future commit has passed.
 
 
-Runtime hardening notes: probe stdin is always harness-owned `/dev/null`; reproducibility digests normalize only the private per-run MORIARTY workspace prefix; Git commit/tree/blob bytes are rehashed before export; repository-local fsmonitor/hooks are neutralized; non-system Python and non-self-contained direct Rust installations fail closed rather than importing mutable runtime trees. Cargo package archives are hashed through bounded streaming descriptors before admission.
+Runtime hardening notes: Phase 9 bootstrap modules are loaded only from source files whose bytes match hash-verified target Git blobs; probe stdin is harness-owned `/dev/null` and inherited descriptors are closed; reproducibility digests normalize per-probe source/target/HOME/Cargo/TMP paths plus a closed set of Rust timing/PID fields; Git commit/tree/blob bytes are rehashed before export; repository-local fsmonitor/hooks are neutralized; non-system Python and non-self-contained direct Rust installations fail closed rather than importing mutable runtime trees. Cargo package archives are hashed through bounded streaming descriptors and Cargo index projection has independent entry/byte/depth ceilings. Probe seccomp permits only anonymous `AF_UNIX` `socketpair()` IPC, denies addressable `socket()`/`connect()`, io_uring networking, harness-directed signals, pidfd signaling, ptrace, and process-memory syscalls.
 
 
 ### Accepted-counterexample replay evidence

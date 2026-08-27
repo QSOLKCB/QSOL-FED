@@ -21,6 +21,9 @@ def fail(message: str) -> NoReturn:
 
 
 MAX_CARGO_ARCHIVE_BYTES = 64 * 1024 * 1024
+MAX_CARGO_INDEX_BYTES = 16 * 1024 * 1024
+MAX_CARGO_INDEX_ENTRIES = 16_384
+MAX_CARGO_INDEX_DEPTH = 16
 
 _LANDLOCK_CREATE_RULESET = 444
 _LANDLOCK_ADD_RULE = 445
@@ -232,51 +235,84 @@ def apply_landlock_write_policy(writable_paths: tuple[Path, ...]) -> None:
         os.close(ruleset_fd)
 
 
-def _socket_syscalls() -> tuple[int, int, int]:
+def _socket_syscalls() -> tuple[int, int, int, int]:
     machine = os.uname().machine
     if machine == "x86_64":
-        return (41, 53, _AUDIT_ARCH_X86_64)
+        return (41, 53, 42, _AUDIT_ARCH_X86_64)
     if machine == "aarch64":
-        return (198, 199, _AUDIT_ARCH_AARCH64)
+        return (198, 199, 203, _AUDIT_ARCH_AARCH64)
     fail("moriarty_network_seccomp_arch_unsupported")
 
 
+def _signal_syscalls() -> tuple[int, int, int, int]:
+    machine = os.uname().machine
+    if machine == "x86_64":
+        return (62, 200, 234, 424)
+    if machine == "aarch64":
+        return (129, 130, 131, 424)
+    fail("moriarty_signal_seccomp_arch_unsupported")
+
+
+def _process_memory_syscalls() -> tuple[int, int, int]:
+    machine = os.uname().machine
+    if machine == "x86_64":
+        return (101, 310, 311)
+    if machine == "aarch64":
+        return (117, 270, 271)
+    fail("moriarty_process_memory_seccomp_arch_unsupported")
+
+
 def _io_uring_syscalls() -> tuple[int, int, int]:
-    # io_uring syscall numbers are shared by the supported Linux architectures.
     return (425, 426, 427)
 
 
-def apply_network_seccomp_policy() -> None:
-    """Allow AF_UNIX IPC while denying external socket creation and io_uring.
+def apply_network_seccomp_policy(harness_pid: int, harness_pgid: int) -> None:
+    """Deny addressable IPC/network creation and probe-to-harness control.
 
-    The filter first binds itself to the expected Linux audit architecture. It
-    denies io_uring entirely so IORING_OP_SOCKET/CONNECT/SEND cannot bypass the
-    native syscall policy. Native socket()/socketpair() are then allowed only for
-    AF_UNIX; every other family fails at creation with EPERM. The probe receives
-    no ambient network descriptors, so later socket I/O can only operate on local
-    Unix-domain IPC descriptors created inside the sandbox.
+    Addressable socket() and connect() are denied outright. Only anonymous
+    socketpair(AF_UNIX) IPC is admitted, so a probe cannot name Docker, systemd,
+    X11, abstract-namespace, or other ambient Unix-domain endpoints. io_uring,
+    pidfd signaling, ptrace/process_vm access, and signals directed at the
+    harness/broadcast group are also denied.
     """
     libc = _linux_libc()
     deny = _SECCOMP_RET_ERRNO | errno.EPERM
     allow = _SECCOMP_RET_ALLOW
-    socket_nr, socketpair_nr, audit_arch = _socket_syscalls()
+    socket_nr, socketpair_nr, connect_nr, audit_arch = _socket_syscalls()
+    kill_nr, tkill_nr, tgkill_nr, pidfd_signal_nr = _signal_syscalls()
+    forbidden_targets = (
+        harness_pid & 0xFFFFFFFF,
+        (-harness_pgid) & 0xFFFFFFFF,
+        0xFFFFFFFF,
+    )
     instructions: list[_SockFilter] = [
         _SockFilter(_BPF_LD_W_ABS, 0, 0, _SECCOMP_DATA_ARCH_OFFSET),
         _SockFilter(_BPF_JMP_JEQ_K, 1, 0, audit_arch),
         _SockFilter(_BPF_RET_K, 0, 0, deny),
         _SockFilter(_BPF_LD_W_ABS, 0, 0, 0),
     ]
-    for number in _io_uring_syscalls():
+    for number in (*_io_uring_syscalls(), pidfd_signal_nr, *_process_memory_syscalls()):
         instructions.append(_SockFilter(_BPF_JMP_JEQ_K, 0, 1, number))
         instructions.append(_SockFilter(_BPF_RET_K, 0, 0, deny))
+    for number in (kill_nr, tkill_nr, tgkill_nr):
+        block: list[_SockFilter] = [_SockFilter(_BPF_LD_W_ABS, 0, 0, _SECCOMP_DATA_ARG0_OFFSET)]
+        for target in forbidden_targets:
+            block.append(_SockFilter(_BPF_JMP_JEQ_K, 0, 1, target))
+            block.append(_SockFilter(_BPF_RET_K, 0, 0, deny))
+        block.append(_SockFilter(_BPF_LD_W_ABS, 0, 0, 0))
+        instructions.append(_SockFilter(_BPF_JMP_JEQ_K, 0, len(block), number))
+        instructions.extend(block)
     instructions.extend([
-        _SockFilter(_BPF_JMP_JEQ_K, 2, 0, socket_nr),
-        _SockFilter(_BPF_JMP_JEQ_K, 1, 0, socketpair_nr),
-        _SockFilter(_BPF_RET_K, 0, 0, allow),
+        _SockFilter(_BPF_JMP_JEQ_K, 0, 1, socket_nr),
+        _SockFilter(_BPF_RET_K, 0, 0, deny),
+        _SockFilter(_BPF_JMP_JEQ_K, 0, 1, connect_nr),
+        _SockFilter(_BPF_RET_K, 0, 0, deny),
+        _SockFilter(_BPF_JMP_JEQ_K, 0, 4, socketpair_nr),
         _SockFilter(_BPF_LD_W_ABS, 0, 0, _SECCOMP_DATA_ARG0_OFFSET),
         _SockFilter(_BPF_JMP_JEQ_K, 0, 1, _AF_UNIX),
         _SockFilter(_BPF_RET_K, 0, 0, allow),
         _SockFilter(_BPF_RET_K, 0, 0, deny),
+        _SockFilter(_BPF_RET_K, 0, 0, allow),
     ])
     array_type = _SockFilter * len(instructions)
     array = array_type(*instructions)
@@ -295,10 +331,12 @@ def probe_isolation_preexec(
     read_exec = tuple(Path(path).resolve(strict=True) for path in read_exec_paths if Path(path).exists())
     readable = tuple(Path(path).resolve(strict=True) for path in read_paths if Path(path).exists())
     writable = tuple(Path(path).resolve(strict=True) for path in writable_paths if Path(path).exists())
+    harness_pid = os.getpid()
+    harness_pgid = os.getpgrp()
 
     def _apply() -> None:
         apply_landlock_policy(read_exec, readable, writable, allow_self_proc=True)
-        apply_network_seccomp_policy()
+        apply_network_seccomp_policy(harness_pid, harness_pgid)
 
     return _apply
 
@@ -448,12 +486,20 @@ def _sha256_regular_file(
     return digest.hexdigest()
 
 
-def _copy_regular_file(source: Path, destination: Path, expected_sha256: str | None = None) -> None:
+def _copy_regular_file(
+    source: Path,
+    destination: Path,
+    expected_sha256: str | None = None,
+    *,
+    max_bytes: int | None = None,
+    too_large_error: str = "moriarty_copy_source_too_large",
+) -> None:
     if source.is_symlink() or not source.is_file():
         fail("moriarty_copy_source_nonregular")
     destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     source_fd = os.open(source, os.O_RDONLY | os.O_CLOEXEC | (getattr(os, "O_NOFOLLOW", 0)))
     source_hash = hashlib.sha256()
+    total = 0
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
     output_fd = os.open(destination, flags, 0o600)
     try:
@@ -461,6 +507,9 @@ def _copy_regular_file(source: Path, destination: Path, expected_sha256: str | N
             chunk = os.read(source_fd, 65536)
             if not chunk:
                 break
+            total += len(chunk)
+            if max_bytes is not None and total > max_bytes:
+                fail(too_large_error)
             source_hash.update(chunk)
             view = memoryview(chunk)
             while view:
@@ -477,15 +526,31 @@ def _copy_regular_file(source: Path, destination: Path, expected_sha256: str | N
         fail("moriarty_copy_digest_mismatch")
 
 
-def _copy_regular_tree(source: Path, destination: Path) -> None:
+def _copy_regular_tree(
+    source: Path,
+    destination: Path,
+    *,
+    max_entries: int | None = None,
+    max_bytes: int | None = None,
+    max_depth: int | None = None,
+    bound_prefix: str = "moriarty_copy_tree",
+) -> None:
     if not source.exists():
         return
     destination.mkdir(mode=0o700, parents=True, exist_ok=True)
+    entry_count = 0
+    total_bytes = 0
     for current, dirs, files in os.walk(source, followlinks=False):
         current_path = Path(current)
         relative = current_path.relative_to(source)
+        depth = len(relative.parts)
+        if max_depth is not None and depth > max_depth:
+            fail(f"{bound_prefix}_depth_exceeded")
         output_dir = destination / relative
         output_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        entry_count += len(dirs) + len(files)
+        if max_entries is not None and entry_count > max_entries:
+            fail(f"{bound_prefix}_entries_exceeded")
         for directory in list(dirs):
             if (current_path / directory).is_symlink():
                 fail("moriarty_cargo_cache_symlink_forbidden")
@@ -493,7 +558,19 @@ def _copy_regular_tree(source: Path, destination: Path) -> None:
             source_file = current_path / name
             if source_file.is_symlink() or not source_file.is_file():
                 fail("moriarty_cargo_cache_nonregular_file")
-            _copy_regular_file(source_file, output_dir / name)
+            remaining = None if max_bytes is None else max_bytes - total_bytes
+            if remaining is not None and remaining < 0:
+                fail(f"{bound_prefix}_bytes_exceeded")
+            output_file = output_dir / name
+            _copy_regular_file(
+                source_file,
+                output_file,
+                max_bytes=remaining,
+                too_large_error=f"{bound_prefix}_bytes_exceeded",
+            )
+            total_bytes += output_file.stat().st_size
+            if max_bytes is not None and total_bytes > max_bytes:
+                fail(f"{bound_prefix}_bytes_exceeded")
 
 
 def _locked_registry_packages(cargo_lock: Path) -> list[tuple[str, str, str]]:
@@ -538,7 +615,14 @@ def create_verified_cargo_template(
     template = workspace / label
     template.mkdir(mode=0o700, parents=False, exist_ok=False)
     index_source = real_cargo_home / "registry" / "index"
-    _copy_regular_tree(index_source, template / "registry" / "index")
+    _copy_regular_tree(
+        index_source,
+        template / "registry" / "index",
+        max_entries=MAX_CARGO_INDEX_ENTRIES,
+        max_bytes=MAX_CARGO_INDEX_BYTES,
+        max_depth=MAX_CARGO_INDEX_DEPTH,
+        bound_prefix="moriarty_cargo_index",
+    )
     cache_root = real_cargo_home / "registry" / "cache"
     for name, version, checksum in _locked_registry_packages(cargo_lock):
         filename = f"{name}-{version}.crate"
