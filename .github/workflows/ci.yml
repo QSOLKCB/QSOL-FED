@@ -74,10 +74,24 @@ jobs:
           test "$(stat -f -c %T "$CARGO_SOURCE_ROOT")" = "tmpfs"
           test -z "$(find "$CARGO_SOURCE_ROOT" -mindepth 1 -print -quit)"
 
-          CURRENT_CGROUP="$(awk -F: '$1 == "0" {print $3}' /proc/self/cgroup)"
-          test -n "$CURRENT_CGROUP"
-          CGROUP_PARENT="/sys/fs/cgroup${CURRENT_CGROUP}"
-          PROBE_CGROUP="$CGROUP_PARENT/qsol-moriarty-probe"
+          DELEGATE_UNIT="qsol-moriarty-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.service"
+          sudo systemd-run --quiet --unit="$DELEGATE_UNIT" \
+            --property=Delegate=yes \
+            --property=DelegateSubgroup=anchor \
+            --uid="$(id -u)" --gid="$(id -g)" \
+            /usr/bin/sleep infinity
+          echo "MORIARTY_CGROUP_DELEGATE_UNIT=$DELEGATE_UNIT" >> "$GITHUB_ENV"
+          CONTROL_GROUP="$(sudo systemctl show "$DELEGATE_UNIT" --property=ControlGroup --value)"
+          test -n "$CONTROL_GROUP"
+          CGROUP_PARENT="/sys/fs/cgroup${CONTROL_GROUP}"
+          test -d "$CGROUP_PARENT"
+          test -z "$(cat "$CGROUP_PARENT/cgroup.procs")"
+          grep -qw memory "$CGROUP_PARENT/cgroup.controllers"
+          grep -qw pids "$CGROUP_PARENT/cgroup.controllers"
+          echo '+memory +pids' | sudo tee "$CGROUP_PARENT/cgroup.subtree_control" >/dev/null
+          grep -qw memory "$CGROUP_PARENT/cgroup.subtree_control"
+          grep -qw pids "$CGROUP_PARENT/cgroup.subtree_control"
+          PROBE_CGROUP="$CGROUP_PARENT/probe"
           sudo mkdir "$PROBE_CGROUP"
           echo 2147483648 | sudo tee "$PROBE_CGROUP/memory.max" >/dev/null
           echo 128 | sudo tee "$PROBE_CGROUP/pids.max" >/dev/null
@@ -89,6 +103,7 @@ jobs:
           fi
           sudo chown "$(id -u):$(id -g)" "$PROBE_CGROUP/cgroup.procs"
           test -w "$PROBE_CGROUP/cgroup.procs"
+          test -z "$(cat "$PROBE_CGROUP/cgroup.procs")"
           test "$(cat "$PROBE_CGROUP/memory.max")" = "2147483648"
           test "$(cat "$PROBE_CGROUP/pids.max")" = "128"
           echo "MORIARTY_PROBE_CGROUP=$PROBE_CGROUP" >> "$GITHUB_ENV"
@@ -165,6 +180,10 @@ jobs:
               test -n "$pid" && sudo kill -KILL "$pid" 2>/dev/null || true
             done < "$MORIARTY_PROBE_CGROUP/cgroup.procs"
             sudo rmdir "$MORIARTY_PROBE_CGROUP" || true
+          fi
+          if test -n "${MORIARTY_CGROUP_DELEGATE_UNIT:-}"; then
+            sudo systemctl stop "$MORIARTY_CGROUP_DELEGATE_UNIT" 2>/dev/null || true
+            sudo systemctl reset-failed "$MORIARTY_CGROUP_DELEGATE_UNIT" 2>/dev/null || true
           fi
           sudo umount /mnt/qsol-moriarty-probe-writable 2>/dev/null || true
           sudo umount /mnt/qsol-moriarty-cargo-source 2>/dev/null || true
