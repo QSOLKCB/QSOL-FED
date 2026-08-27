@@ -50,6 +50,36 @@ jobs:
           test "$("$SNAPSHOT/bin/cargo" --version)" = "cargo 1.97.1 (c980f4866 2026-06-30)"
           test "$(du -sb --apparent-size "$SNAPSHOT" | cut -f1)" -le 3221225472
           echo "$SNAPSHOT/bin" >> "$GITHUB_PATH"
+          PROBE_QUOTA=/mnt/qsol-moriarty-probe-writable
+          sudo install -d -m 0700 "$PROBE_QUOTA"
+          sudo mount -t tmpfs -o "size=2147483648,nosuid,nodev,mode=0700,uid=$(id -u),gid=$(id -g)" tmpfs "$PROBE_QUOTA"
+          test "$(stat -f -c %T "$PROBE_QUOTA")" = "tmpfs"
+          test -z "$(find "$PROBE_QUOTA" -mindepth 1 -print -quit)"
+      - name: Phase 9 MORIARTY/1 exact-commit graduation gate
+        env:
+          MORIARTY_TARGET_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+          MORIARTY_REPORT_DIR: ${{ runner.temp }}/moriarty-report
+          MORIARTY_RUST_TOOLCHAIN_ROOT: /usr/local/qsol-moriarty-rust-toolchain
+          MORIARTY_EXPECTED_PYTHON_VERSION: Python 3.12.3
+          MORIARTY_EXPECTED_RUSTC_VERSION: rustc 1.97.1 (8bab26f4f 2026-07-14)
+          MORIARTY_EXPECTED_CARGO_VERSION: cargo 1.97.1 (c980f4866 2026-06-30)
+          MORIARTY_PROBE_WRITABLE_ROOT: /mnt/qsol-moriarty-probe-writable
+        run: |
+          install -d -m 700 "$MORIARTY_REPORT_DIR"
+          /usr/bin/python3 -I tools/validate_phase9_gate.py --target-commit "$MORIARTY_TARGET_COMMIT" --report-dir "$MORIARTY_REPORT_DIR"
+      - name: Preserve Phase 9 MORIARTY report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase9-moriarty-report-${{ github.run_id }}
+          path: ${{ runner.temp }}/moriarty-report/*.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Release Phase 9 writable quota
+        if: always()
+        run: |
+          sudo umount /mnt/qsol-moriarty-probe-writable
+          sudo rmdir /mnt/qsol-moriarty-probe-writable
       - name: Checkout pinned QSOL-NEXUS adapter source
         uses: actions/checkout@v4
         with:
@@ -227,22 +257,3 @@ jobs:
         run: python3 tools/validate_phase7_gate.py
       - name: Phase 8 additional transports and resilience gate
         run: python3 tools/validate_phase8_gate.py
-      - name: Phase 9 MORIARTY/1 exact-commit graduation gate
-        env:
-          MORIARTY_TARGET_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
-          MORIARTY_REPORT_DIR: ${{ runner.temp }}/moriarty-report
-          MORIARTY_RUST_TOOLCHAIN_ROOT: /usr/local/qsol-moriarty-rust-toolchain
-          MORIARTY_EXPECTED_PYTHON_VERSION: Python 3.12.3
-          MORIARTY_EXPECTED_RUSTC_VERSION: rustc 1.97.1 (8bab26f4f 2026-07-14)
-          MORIARTY_EXPECTED_CARGO_VERSION: cargo 1.97.1 (c980f4866 2026-06-30)
-        run: |
-          install -d -m 700 "$MORIARTY_REPORT_DIR"
-          /usr/bin/python3 -I tools/validate_phase9_gate.py --target-commit "$MORIARTY_TARGET_COMMIT" --report-dir "$MORIARTY_REPORT_DIR"
-      - name: Preserve Phase 9 MORIARTY report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: phase9-moriarty-report-${{ github.run_id }}
-          path: ${{ runner.temp }}/moriarty-report/*.json
-          if-no-files-found: warn
-          retention-days: 14
