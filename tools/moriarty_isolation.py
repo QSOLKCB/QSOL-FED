@@ -394,26 +394,85 @@ def probe_writable_tree_within_limits(paths: tuple[Path, ...]) -> bool:
                 return False
             try:
                 with os.scandir(current) as iterator:
-                    entries = list(iterator)
+                    for entry in iterator:
+                        total_entries += 1
+                        if total_entries > MAX_PROBE_WRITABLE_ENTRIES:
+                            return False
+                        try:
+                            info = entry.stat(follow_symlinks=False)
+                        except OSError:
+                            return False
+                        if stat.S_ISDIR(info.st_mode):
+                            stack.append((Path(entry.path), depth + 1))
+                        elif stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode):
+                            total_bytes += info.st_size
+                            if total_bytes > MAX_PROBE_WRITABLE_BYTES:
+                                return False
+                        else:
+                            return False
             except OSError:
                 return False
-            for entry in entries:
-                total_entries += 1
-                if total_entries > MAX_PROBE_WRITABLE_ENTRIES:
-                    return False
-                try:
-                    info = entry.stat(follow_symlinks=False)
-                except OSError:
-                    return False
-                if stat.S_ISDIR(info.st_mode):
-                    stack.append((Path(entry.path), depth + 1))
-                elif stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode):
-                    total_bytes += info.st_size
-                    if total_bytes > MAX_PROBE_WRITABLE_BYTES:
-                        return False
-                else:
-                    return False
     return True
+
+
+def _mountinfo_unescape(value: str) -> str:
+    return (
+        value.replace("\\040", " ")
+        .replace("\\011", "\t")
+        .replace("\\012", "\n")
+        .replace("\\134", "\\")
+    )
+
+
+def probe_quota_root(path: Path) -> Path:
+    """Require an empty private tmpfs whose allocation ceiling is <= 2 GiB."""
+    try:
+        root = Path(path).resolve(strict=True)
+        info = root.stat()
+    except OSError:
+        fail("moriarty_probe_quota_root_unavailable")
+    if not root.is_dir() or info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) & 0o077:
+        fail("moriarty_probe_quota_root_not_private")
+    if not os.path.ismount(root):
+        fail("moriarty_probe_quota_root_not_mount")
+
+    fs_type: str | None = None
+    try:
+        with open("/proc/self/mountinfo", "r", encoding="utf-8") as handle:
+            for line in handle:
+                fields = line.rstrip("\n").split()
+                if "-" not in fields or len(fields) < 7:
+                    continue
+                separator = fields.index("-")
+                if separator + 1 >= len(fields):
+                    continue
+                mount_point = Path(_mountinfo_unescape(fields[4]))
+                try:
+                    resolved_mount = mount_point.resolve(strict=True)
+                except OSError:
+                    continue
+                if resolved_mount == root:
+                    fs_type = fields[separator + 1]
+                    break
+    except OSError:
+        fail("moriarty_probe_quota_mountinfo_unavailable")
+    if fs_type != "tmpfs":
+        fail("moriarty_probe_quota_root_not_tmpfs")
+
+    try:
+        filesystem = os.statvfs(root)
+    except OSError:
+        fail("moriarty_probe_quota_statvfs_failed")
+    capacity = filesystem.f_blocks * filesystem.f_frsize
+    if capacity <= 0 or capacity > MAX_PROBE_WRITABLE_BYTES:
+        fail("moriarty_probe_quota_capacity_invalid")
+    try:
+        with os.scandir(root) as iterator:
+            if next(iterator, None) is not None:
+                fail("moriarty_probe_quota_root_not_empty")
+    except OSError:
+        fail("moriarty_probe_quota_root_scan_failed")
+    return root
 
 
 def probe_isolation_preexec(

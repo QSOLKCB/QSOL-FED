@@ -203,6 +203,7 @@ landlock_abi_version = _moriarty_isolation.landlock_abi_version
 network_seccomp_supported = _moriarty_isolation.network_seccomp_supported
 probe_isolation_preexec = _moriarty_isolation.probe_isolation_preexec
 probe_writable_tree_within_limits = _moriarty_isolation.probe_writable_tree_within_limits
+probe_quota_root = _moriarty_isolation.probe_quota_root
 proc_fd_path = _moriarty_isolation.proc_fd_path
 stage_executable_from_fd = _moriarty_isolation.stage_executable_from_fd
 stage_rust_toolchain_runtime = _moriarty_isolation.stage_rust_toolchain_runtime
@@ -236,6 +237,13 @@ if os.name != "posix" or sys.platform != "linux":
 enable_child_subreaper()
 
 REAL_HOME = Path(pwd.getpwuid(os.getuid()).pw_dir).resolve()
+_ACTIVE_PROBE_WRITABLE_ROOT: Path | None = None
+
+
+def _probe_writable_root() -> Path:
+    if _ACTIVE_PROBE_WRITABLE_ROOT is None:
+        fail("moriarty_probe_quota_root_not_initialized")
+    return _ACTIVE_PROBE_WRITABLE_ROOT
 
 
 def fail(message: str) -> NoReturn:
@@ -1746,13 +1754,14 @@ def _run_counterexample_replay_probe(
         if probe_id == "rust_all"
         else workspace
     )
-    cargo_home = _fresh_cargo_home(probe_id, template, workspace, label)
+    writable_root = _probe_writable_root()
+    cargo_home = _fresh_cargo_home(probe_id, template, writable_root, label)
     return run_probe(
         probe_id,
-        workspace / f"{label}-home",
+        writable_root / f"{label}-home",
         source,
         cargo_home,
-        workspace / f"{label}-target",
+        writable_root / f"{label}-target",
         python_exec,
         cargo_exec,
         rustc_exec,
@@ -1879,6 +1888,12 @@ def main() -> int:
     if not harness_files_match_target(target):
         fail("moriarty_harness_worktree_bytes_do_not_match_target")
 
+    quota_value = os.environ.get("MORIARTY_PROBE_WRITABLE_ROOT")
+    if not quota_value:
+        fail("moriarty_probe_quota_root_required")
+    global _ACTIVE_PROBE_WRITABLE_ROOT
+    _ACTIVE_PROBE_WRITABLE_ROOT = probe_quota_root(Path(quota_value))
+
     with tempfile.TemporaryDirectory(prefix="qsol-fed-moriarty-work-") as work_dir:
         workspace = Path(work_dir)
         if landlock_abi_version() < 3:
@@ -1946,13 +1961,14 @@ def main() -> int:
         for probe_index, probe_id in enumerate(ordered_probe_ids):
             label = f"probe-{probe_index}-{probe_id}"
             probe_source = create_exact_export(target, workspace, git_archive_bytes, label)
-            probe_cargo_home = _fresh_cargo_home(probe_id, cargo_template, workspace, label)
+            writable_root = _probe_writable_root()
+            probe_cargo_home = _fresh_cargo_home(probe_id, cargo_template, writable_root, label)
             results[probe_id] = run_probe(
                 probe_id,
-                workspace / f"home-{probe_index}-{probe_id}",
+                writable_root / f"home-{probe_index}-{probe_id}",
                 probe_source,
                 probe_cargo_home,
-                workspace / f"target-{probe_index}-{probe_id}",
+                writable_root / f"target-{probe_index}-{probe_id}",
                 python_exec,
                 cargo_exec,
                 rustc_exec,

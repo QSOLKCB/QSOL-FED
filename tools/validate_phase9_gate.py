@@ -721,7 +721,8 @@ def validate_runner_source() -> None:
         "production_credentials_used", "production_targets_used", "constitutional_bypass_used",
         "security_proof", "no_counterexample_found_implies_none_exist", "stdout_truncated", "stderr_truncated",
         "_bootstrap_verified_blob", "compile(expected", "ALLOWED_OWNER_PHASES", "_RUNTIME_NORMALIZATIONS", "close_fds=True",
-        "probe_writable_tree_within_limits", "MORIARTY_RUST_TOOLCHAIN_ROOT", "allow_abbrev=False",
+        "probe_writable_tree_within_limits", "probe_quota_root", "MORIARTY_RUST_TOOLCHAIN_ROOT",
+        "MORIARTY_PROBE_WRITABLE_ROOT", "allow_abbrev=False",
     ):
         require(marker in source, f"MORIARTY runner marker missing: {marker}")
     require("accepted_external" not in source, "MORIARTY runner still admits accepted_external")
@@ -790,8 +791,17 @@ def validate_docs_and_ci() -> None:
     require("persist-credentials: false" in workflow, "CI exact target checkout persists credentials")
     require("MORIARTY_TARGET_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}" in workflow, "CI MORIARTY target commit binding missing")
     snapshot_marker = "Snapshot trusted CI toolchains before repository execution"
+    phase9_marker = "Phase 9 MORIARTY/1 exact-commit graduation gate"
     rust_test_marker = "Rust tests, state, Holodeck, adapters, SDKs, Assembly, transports, and fuzz smoke"
-    require(snapshot_marker in workflow and workflow.index(snapshot_marker) < workflow.index(rust_test_marker), "CI toolchain snapshot does not precede repository execution")
+    require(
+        snapshot_marker in workflow
+        and phase9_marker in workflow
+        and rust_test_marker in workflow
+        and workflow.index(snapshot_marker) < workflow.index(phase9_marker) < workflow.index(rust_test_marker),
+        "CI MORIARTY gate does not run immediately before target-controlled repository execution",
+    )
+    require("sudo mount -t tmpfs" in workflow and "size=2147483648" in workflow, "CI MORIARTY hard writable tmpfs quota missing")
+    require("MORIARTY_PROBE_WRITABLE_ROOT: /mnt/qsol-moriarty-probe-writable" in workflow, "CI MORIARTY writable quota binding missing")
     require('rustc 1.97.1 (8bab26f4f 2026-07-14)' in workflow, "CI rustc replay version is not pinned")
     require('cargo 1.97.1 (c980f4866 2026-06-30)' in workflow, "CI Cargo replay version is not pinned")
     require('Python 3.12.3' in workflow, "CI Python replay version is not pinned")
@@ -1403,6 +1413,66 @@ def _read_attested_report(path: Path, expected_sha256: str) -> bytes:
         os.close(fd)
 
 
+_RUNNER_BINDING_KEYS = (
+    "MORIARTY_RUST_TOOLCHAIN_ROOT",
+    "MORIARTY_EXPECTED_PYTHON_VERSION",
+    "MORIARTY_EXPECTED_RUSTC_VERSION",
+    "MORIARTY_EXPECTED_CARGO_VERSION",
+    "MORIARTY_PROBE_WRITABLE_ROOT",
+)
+
+
+def _runner_environment(report_dir: Path) -> dict[str, str]:
+    env = {
+        "PATH": "/usr/bin:/bin",
+        "HOME": str(report_dir),
+        "PYTHONNOUSERSITE": "1",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+    }
+    for key in _RUNNER_BINDING_KEYS:
+        value = os.environ.get(key)
+        require(value is not None and value != "", f"MORIARTY runner binding missing: {key}")
+        env[key] = value
+    return env
+
+
+def validate_runner_toolchain_binding_negative(target: str) -> None:
+    with tempfile.TemporaryDirectory(prefix="moriarty-binding-negative-") as temp_dir:
+        root = Path(temp_dir)
+        cases = (
+            (
+                "snapshot path",
+                "MORIARTY_RUST_TOOLCHAIN_ROOT",
+                str(root / "missing-rust-snapshot"),
+                b"moriarty_ci_rust_snapshot_unavailable",
+            ),
+            (
+                "Cargo version",
+                "MORIARTY_EXPECTED_CARGO_VERSION",
+                "cargo 0.0.0 (intentional-negative)",
+                b"moriarty_toolchain_version_drift:cargo",
+            ),
+        )
+        for index, (label, key, value, marker) in enumerate(cases):
+            env = _runner_environment(root)
+            env[key] = value
+            output = root / f"negative-{index}.json"
+            completed = moriarty.trusted_run(
+                moriarty.PYTHON_TRUSTED,
+                ("-I", "tools/run_moriarty.py", "--target-commit", target, "--output", str(output)),
+                cwd=ROOT,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            evidence = completed.stdout + completed.stderr
+            require(completed.returncode != 0 and marker in evidence, f"MORIARTY {label} negative binding test did not fail closed")
+            require(not output.exists(), f"MORIARTY {label} negative binding unexpectedly emitted a report")
+
+
 def execute_exact_commit_gate(target: str, report_dir: Path | None) -> None:
     require(git_head() == target, "Phase 9 target commit does not match checked-out HEAD")
     require(moriarty.tracked_tree_clean(), "Phase 9 target tracked tree/index flags are dirty before runner")
@@ -1420,14 +1490,7 @@ def execute_exact_commit_gate(target: str, report_dir: Path | None) -> None:
         moriarty.PYTHON_TRUSTED,
         ("-I", "tools/run_moriarty.py", "--target-commit", target, "--output", str(report_path)),
         cwd=ROOT,
-        env={
-            "PATH": "/usr/bin:/bin",
-            "HOME": str(report_dir),
-            "PYTHONNOUSERSITE": "1",
-            "PYTHONDONTWRITEBYTECODE": "1",
-            "LANG": "C.UTF-8",
-            "LC_ALL": "C.UTF-8",
-        },
+        env=_runner_environment(report_dir),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
@@ -1481,6 +1544,10 @@ def main() -> None:
     validate_isolation_negative_tests(target)
     validate_kernel_write_denial()
     validate_kernel_network_and_proc_denial()
+    quota_value = os.environ.get("MORIARTY_PROBE_WRITABLE_ROOT")
+    require(quota_value is not None, "MORIARTY writable quota binding missing")
+    moriarty.probe_quota_root(Path(quota_value))
+    validate_runner_toolchain_binding_negative(target)
     execute_exact_commit_gate(target, Path(args.report_dir).resolve() if args.report_dir else None)
     print(
         f"phase9 MORIARTY/1 gate OK for exact commit {target}: "
