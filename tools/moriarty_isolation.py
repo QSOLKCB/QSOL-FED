@@ -1223,3 +1223,189 @@ def write_report_exclusive(output: Path, encoded: bytes, repository_root: Path) 
         os.fsync(directory_fd)
     finally:
         os.close(directory_fd)
+
+
+# Review hardening: deny host-handle syscalls that sit outside the original
+# network/signal/process-memory filter, and reject unreviewed registry build hooks.
+MAX_CARGO_ARCHIVE_SCAN_ENTRIES = 16_384
+MAX_CARGO_ARCHIVE_SCAN_BYTES = 512 * 1024 * 1024
+MAX_CARGO_MANIFEST_BYTES = 1024 * 1024
+TRUSTED_REGISTRY_BUILD_HOOK_ARCHIVES: frozenset[tuple[str, str, str]] = frozenset()
+
+
+def _pidfd_descriptor_syscalls() -> tuple[int, int]:
+    machine = os.uname().machine
+    if machine in {"x86_64", "aarch64"}:
+        return (434, 438)
+    fail("moriarty_pidfd_descriptor_seccomp_arch_unsupported")
+
+
+def _keyring_syscalls() -> tuple[int, int, int]:
+    machine = os.uname().machine
+    if machine == "x86_64":
+        return (248, 249, 250)
+    if machine == "aarch64":
+        return (217, 218, 219)
+    fail("moriarty_keyring_seccomp_arch_unsupported")
+
+
+def _apply_sensitive_host_handle_seccomp_policy() -> None:
+    """Stack a deny-only filter for pidfd descriptor and kernel-keyring access."""
+    libc = _linux_libc()
+    deny = _SECCOMP_RET_ERRNO | errno.EPERM
+    allow = _SECCOMP_RET_ALLOW
+    _socket, _socketpair, _connect, audit_arch = _socket_syscalls()
+    instructions: list[_SockFilter] = [
+        _SockFilter(_BPF_LD_W_ABS, 0, 0, _SECCOMP_DATA_ARCH_OFFSET),
+        _SockFilter(_BPF_JMP_JEQ_K, 1, 0, audit_arch),
+        _SockFilter(_BPF_RET_K, 0, 0, deny),
+        _SockFilter(_BPF_LD_W_ABS, 0, 0, 0),
+    ]
+    if os.uname().machine == "x86_64":
+        instructions.extend([
+            _SockFilter(_BPF_JMP_JSET_K, 0, 1, _X32_SYSCALL_BIT),
+            _SockFilter(_BPF_RET_K, 0, 0, deny),
+        ])
+    for number in (*_pidfd_descriptor_syscalls(), *_keyring_syscalls()):
+        instructions.append(_SockFilter(_BPF_JMP_JEQ_K, 0, 1, number))
+        instructions.append(_SockFilter(_BPF_RET_K, 0, 0, deny))
+    instructions.append(_SockFilter(_BPF_RET_K, 0, 0, allow))
+    array_type = _SockFilter * len(instructions)
+    array = array_type(*instructions)
+    program = _SockFprog(len(instructions), array)
+    if libc.prctl(_PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
+        raise OSError(ctypes.get_errno(), "prctl_no_new_privs_sensitive_handles")
+    if libc.prctl(_PR_SET_SECCOMP, _SECCOMP_MODE_FILTER, ctypes.byref(program), 0, 0) != 0:
+        raise OSError(ctypes.get_errno(), "prctl_seccomp_sensitive_handle_filter")
+
+
+_original_apply_network_seccomp_policy = apply_network_seccomp_policy
+
+
+def apply_network_seccomp_policy(harness_pid: int, harness_pgid: int) -> None:
+    """Apply the base probe policy plus deny-only host-handle extensions."""
+    _original_apply_network_seccomp_policy(harness_pid, harness_pgid)
+    _apply_sensitive_host_handle_seccomp_policy()
+
+
+def _crate_archive_declares_build_hook(archive_path: Path, name: str, version: str) -> bool:
+    """Inspect one SHA256-authenticated crate archive for Cargo build-hook execution."""
+    root_name = f"{name}-{version}"
+    prefix = root_name + "/"
+    entry_count = 0
+    expanded_bytes = 0
+    manifest_bytes: bytes | None = None
+    root_build_rs = False
+    try:
+        with tarfile.open(archive_path, mode="r|*") as archive:
+            for member in archive:
+                entry_count += 1
+                if entry_count > MAX_CARGO_ARCHIVE_SCAN_ENTRIES:
+                    fail(f"moriarty_cargo_archive_scan_entries_exceeded:{archive_path.name}")
+                if member.size < 0:
+                    fail(f"moriarty_cargo_archive_member_size_invalid:{archive_path.name}")
+                expanded_bytes += member.size
+                if expanded_bytes > MAX_CARGO_ARCHIVE_SCAN_BYTES:
+                    fail(f"moriarty_cargo_archive_scan_bytes_exceeded:{archive_path.name}")
+                raw_name = member.name
+                if raw_name.rstrip("/") == root_name:
+                    continue
+                if not raw_name.startswith(prefix):
+                    fail(f"moriarty_cargo_archive_member_root_invalid:{archive_path.name}")
+                relative_text = raw_name[len(prefix):]
+                relative = Path(relative_text)
+                if (
+                    relative.is_absolute()
+                    or not relative.parts
+                    or any(part in {"", ".", ".."} for part in relative.parts)
+                ):
+                    fail(f"moriarty_cargo_archive_member_path_invalid:{archive_path.name}")
+                relative_posix = relative.as_posix()
+                if relative_posix == "build.rs" and member.isfile():
+                    root_build_rs = True
+                if relative_posix == "Cargo.toml" and member.isfile():
+                    source = archive.extractfile(member)
+                    if source is None:
+                        fail(f"moriarty_cargo_archive_manifest_unreadable:{archive_path.name}")
+                    try:
+                        manifest_bytes = source.read(MAX_CARGO_MANIFEST_BYTES + 1)
+                    finally:
+                        source.close()
+                    if len(manifest_bytes) > MAX_CARGO_MANIFEST_BYTES:
+                        fail(f"moriarty_cargo_archive_manifest_too_large:{archive_path.name}")
+    except (OSError, tarfile.TarError):
+        fail(f"moriarty_cargo_archive_scan_failed:{archive_path.name}")
+    if manifest_bytes is None:
+        fail(f"moriarty_cargo_archive_manifest_missing:{archive_path.name}")
+    try:
+        manifest = tomllib.loads(manifest_bytes.decode("utf-8"))
+    except (UnicodeError, tomllib.TOMLDecodeError):
+        fail(f"moriarty_cargo_archive_manifest_invalid:{archive_path.name}")
+    package = manifest.get("package")
+    if not isinstance(package, dict):
+        fail(f"moriarty_cargo_archive_package_invalid:{archive_path.name}")
+    declared_build = package.get("build")
+    if declared_build is not None and declared_build is not False and not isinstance(declared_build, str):
+        fail(f"moriarty_cargo_archive_build_field_invalid:{archive_path.name}")
+    links = package.get("links")
+    if links is not None and not isinstance(links, str):
+        fail(f"moriarty_cargo_archive_links_field_invalid:{archive_path.name}")
+    return (
+        (declared_build is None and root_build_rs)
+        or isinstance(declared_build, str)
+        or links is not None
+    )
+
+
+def _unapproved_registry_build_hooks(
+    real_cargo_home: Path, cargo_lock: Path
+) -> tuple[tuple[str, str, str], ...]:
+    cache_root = real_cargo_home / "registry" / "cache"
+    cache_root_resolved = cache_root.resolve(strict=True) if cache_root.exists() else None
+    unapproved: set[tuple[str, str, str]] = set()
+    for name, version, checksum in _locked_registry_packages(cargo_lock):
+        filename = f"{name}-{version}.crate"
+        candidates = sorted(cache_root.glob(f"*/{filename}")) if cache_root.exists() else []
+        selected: Path | None = None
+        for candidate in candidates:
+            if candidate.is_file() and not candidate.is_symlink():
+                resolved = candidate.resolve(strict=True)
+                if cache_root_resolved is None or not resolved.is_relative_to(cache_root_resolved):
+                    fail("moriarty_cargo_archive_escaped_cache_root")
+                if _sha256_regular_file(
+                    candidate,
+                    max_bytes=MAX_CARGO_ARCHIVE_BYTES,
+                    too_large_error=f"moriarty_cargo_archive_too_large:{filename}",
+                ) == checksum:
+                    selected = candidate
+                    break
+        if selected is None:
+            continue
+        identity = (name, version, checksum)
+        if (
+            _crate_archive_declares_build_hook(selected, name, version)
+            and identity not in TRUSTED_REGISTRY_BUILD_HOOK_ARCHIVES
+        ):
+            unapproved.add(identity)
+    return tuple(sorted(unapproved))
+
+
+_original_create_verified_cargo_template = create_verified_cargo_template
+
+
+def create_verified_cargo_template(
+    real_cargo_home: Path,
+    workspace: Path,
+    cargo_lock: Path,
+    label: str = "cargo-template",
+) -> Path:
+    """Reject unreviewed registry build hooks before Cargo can unpack or execute them."""
+    unapproved = _unapproved_registry_build_hooks(real_cargo_home, cargo_lock)
+    if unapproved:
+        detail = ",".join(
+            f"{name}@{version}:{checksum}" for name, version, checksum in unapproved
+        )
+        fail("moriarty_registry_build_hook_unapproved:" + detail)
+    return _original_create_verified_cargo_template(
+        real_cargo_home, workspace, cargo_lock, label
+    )
