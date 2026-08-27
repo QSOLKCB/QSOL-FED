@@ -54,6 +54,7 @@ MAX_ACCEPTED_COUNTEREXAMPLES = 32
 MAX_REPORT_COUNTEREXAMPLES = 48
 MAX_REPORT_BYTES = 65_536
 MAX_GIT_ARCHIVE_BYTES = 64 * 1024 * 1024
+MAX_DIAGNOSTIC_SAMPLE_BYTES = 65_536
 POST_EXIT_DRAIN_SECONDS = 2.0
 TERMINATION_DRAIN_SECONDS = 2.0
 HARNESS_PATHS = ("tools/run_moriarty.py", "tools/moriarty_isolation.py", "tools/qsol_canonical.py")
@@ -805,6 +806,32 @@ def bounded_output_update(digest: Any, count: int, chunk: bytes) -> tuple[int, b
     return count + len(accepted), len(chunk) > remaining
 
 
+def _classify_rust_failure(stderr: bytes) -> str:
+    """Reduce compiler/Cargo stderr to a closed, non-secret diagnostic class."""
+    text = stderr.decode("utf-8", errors="replace").lower()
+    denied = "permission denied" in text or "os error 13" in text
+    not_permitted = "operation not permitted" in text or "os error 1" in text
+    if "/proc/" in text and (denied or not_permitted):
+        return "proc_access_denied"
+    if "can't find crate for `std`" in text or "couldn't find crate" in text or "sysroot" in text:
+        return "rust_sysroot"
+    if "failed to run custom build command" in text:
+        return "build_script"
+    if "linking with" in text or "linker" in text:
+        return "linker"
+    if "failed to download" in text or "offline mode" in text or "no matching package named" in text:
+        return "offline_dependency"
+    if "could not execute process" in text or "failed to run rustc" in text:
+        return "rustc_spawn"
+    if denied:
+        return "filesystem_permission"
+    if not_permitted:
+        return "seccomp_or_permission"
+    if "read-only file system" in text or "os error 30" in text:
+        return "read_only_filesystem"
+    return "rust_exit_other"
+
+
 def _probe_failure_result(probe_id: str, kind: str, diagnostic: bytes) -> dict[str, Any]:
     bounded = diagnostic[:MAX_PROBE_OUTPUT_BYTES]
     return {
@@ -818,6 +845,7 @@ def _probe_failure_result(probe_id: str, kind: str, diagnostic: bytes) -> dict[s
         "stderr_bytes": len(bounded),
         "stdout_truncated": False,
         "stderr_truncated": len(diagnostic) > len(bounded),
+        "diagnostic_class": "harness_precheck" if probe_id == "rust_all" else None,
     }
 
 
@@ -902,6 +930,7 @@ def run_probe(
     digests = {"stdout": hashlib.sha256(), "stderr": hashlib.sha256()}
     counts = {"stdout": 0, "stderr": 0}
     truncated = {"stdout": False, "stderr": False}
+    stderr_sample = bytearray()
     deadline = time.monotonic() + TIMEOUT_SECONDS
     post_exit_deadline: float | None = None
     termination_deadline: float | None = None
@@ -956,6 +985,9 @@ def run_probe(
                     selector.unregister(key.fileobj)
                     key.fileobj.close()
                     continue
+                if probe_id == "rust_all" and stream_name == "stderr" and len(stderr_sample) < MAX_DIAGNOSTIC_SAMPLE_BYTES:
+                    remaining_sample = MAX_DIAGNOSTIC_SAMPLE_BYTES - len(stderr_sample)
+                    stderr_sample.extend(chunk[:remaining_sample])
                 counts[stream_name], overflow = bounded_output_update(
                     digests[stream_name], counts[stream_name], chunk
                 )
@@ -1018,6 +1050,7 @@ def run_probe(
         "stderr_bytes": counts["stderr"],
         "stdout_truncated": truncated["stdout"],
         "stderr_truncated": truncated["stderr"],
+        "diagnostic_class": _classify_rust_failure(bytes(stderr_sample)) if probe_id == "rust_all" and not ok else None,
     }
 
 
@@ -1272,6 +1305,16 @@ def main() -> int:
 
     output = Path(args.output)
     write_report_exclusive(output, encoded, ROOT)
+    if not report["graduated"] and "rust_all" in results and not results["rust_all"]["ok"]:
+        diagnostic = {
+            "schema": "moriarty-diagnostic/1",
+            "target_commit": target,
+            "probe_id": "rust_all",
+            "failure_class": results["rust_all"].get("diagnostic_class") or "rust_exit_other",
+            "authority_effect": "none",
+        }
+        diagnostic_path = output.parent / f"moriarty-diagnostic-{target}.json"
+        write_report_exclusive(diagnostic_path, serialize(diagnostic).encode("utf-8"), ROOT)
     if git_head() != target or not tracked_tree_clean() or not harness_files_match_target(target):
         fail("moriarty_target_or_harness_changed_during_report_publication")
 
