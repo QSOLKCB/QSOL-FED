@@ -1,0 +1,40 @@
+name: phase10-codex-round2
+
+on:
+  push:
+    branches:
+      - formal/phase10-lean-v0.11
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Apply and validate Codex fixes
+        run: |
+          set -euo pipefail
+          python3 tools/phase10_codex_round2.py
+          python3 - <<'PY'
+          from pathlib import Path
+          compile(Path('tools/validate_phase10_gate.py').read_text(encoding='utf-8'), 'tools/validate_phase10_gate.py', 'exec')
+          PY
+          python3 tools/validate_phase10_gate.py
+          python3 tools/validate_phase10_gate.py --json
+          git diff --check
+      - name: Commit finished candidate
+        run: |
+          set -euo pipefail
+          git config user.name "Trent Slade"
+          git config user.email "73952179+EmergentMonk@users.noreply.github.com"
+          git rm tools/phase10_codex_round2.py .github/workflows/phase10-codex-round2.yml
+          git add tools/validate_phase10_gate.py QSOLFed/Theorems.lean
+          git diff --cached --check
+          git commit -m "Address second Phase 10 Codex review"
+          echo "RETAINED_COMMIT=$(git rev-parse HEAD)"
+          git push origin HEAD:formal/phase10-lean-v0.11
