@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
+import errno
+import os
 import tempfile
 from pathlib import Path
 from typing import Callable
@@ -28,6 +31,55 @@ def _record(stage_results: list[dict[str, object]], stage: str, result: dict[str
         "failure_kind": result["failure_kind"],
     })
     return bool(result["ok"])
+
+
+def _apply_local_ipc_seccomp() -> None:
+    """Allow only AF_UNIX socketpair creation; deny external socket setup/I/O."""
+    libc = isolation._linux_libc()
+    machine = os.uname().machine
+    socketpair_number = 53 if machine == "x86_64" else 199
+    deny = isolation._SECCOMP_RET_ERRNO | errno.EPERM
+    blocked = [number for number in isolation._network_syscalls() if number != socketpair_number]
+    # Close alternate socket-creation / cross-process-fd avenues not needed by
+    # this generated zero-dependency compiler control.
+    blocked.extend([425, 434, 438])  # io_uring_setup, pidfd_open, pidfd_getfd
+    instructions: list[isolation._SockFilter] = [
+        isolation._SockFilter(isolation._BPF_LD_W_ABS, 0, 0, 0)
+    ]
+    for number in blocked:
+        instructions.append(isolation._SockFilter(isolation._BPF_JMP_JEQ_K, 0, 1, number))
+        instructions.append(isolation._SockFilter(isolation._BPF_RET_K, 0, 0, deny))
+    # seccomp_data.args[0] begins at byte offset 16. Permit socketpair only
+    # when its domain is AF_UNIX (=1); all other socketpair domains fail EPERM.
+    instructions.append(isolation._SockFilter(isolation._BPF_JMP_JEQ_K, 0, 4, socketpair_number))
+    instructions.append(isolation._SockFilter(isolation._BPF_LD_W_ABS, 0, 0, 16))
+    instructions.append(isolation._SockFilter(isolation._BPF_JMP_JEQ_K, 0, 1, 1))
+    instructions.append(isolation._SockFilter(isolation._BPF_RET_K, 0, 0, isolation._SECCOMP_RET_ALLOW))
+    instructions.append(isolation._SockFilter(isolation._BPF_RET_K, 0, 0, deny))
+    instructions.append(isolation._SockFilter(isolation._BPF_RET_K, 0, 0, isolation._SECCOMP_RET_ALLOW))
+    array_type = isolation._SockFilter * len(instructions)
+    array = array_type(*instructions)
+    program = isolation._SockFprog(len(instructions), array)
+    if libc.prctl(isolation._PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
+        raise OSError(ctypes.get_errno(), "diag_prctl_no_new_privs_seccomp")
+    if libc.prctl(isolation._PR_SET_SECCOMP, isolation._SECCOMP_MODE_FILTER, ctypes.byref(program), 0, 0) != 0:
+        raise OSError(ctypes.get_errno(), "diag_prctl_seccomp_local_ipc_filter")
+
+
+def _local_ipc_seccomp_preexec(
+    read_exec_paths: tuple[Path, ...],
+    read_paths: tuple[Path, ...],
+    writable_paths: tuple[Path, ...],
+):
+    read_exec = tuple(Path(path).resolve(strict=True) for path in read_exec_paths if Path(path).exists())
+    readable = tuple(Path(path).resolve(strict=True) for path in read_paths if Path(path).exists())
+    writable = tuple(Path(path).resolve(strict=True) for path in writable_paths if Path(path).exists())
+
+    def _apply() -> None:
+        isolation.apply_landlock_policy(read_exec, readable, writable, allow_self_proc=True)
+        _apply_local_ipc_seccomp()
+
+    return _apply
 
 
 def _write_only_seccomp_preexec(
@@ -116,8 +168,6 @@ def main() -> int:
             rustdoc_exec = None
 
         try:
-            # This crate is generated here, has zero dependencies, and is never
-            # part of MORIARTY evidence. It is safe to use for policy bisection.
             minimal = workspace / "minimal-src"
             (minimal / "src").mkdir(parents=True)
             (minimal / "Cargo.toml").write_text(
@@ -134,6 +184,7 @@ def main() -> int:
 
             policy_matrix: tuple[tuple[str, Callable[..., object]], ...] = (
                 ("minimal_full", original_preexec),
+                ("minimal_local_ipc_seccomp", _local_ipc_seccomp_preexec),
                 ("minimal_write_only_seccomp", _write_only_seccomp_preexec),
                 ("minimal_full_landlock_no_seccomp", _full_landlock_no_seccomp_preexec),
                 ("minimal_no_policy", _no_policy_preexec),
