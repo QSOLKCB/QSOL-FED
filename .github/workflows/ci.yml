@@ -200,17 +200,7 @@ jobs:
           MORIARTY_REPORT_DIR: ${{ runner.temp }}/moriarty-report
         run: |
           install -d -m 700 "$MORIARTY_REPORT_DIR"
-          python3 tools/validate_phase9_gate.py --target-commit "$MORIARTY_TARGET_COMMIT" --report-dir "$MORIARTY_REPORT_DIR"
-      - name: Stage-diagnose MORIARTY Rust failure
-        if: failure()
-        env:
-          MORIARTY_TARGET_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
-          MORIARTY_REPORT_DIR: ${{ runner.temp }}/moriarty-report
-        run: |
-          install -d -m 700 "$MORIARTY_REPORT_DIR"
-          python3 tools/diagnose_moriarty_rust.py \
-            --target-commit "$MORIARTY_TARGET_COMMIT" \
-            --output "$MORIARTY_REPORT_DIR/moriarty-rust-stage-$MORIARTY_TARGET_COMMIT.json"
+          python3 -I tools/validate_phase9_gate.py --target-commit "$MORIARTY_TARGET_COMMIT" --report-dir "$MORIARTY_REPORT_DIR"
       - name: Preserve Phase 9 MORIARTY report
         if: always()
         uses: actions/upload-artifact@v4
