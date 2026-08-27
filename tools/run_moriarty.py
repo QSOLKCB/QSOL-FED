@@ -543,7 +543,7 @@ def git_archive_bytes(commit: str) -> bytes:
         fail("moriarty_exact_export_commit_missing")
     listing = trusted_capture_bounded(
         GIT_TRUSTED,
-        ("ls-tree", "-rz", "--full-tree", commit),
+        ("ls-tree", "-r", "-z", "--full-tree", commit),
         limit=MAX_GIT_ARCHIVE_BYTES,
         cwd=ROOT,
         env=_git_env(),
