@@ -345,6 +345,8 @@ NO COUNTEREXAMPLE FOUND != NO COUNTEREXAMPLE EXISTS
 
 **Status: implemented on the post-tag formalization layer; branch verification green, reviewed merge/main verification pending.**
 
+Historical entry condition, now satisfied by immutable `v0.11.0`: **Begins only after an exact merged commit passes its own MORIARTY/1 workflow run.**
+
 The sole theorem source target is immutable release `v0.11.0`, exact commit `c953463724cdf218802e66e16f582ae8d600ca47`, exact tree `93f23cd7eda6dd92ae13b7bb96bee01935b80731`. The Lean files are later artifacts and do not rewrite that release.
 
 - [x] Bind the theorem manifest to the immutable source release, invariant IDs, contracts, schemas, phase gates, attack corpus and exact merged-main MORIARTY report.
