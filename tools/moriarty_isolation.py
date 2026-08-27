@@ -20,6 +20,8 @@ def fail(message: str) -> NoReturn:
     raise SystemExit(message)
 
 
+MAX_CARGO_ARCHIVE_BYTES = 64 * 1024 * 1024
+
 _LANDLOCK_CREATE_RULESET = 444
 _LANDLOCK_ADD_RULE = 445
 _LANDLOCK_RESTRICT_SELF = 446
@@ -396,6 +398,56 @@ def create_exact_export(
     return source_root
 
 
+
+def _sha256_regular_file(
+    path: Path,
+    *,
+    max_bytes: int | None = None,
+    too_large_error: str = "moriarty_regular_file_too_large",
+) -> str:
+    """Hash a stable regular file through an fd without materializing it in memory."""
+    try:
+        initial = path.lstat()
+    except OSError:
+        fail("moriarty_regular_file_unavailable")
+    if path.is_symlink() or not stat.S_ISREG(initial.st_mode):
+        fail("moriarty_regular_file_required")
+    if max_bytes is not None and initial.st_size > max_bytes:
+        fail(too_large_error)
+    fd = os.open(path, os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0))
+    digest = hashlib.sha256()
+    total = 0
+    try:
+        opened = os.fstat(fd)
+        if (
+            opened.st_dev != initial.st_dev
+            or opened.st_ino != initial.st_ino
+            or opened.st_size != initial.st_size
+            or opened.st_mtime_ns != initial.st_mtime_ns
+        ):
+            fail("moriarty_regular_file_changed_before_hash")
+        while True:
+            chunk = os.read(fd, 65_536)
+            if not chunk:
+                break
+            total += len(chunk)
+            if max_bytes is not None and total > max_bytes:
+                fail(too_large_error)
+            digest.update(chunk)
+        final = os.fstat(fd)
+    finally:
+        os.close(fd)
+    if (
+        final.st_dev != opened.st_dev
+        or final.st_ino != opened.st_ino
+        or final.st_size != opened.st_size
+        or final.st_mtime_ns != opened.st_mtime_ns
+        or total != opened.st_size
+    ):
+        fail("moriarty_regular_file_changed_during_hash")
+    return digest.hexdigest()
+
+
 def _copy_regular_file(source: Path, destination: Path, expected_sha256: str | None = None) -> None:
     if source.is_symlink() or not source.is_file():
         fail("moriarty_copy_source_nonregular")
@@ -421,7 +473,7 @@ def _copy_regular_file(source: Path, destination: Path, expected_sha256: str | N
     digest = source_hash.hexdigest()
     if expected_sha256 is not None and digest != expected_sha256:
         fail(f"moriarty_cargo_archive_checksum_mismatch:{source.name}")
-    if hashlib.sha256(destination.read_bytes()).hexdigest() != digest:
+    if _sha256_regular_file(destination) != digest:
         fail("moriarty_copy_digest_mismatch")
 
 
@@ -494,7 +546,11 @@ def create_verified_cargo_template(
         matching: list[Path] = []
         for candidate in candidates:
             if candidate.is_file() and not candidate.is_symlink():
-                digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
+                digest = _sha256_regular_file(
+                    candidate,
+                    max_bytes=MAX_CARGO_ARCHIVE_BYTES,
+                    too_large_error=f"moriarty_cargo_archive_too_large:{filename}",
+                )
                 if digest == checksum:
                     matching.append(candidate)
         if not matching:
@@ -593,7 +649,7 @@ def _copy_fd_to_path(source_fd: int, destination: Path, mode: int) -> str:
             os.close(source_copy)
     finally:
         os.close(output_fd)
-    if hashlib.sha256(destination.read_bytes()).digest() != digest.digest():
+    if bytes.fromhex(_sha256_regular_file(destination)) != digest.digest():
         fail("moriarty_staged_executable_digest_mismatch")
     os.chmod(destination, mode)
     return digest.hexdigest()
@@ -654,7 +710,7 @@ def _stable_stage_source(source: Path, destination: Path, toolchain_root: Path) 
         or first.st_mtime_ns != last.st_mtime_ns
     ):
         fail("moriarty_toolchain_source_identity_changed_during_stage")
-    if hashlib.sha256(destination.read_bytes()).digest() != first_hash.digest():
+    if bytes.fromhex(_sha256_regular_file(destination)) != first_hash.digest():
         fail("moriarty_toolchain_stage_digest_mismatch")
     os.chmod(destination, 0o500 if first.st_mode & 0o111 else 0o400)
 

@@ -373,13 +373,43 @@ def validate_probe_map() -> None:
         require(not moriarty._same_trusted_inode(moriarty.CARGO_TRUSTED, moriarty.RUSTUP_TRUSTED), "MORIARTY Cargo still points at Rustup shim")
         require(not moriarty._same_trusted_inode(moriarty.RUSTC_TRUSTED, moriarty.RUSTUP_TRUSTED), "MORIARTY rustc still points at Rustup shim")
         require(Path(moriarty.CARGO_TRUSTED.executable).parent == Path(moriarty.RUSTC_TRUSTED.executable).parent, "MORIARTY concrete Cargo/rustc toolchain mismatch")
-    require(moriarty._git_env().get("GIT_NO_REPLACE_OBJECTS") == "1", "MORIARTY Git replacement objects are not disabled")
+    git_env = moriarty._git_env()
+    require(git_env.get("GIT_NO_REPLACE_OBJECTS") == "1", "MORIARTY Git replacement objects are not disabled")
+    require(git_env.get("GIT_CONFIG_KEY_0") == "core.fsmonitor" and git_env.get("GIT_CONFIG_VALUE_0") == "false", "MORIARTY Git fsmonitor execution is not neutralized")
+    require(git_env.get("GIT_CONFIG_KEY_1") == "core.hooksPath" and git_env.get("GIT_CONFIG_VALUE_1") == "/dev/null", "MORIARTY Git hooks path is not neutralized")
+    require(Path("/usr") in Path(moriarty.PYTHON_TRUSTED.executable).resolve(strict=True).parents, "MORIARTY Python runtime is not system-prefixed")
     require(moriarty._index_flags_output_clean(b"H tools/run_moriarty.py\n"), "normal Git index flag parser failed")
     require(not moriarty._index_flags_output_clean(b"h tools/run_moriarty.py\n"), "assume-unchanged index flag was accepted")
     require(not moriarty._index_flags_output_clean(b"S tools/run_moriarty.py\n"), "skip-worktree index flag was accepted")
     digest = hashlib.sha256()
     bounded_count, overflow = moriarty.bounded_output_update(digest, moriarty.MAX_PROBE_OUTPUT_BYTES - 1, b"AB")
     require(bounded_count == moriarty.MAX_PROBE_OUTPUT_BYTES and overflow is True, "MORIARTY output overflow bound regression failed")
+    require(moriarty._normalize_probe_output(b"x /tmp/private-run/a", Path("/tmp/private-run")) == b"x <WORK>/a", "MORIARTY workspace output normalization regression failed")
+
+    bad_exit = {
+        "schema": moriarty.COUNTEREXAMPLE_SCHEMA,
+        "counterexample_id": "sha256:" + "0" * 64,
+        "target_commit": git_head(),
+        "attack_id": "MOR-001",
+        "family": next(iter(moriarty.EXPECTED_FAMILIES)),
+        "owner_phases": ["phase0"],
+        "boundary_ids": ["phase0"],
+        "regression_probe_ids": ["phase0"],
+        "failure_kind": "exit_nonzero",
+        "observed_exit_code": 2**31,
+        "stdout_sha256": "sha256:" + "0" * 64,
+        "stderr_sha256": "sha256:" + "0" * 64,
+        "stdout_bytes": 0,
+        "stderr_bytes": 0,
+        "status": "unresolved",
+        "resolution_commit": None,
+        "production_credentials_used": False,
+        "production_targets_used": False,
+        "constitutional_bypass_used": False,
+        "authority_effect": "none",
+    }
+    bad_exit["counterexample_id"] = moriarty.canonical_ref(moriarty.counterexample_identity_projection(bad_exit))
+    _expect_reject(lambda: moriarty.validate_counterexample_shape(bad_exit), "counterexample signed-32-bit exit bound")
 
     stale = moriarty.TrustedExecutable(
         name=moriarty.PYTHON_TRUSTED.name,
@@ -403,6 +433,7 @@ def validate_runner_source() -> None:
         "proc_fd_path(trusted.fd)", "pass_fds=pass_fds", "create_exact_export",
         "create_isolated_cargo_home", "create_verified_cargo_template", "probe_isolation_preexec",
         "stage_rust_toolchain_runtime", "git_archive_bytes", "trusted_capture_bounded", "index_flags_clean",
+        "_verified_commit_files", "_git_object_id", "_normalize_probe_output", "stdin=subprocess.DEVNULL",
         "write_report_exclusive", "--frozen", "candidate",
         "GIT_NO_REPLACE_OBJECTS", "RUSTUP_DISCOVERY_USED", "_rustup_which", "bounded_output_update",
         "enable_child_subreaper", "_kill_probe_tree", "post_exit_deadline", "termination_deadline",

@@ -341,6 +341,12 @@ def _rustup_which(rustup: TrustedExecutable, toolchain: str, component: str) -> 
 
 
 def _direct_toolchain_root(cargo: TrustedExecutable, rustc: TrustedExecutable) -> Path:
+    """Accept only a genuinely self-contained direct Rust toolchain.
+
+    Distribution layouts whose sysroot is /usr or /usr/local are deliberately
+    rejected: staging those roots would copy unrelated system trees and would
+    not constitute a bounded toolchain snapshot.
+    """
     completed = trusted_run(
         rustc,
         ("--print", "sysroot"),
@@ -357,16 +363,28 @@ def _direct_toolchain_root(cargo: TrustedExecutable, rustc: TrustedExecutable) -
     except (UnicodeError, OSError):
         fail("moriarty_direct_rustc_sysroot_invalid")
     expected_bin = root / "bin"
+    system_roots = {Path("/"), Path("/usr"), Path("/usr/local")}
     if (
-        Path(cargo.executable).parent != expected_bin
+        root in system_roots
+        or Path(cargo.executable).parent != expected_bin
         or Path(rustc.executable).parent != expected_bin
-        or not (root / "lib").is_dir()
+        or not (root / "lib" / "rustlib").is_dir()
+        or not (expected_bin / "rustdoc").is_file()
     ):
         fail("moriarty_direct_toolchain_not_self_contained")
     return root
 
 
-PYTHON_TRUSTED = _trusted_executable("python3", preferred=Path(sys.executable))
+_python_preferred = Path(sys.executable)
+try:
+    _python_preferred_resolved = _python_preferred.resolve(strict=True)
+except OSError:
+    _python_preferred_resolved = Path("/")
+if Path("/usr") not in _python_preferred_resolved.parents:
+    _python_preferred = None
+PYTHON_TRUSTED = _trusted_executable("python3", preferred=_python_preferred)
+if Path("/usr") not in Path(PYTHON_TRUSTED.executable).resolve(strict=True).parents:
+    fail("moriarty_python_runtime_outside_system_prefix")
 GIT_TRUSTED = _trusted_executable("git")
 CARGO_ENTRY_TRUSTED = _trusted_executable("cargo")
 RUSTC_ENTRY_TRUSTED = _trusted_executable("rustc")
@@ -468,6 +486,14 @@ def _git_env() -> dict[str, str]:
         "GIT_CONFIG_GLOBAL": "/dev/null",
         "GIT_ATTR_NOSYSTEM": "1",
         "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_OPTIONAL_LOCKS": "0",
+        "GIT_CONFIG_COUNT": "3",
+        "GIT_CONFIG_KEY_0": "core.fsmonitor",
+        "GIT_CONFIG_VALUE_0": "false",
+        "GIT_CONFIG_KEY_1": "core.hooksPath",
+        "GIT_CONFIG_VALUE_1": "/dev/null",
+        "GIT_CONFIG_KEY_2": "core.attributesFile",
+        "GIT_CONFIG_VALUE_2": "/dev/null",
     }
 
 
@@ -496,6 +522,94 @@ def git_head() -> str:
     return head
 
 
+_VERIFIED_TREE_CACHE: tuple[str, dict[str, tuple[str, str, bytes]]] | None = None
+
+
+def _git_object_id(kind: str, payload: bytes) -> str:
+    return hashlib.sha1(f"{kind} {len(payload)}\0".encode("ascii") + payload).hexdigest()
+
+
+def _verified_git_object(kind: str, object_id: str, limit: int) -> bytes:
+    if not TARGET_RE.fullmatch(object_id):
+        fail("moriarty_git_object_id_invalid")
+    payload = trusted_capture_bounded(
+        GIT_TRUSTED,
+        ("cat-file", kind, object_id),
+        limit=limit,
+        cwd=ROOT,
+        env=_git_env(),
+        overflow_error="moriarty_git_object_too_large",
+        command_error="moriarty_git_object_read_failed",
+    )
+    if _git_object_id(kind, payload) != object_id:
+        fail(f"moriarty_git_{kind}_object_hash_mismatch")
+    return payload
+
+
+def _verified_commit_files(commit: str) -> dict[str, tuple[str, str, bytes]]:
+    global _VERIFIED_TREE_CACHE
+    if _VERIFIED_TREE_CACHE is not None and _VERIFIED_TREE_CACHE[0] == commit:
+        return _VERIFIED_TREE_CACHE[1]
+    if not git_commit_exists(commit):
+        fail("moriarty_exact_export_commit_missing")
+    commit_payload = _verified_git_object("commit", commit, 1_048_576)
+    first_line = commit_payload.split(b"\n", 1)[0]
+    if not first_line.startswith(b"tree "):
+        fail("moriarty_commit_tree_header_missing")
+    try:
+        root_tree = first_line[5:].decode("ascii", errors="strict")
+    except UnicodeError:
+        fail("moriarty_commit_tree_id_invalid")
+    if not TARGET_RE.fullmatch(root_tree):
+        fail("moriarty_commit_tree_id_invalid")
+
+    files: dict[str, tuple[str, str, bytes]] = {}
+    total_payload = 0
+
+    def walk(tree_id: str, prefix: str) -> None:
+        nonlocal total_payload
+        tree_payload = _verified_git_object("tree", tree_id, MAX_GIT_ARCHIVE_BYTES)
+        cursor = 0
+        while cursor < len(tree_payload):
+            space = tree_payload.find(b" ", cursor)
+            nul = tree_payload.find(b"\0", space + 1 if space >= 0 else cursor)
+            if space <= cursor or nul <= space or nul + 21 > len(tree_payload):
+                fail("moriarty_git_tree_object_malformed")
+            mode_bytes = tree_payload[cursor:space]
+            name_bytes = tree_payload[space + 1:nul]
+            object_id = tree_payload[nul + 1:nul + 21].hex()
+            cursor = nul + 21
+            try:
+                mode = mode_bytes.decode("ascii", errors="strict")
+                name = name_bytes.decode("utf-8", errors="strict")
+            except UnicodeError:
+                fail("moriarty_git_tree_entry_encoding_invalid")
+            if not name or name in {".", ".."} or "/" in name or "\\" in name:
+                fail("moriarty_git_tree_entry_name_invalid")
+            relative = f"{prefix}/{name}" if prefix else name
+            if relative in files:
+                fail("moriarty_git_tree_duplicate_path")
+            if mode == "40000":
+                walk(object_id, relative)
+            elif mode in {"100644", "100755"}:
+                remaining = MAX_GIT_ARCHIVE_BYTES - total_payload
+                if remaining <= 0:
+                    fail("moriarty_exact_export_archive_too_large")
+                blob = _verified_git_object("blob", object_id, remaining)
+                total_payload += len(blob)
+                if total_payload > MAX_GIT_ARCHIVE_BYTES:
+                    fail("moriarty_exact_export_archive_too_large")
+                files[relative] = (mode, object_id, blob)
+            else:
+                fail("moriarty_exact_export_nonregular_entry_forbidden")
+        if cursor != len(tree_payload):
+            fail("moriarty_git_tree_object_malformed")
+
+    walk(root_tree, "")
+    _VERIFIED_TREE_CACHE = (commit, files)
+    return files
+
+
 def _index_flags_output_clean(raw: bytes) -> bool:
     try:
         lines = raw.decode("utf-8", errors="strict").splitlines()
@@ -515,68 +629,109 @@ def index_flags_clean() -> bool:
     return completed.returncode == 0 and _index_flags_output_clean(completed.stdout)
 
 
-def tracked_tree_clean() -> bool:
+def _index_entries() -> dict[str, tuple[str, str]] | None:
+    completed = git("ls-files", "-s", "-z")
+    if completed.returncode != 0:
+        return None
+    entries: dict[str, tuple[str, str]] = {}
+    for record in completed.stdout.split(b"\0"):
+        if not record:
+            continue
+        try:
+            metadata, raw_path = record.split(b"\t", 1)
+            mode, object_id, stage = metadata.decode("ascii", errors="strict").split(" ")
+            path = raw_path.decode("utf-8", errors="strict")
+        except (ValueError, UnicodeError):
+            return None
+        if stage != "0" or mode not in {"100644", "100755"} or not TARGET_RE.fullmatch(object_id) or path in entries:
+            return None
+        entries[path] = (mode, object_id)
+    return entries
+
+
+def _worktree_file_matches(path: str, mode: str, object_id: str, expected_size: int) -> bool:
+    candidate = ROOT / path
+    try:
+        initial = candidate.lstat()
+    except OSError:
+        return False
+    if not stat.S_ISREG(initial.st_mode) or candidate.is_symlink():
+        return False
+    if bool(initial.st_mode & 0o111) != (mode == "100755") or initial.st_size != expected_size:
+        return False
+    try:
+        fd = os.open(candidate, os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0))
+    except OSError:
+        return False
+    digest = hashlib.sha1()
+    digest.update(f"blob {initial.st_size}\0".encode("ascii"))
+    total = 0
+    try:
+        opened = os.fstat(fd)
+        if opened.st_dev != initial.st_dev or opened.st_ino != initial.st_ino or opened.st_size != initial.st_size:
+            return False
+        while True:
+            chunk = os.read(fd, 65_536)
+            if not chunk:
+                break
+            total += len(chunk)
+            digest.update(chunk)
+        final = os.fstat(fd)
+    finally:
+        os.close(fd)
     return (
-        git("diff", "--quiet", "HEAD", "--").returncode == 0
-        and git("diff", "--cached", "--quiet", "--").returncode == 0
-        and index_flags_clean()
+        total == expected_size
+        and final.st_dev == opened.st_dev
+        and final.st_ino == opened.st_ino
+        and final.st_size == opened.st_size
+        and final.st_mtime_ns == opened.st_mtime_ns
+        and digest.hexdigest() == object_id
+    )
+
+
+def tracked_tree_clean() -> bool:
+    if not index_flags_clean():
+        return False
+    try:
+        target = git_head()
+        files = _verified_commit_files(target)
+    except SystemExit:
+        return False
+    index = _index_entries()
+    expected_index = {path: (mode, object_id) for path, (mode, object_id, _) in files.items()}
+    if index != expected_index:
+        return False
+    return all(
+        _worktree_file_matches(path, mode, object_id, len(blob))
+        for path, (mode, object_id, blob) in files.items()
     )
 
 
 def harness_files_match_target(target: str, extra_paths: Sequence[str] = ()) -> bool:
+    try:
+        files = _verified_commit_files(target)
+    except SystemExit:
+        return False
     for path in (*HARNESS_PATHS, *extra_paths):
-        completed = git("show", f"{target}:{path}")
-        if completed.returncode != 0:
+        expected = files.get(path)
+        if expected is None:
             return False
         try:
             actual = (ROOT / path).read_bytes()
         except OSError:
             return False
-        if actual != completed.stdout:
+        if actual != expected[2]:
             return False
     return True
 
 
 def git_archive_bytes(commit: str) -> bytes:
-    """Build a bounded tar from commit tree/blob objects, bypassing archive attributes."""
-    if not git_commit_exists(commit):
-        fail("moriarty_exact_export_commit_missing")
-    listing = trusted_capture_bounded(
-        GIT_TRUSTED,
-        ("ls-tree", "-r", "-z", "--full-tree", commit),
-        limit=MAX_GIT_ARCHIVE_BYTES,
-        cwd=ROOT,
-        env=_git_env(),
-        overflow_error="moriarty_exact_export_tree_listing_too_large",
-        command_error="moriarty_exact_export_ls_tree_failed",
-    )
+    """Build a bounded tar from hash-verified commit/tree/blob objects."""
+    files = _verified_commit_files(commit)
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w:") as archive:
-        for raw_record in listing.split(b"\0"):
-            if not raw_record:
-                continue
-            try:
-                metadata, raw_path = raw_record.split(b"\t", 1)
-                mode, object_type, object_id = metadata.decode("ascii", errors="strict").split(" ")
-                relative = raw_path.decode("utf-8", errors="strict")
-            except (ValueError, UnicodeError):
-                fail("moriarty_exact_export_tree_record_invalid")
-            if object_type != "blob" or mode not in {"100644", "100755"}:
-                fail("moriarty_exact_export_nonregular_entry_forbidden")
-            if not relative or relative.startswith("/") or any(part in {"", ".", ".."} for part in Path(relative).parts):
-                fail("moriarty_exact_export_tree_path_invalid")
-            remaining = MAX_GIT_ARCHIVE_BYTES - buffer.tell()
-            if remaining <= 0:
-                fail("moriarty_exact_export_archive_too_large")
-            blob = trusted_capture_bounded(
-                GIT_TRUSTED,
-                ("cat-file", "blob", object_id),
-                limit=remaining,
-                cwd=ROOT,
-                env=_git_env(),
-                overflow_error="moriarty_exact_export_archive_too_large",
-                command_error="moriarty_exact_export_blob_read_failed",
-            )
+        for relative in sorted(files):
+            mode, _, blob = files[relative]
             info = tarfile.TarInfo(relative)
             info.size = len(blob)
             info.mode = 0o755 if mode == "100755" else 0o644
@@ -593,11 +748,18 @@ def git_archive_bytes(commit: str) -> bytes:
 
 
 def git_commit_exists(commit: str) -> bool:
-    return bool(TARGET_RE.fullmatch(commit)) and git("cat-file", "-e", f"{commit}^{{commit}}").returncode == 0
+    if not TARGET_RE.fullmatch(commit):
+        return False
+    completed = git("cat-file", "-t", commit)
+    return completed.returncode == 0 and completed.stdout == b"commit\n"
 
 
 def git_is_ancestor(ancestor: str, descendant: str) -> bool:
-    return git("merge-base", "--is-ancestor", ancestor, descendant).returncode == 0
+    return (
+        git_commit_exists(ancestor)
+        and git_commit_exists(descendant)
+        and git("merge-base", "--is-ancestor", ancestor, descendant).returncode == 0
+    )
 
 
 def _probe_environment(
@@ -772,7 +934,12 @@ def validate_counterexample_shape(item: Any) -> None:
         fail("moriarty_counterexample_boundary_invalid")
 
     if item["failure_kind"] == "exit_nonzero":
-        if not isinstance(item["observed_exit_code"], int) or isinstance(item["observed_exit_code"], bool) or item["observed_exit_code"] == 0:
+        if (
+            not isinstance(item["observed_exit_code"], int)
+            or isinstance(item["observed_exit_code"], bool)
+            or item["observed_exit_code"] == 0
+            or not -(2**31) <= item["observed_exit_code"] <= 2**31 - 1
+        ):
             fail("moriarty_exit_failure_requires_nonzero_exit_code")
     elif item["observed_exit_code"] is not None:
         fail("moriarty_nonexit_failure_exit_code_must_be_null")
@@ -953,6 +1120,15 @@ def _classify_rust_failure(stderr: bytes) -> str:
     return "rust_exit_other"
 
 
+
+def _normalize_probe_output(data: bytes, workspace_root: Path) -> bytes:
+    """Remove the private per-run workspace prefix from reproducibility metadata."""
+    root = os.fsencode(str(workspace_root.resolve()))
+    if not root:
+        fail("moriarty_workspace_normalization_root_invalid")
+    return data.replace(root, b"<WORK>")
+
+
 def _probe_failure_result(probe_id: str, kind: str, diagnostic: bytes) -> dict[str, Any]:
     bounded = diagnostic[:MAX_PROBE_OUTPUT_BYTES]
     return {
@@ -1035,6 +1211,7 @@ def run_probe(
                 rustdoc_exec if probe_id == "rust_all" else None,
                 rust_lib,
             ),
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             start_new_session=True,
@@ -1051,6 +1228,7 @@ def run_probe(
     digests = {"stdout": hashlib.sha256(), "stderr": hashlib.sha256()}
     counts = {"stdout": 0, "stderr": 0}
     truncated = {"stdout": False, "stderr": False}
+    captured = {"stdout": bytearray(), "stderr": bytearray()}
     stderr_sample = bytearray()
     deadline = time.monotonic() + TIMEOUT_SECONDS
     post_exit_deadline: float | None = None
@@ -1109,6 +1287,9 @@ def run_probe(
                 if probe_id == "rust_all" and stream_name == "stderr" and len(stderr_sample) < MAX_DIAGNOSTIC_SAMPLE_BYTES:
                     remaining_sample = MAX_DIAGNOSTIC_SAMPLE_BYTES - len(stderr_sample)
                     stderr_sample.extend(chunk[:remaining_sample])
+                remaining_capture = max(0, MAX_PROBE_OUTPUT_BYTES - len(captured[stream_name]))
+                if remaining_capture:
+                    captured[stream_name].extend(chunk[:remaining_capture])
                 counts[stream_name], overflow = bounded_output_update(
                     digests[stream_name], counts[stream_name], chunk
                 )
@@ -1160,15 +1341,19 @@ def run_probe(
         if failure_kind is None:
             failure_kind = "exit_nonzero"
 
+    normalized = {
+        name: _normalize_probe_output(bytes(captured[name]), source_root.parent)
+        for name in ("stdout", "stderr")
+    }
     return {
         "probe_id": probe_id,
         "ok": ok,
         "exit_code": return_code if failure_kind == "exit_nonzero" or ok else None,
         "failure_kind": failure_kind,
-        "stdout_sha256": "sha256:" + digests["stdout"].hexdigest(),
-        "stderr_sha256": "sha256:" + digests["stderr"].hexdigest(),
-        "stdout_bytes": counts["stdout"],
-        "stderr_bytes": counts["stderr"],
+        "stdout_sha256": bytes_ref(normalized["stdout"]),
+        "stderr_sha256": bytes_ref(normalized["stderr"]),
+        "stdout_bytes": len(normalized["stdout"]),
+        "stderr_bytes": len(normalized["stderr"]),
         "stdout_truncated": truncated["stdout"],
         "stderr_truncated": truncated["stderr"],
         "diagnostic_class": _classify_rust_failure(bytes(stderr_sample)) if probe_id == "rust_all" and not ok else None,

@@ -191,3 +191,6 @@ python3 tools/run_moriarty.py \
 ```
 
 The report is intentionally ephemeral. Phase 11 may archive the report associated with the final frozen release, but repository source does not pre-claim that an unexecuted future commit has passed.
+
+
+Runtime hardening notes: probe stdin is always harness-owned `/dev/null`; reproducibility digests normalize only the private per-run MORIARTY workspace prefix; Git commit/tree/blob bytes are rehashed before export; repository-local fsmonitor/hooks are neutralized; non-system Python and non-self-contained direct Rust installations fail closed rather than importing mutable runtime trees. Cargo package archives are hashed through bounded streaming descriptors before admission.
