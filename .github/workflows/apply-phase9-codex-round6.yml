@@ -1,0 +1,31 @@
+name: apply-phase9-codex-round6
+
+on:
+  push:
+    branches: [agent/phase9-moriarty-graduation]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/phase9-moriarty-graduation
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Apply Codex round 6 hardening
+        run: |
+          python3 tools/apply_phase9_codex_round6.py
+          python3 -m py_compile tools/run_moriarty.py tools/validate_phase9_gate.py tools/moriarty_isolation.py
+          python3 -m json.tool schemas/moriarty-report-v1.schema.json >/dev/null
+          git diff --check
+          rm -rf tools/__pycache__
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tools/run_moriarty.py tools/validate_phase9_gate.py schemas/moriarty-report-v1.schema.json MORIARTY.md
+          git commit -m "Harden Phase 9 accepted-counterexample replay lifecycle"
+          git push origin HEAD:agent/phase9-moriarty-graduation
