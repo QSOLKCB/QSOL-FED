@@ -20,6 +20,15 @@ jobs:
           persist-credentials: true
       - name: Apply final hardening
         run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('tools/apply_phase9_final_hardening.py')
+          text = path.read_text(encoding='utf-8')
+          start = text.index("    apply_step = '''      - name: Apply final Phase 9 hardening")
+          end_marker = '    text = replace_once(text, apply_step, \'\', "remove self patch step")\n'
+          end = text.index(end_marker, start) + len(end_marker)
+          path.write_text(text[:start] + text[end:], encoding='utf-8')
+          PY
           python3 tools/apply_phase9_final_hardening.py
           python3 -m py_compile tools/moriarty_isolation.py tools/run_moriarty.py tools/validate_phase9_gate.py
           git diff --check
