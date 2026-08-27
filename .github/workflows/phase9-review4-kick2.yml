@@ -1,8 +1,13 @@
 name: phase9-review4-kick2
 
 on:
-  pull_request:
-    types: [synchronize]
+  push:
+    branches:
+      - agent/phase9-moriarty-graduation
+
+concurrency:
+  group: phase9-review4-repair
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -13,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: agent/phase9-moriarty-graduation
+          ref: ${{ github.sha }}
           fetch-depth: 0
       - name: Apply structural review repair
         run: |
