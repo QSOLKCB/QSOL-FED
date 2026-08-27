@@ -50,7 +50,7 @@ theorem capability_requires_explicit_local_allow (peer advertisement : Bool) :
       authenticatedAdvertisement := advertisement
       explicitLocalAllow := false
     } = false := by
-  simp [capabilityAllowed]
+  cases peer <;> cases advertisement <;> rfl
 
 theorem capability_requires_peer_admission (advertisement localAllow : Bool) :
     capabilityAllowed {
@@ -58,7 +58,7 @@ theorem capability_requires_peer_admission (advertisement localAllow : Bool) :
       authenticatedAdvertisement := advertisement
       explicitLocalAllow := localAllow
     } = false := by
-  simp [capabilityAllowed]
+  cases advertisement <;> cases localAllow <;> rfl
 
 theorem capability_requires_authenticated_advertisement (peer localAllow : Bool) :
     capabilityAllowed {
@@ -66,7 +66,7 @@ theorem capability_requires_authenticated_advertisement (peer localAllow : Bool)
       authenticatedAdvertisement := false
       explicitLocalAllow := localAllow
     } = false := by
-  simp [capabilityAllowed]
+  cases peer <;> cases localAllow <;> rfl
 
 /-! Import non-authority and provenance preservation -/
 
@@ -94,8 +94,10 @@ theorem lifecycle_prefix_is_transitive
       cases hbc with
       | intro tail2 hc =>
           refine ⟨tail1 ++ tail2, ?_⟩
-          rw [hc, hb]
-          simp [List.append_assoc]
+          calc
+            c = b ++ tail2 := hc
+            _ = (a ++ tail1) ++ tail2 := congrArg (fun xs => xs ++ tail2) hb
+            _ = a ++ (tail1 ++ tail2) := List.append_assoc a tail1 tail2
 
 /-! Partition sovereignty -/
 
