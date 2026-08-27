@@ -57,11 +57,11 @@ structure SignedAdmission where
   localAuthorityGranted : Bool
   deriving DecidableEq, Repr
 
-/-- The local admission gate is authoritative: a rejected request has no local authority. -/
+/-- Accepting signed material as data still grants no local governance authority. -/
 def signedAdmission (signatureValid : Bool) (localAdmission : Admission) : SignedAdmission :=
   { signatureValid := signatureValid
     localAdmission := localAdmission
-    localAuthorityGranted := localAdmission == .acceptAsData && false }
+    localAuthorityGranted := false }
 
 structure PeerRelation where
   peered : Bool
@@ -123,11 +123,11 @@ structure RejoinResult where
 
 /-- Partition rejoin never rewrites local sovereign state. A changed snapshot requires
 an explicit reconciliation path. -/
-def rejoinPartition (local : SovereignState) (sameSnapshot : Bool) : RejoinResult :=
+def rejoinPartition (state : SovereignState) (sameSnapshot : Bool) : RejoinResult :=
   if sameSnapshot then
-    { localState := local, reconciliationRequired := false }
+    { localState := state, reconciliationRequired := false }
   else
-    { localState := local, reconciliationRequired := true }
+    { localState := state, reconciliationRequired := true }
 
 abbrev CanonicalBytes := List UInt8
 
