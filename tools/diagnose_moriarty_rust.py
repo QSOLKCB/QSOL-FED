@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import tempfile
 from pathlib import Path
+from typing import Callable
 
 import moriarty_isolation as isolation
 import run_moriarty as moriarty
@@ -29,6 +30,46 @@ def _record(stage_results: list[dict[str, object]], stage: str, result: dict[str
     return bool(result["ok"])
 
 
+def _write_only_seccomp_preexec(
+    _read_exec_paths: tuple[Path, ...],
+    _read_paths: tuple[Path, ...],
+    writable_paths: tuple[Path, ...],
+):
+    writable = tuple(Path(path).resolve(strict=True) for path in writable_paths if Path(path).exists())
+
+    def _apply() -> None:
+        isolation.apply_landlock_write_policy(writable)
+        isolation.apply_network_seccomp_policy()
+
+    return _apply
+
+
+def _full_landlock_no_seccomp_preexec(
+    read_exec_paths: tuple[Path, ...],
+    read_paths: tuple[Path, ...],
+    writable_paths: tuple[Path, ...],
+):
+    read_exec = tuple(Path(path).resolve(strict=True) for path in read_exec_paths if Path(path).exists())
+    readable = tuple(Path(path).resolve(strict=True) for path in read_paths if Path(path).exists())
+    writable = tuple(Path(path).resolve(strict=True) for path in writable_paths if Path(path).exists())
+
+    def _apply() -> None:
+        isolation.apply_landlock_policy(read_exec, readable, writable, allow_self_proc=True)
+
+    return _apply
+
+
+def _no_policy_preexec(
+    _read_exec_paths: tuple[Path, ...],
+    _read_paths: tuple[Path, ...],
+    _writable_paths: tuple[Path, ...],
+):
+    def _apply() -> None:
+        return None
+
+    return _apply
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--target-commit", required=True)
@@ -44,6 +85,7 @@ def main() -> int:
     stage_results: list[dict[str, object]] = []
     first_failed: str | None = None
     original_argv = moriarty.PROBES["rust_all"]
+    original_preexec = moriarty.probe_isolation_preexec
 
     with tempfile.TemporaryDirectory(prefix="qsol-fed-moriarty-rust-diag-") as work_dir:
         workspace = Path(work_dir)
@@ -74,8 +116,8 @@ def main() -> int:
             rustdoc_exec = None
 
         try:
-            # First prove that the staged compiler can compile a source-owned,
-            # zero-dependency crate under the exact same Landlock/seccomp policy.
+            # This crate is generated here, has zero dependencies, and is never
+            # part of MORIARTY evidence. It is safe to use for policy bisection.
             minimal = workspace / "minimal-src"
             (minimal / "src").mkdir(parents=True)
             (minimal / "Cargo.toml").write_text(
@@ -88,23 +130,38 @@ def main() -> int:
             )
             (minimal / "src/lib.rs").write_text("pub fn diagnostic_value() -> u8 { 1 }\n", encoding="utf-8")
             isolation.seal_read_only_tree(minimal)
-            minimal_label = "stage-control-minimal-check"
-            minimal_cargo = isolation.create_isolated_cargo_home(cargo_template, workspace, minimal_label)
             moriarty.PROBES["rust_all"] = (original_argv[0], "check", "--lib", "--frozen")
-            minimal_result = moriarty.run_probe(
-                "rust_all",
-                workspace / f"home-{minimal_label}",
-                minimal,
-                minimal_cargo,
-                workspace / f"target-{minimal_label}",
-                python_exec,
-                cargo_exec,
-                rustc_exec,
-                rustdoc_exec,
-                rust_runtime,
+
+            policy_matrix: tuple[tuple[str, Callable[..., object]], ...] = (
+                ("minimal_full", original_preexec),
+                ("minimal_write_only_seccomp", _write_only_seccomp_preexec),
+                ("minimal_full_landlock_no_seccomp", _full_landlock_no_seccomp_preexec),
+                ("minimal_no_policy", _no_policy_preexec),
             )
-            if not _record(stage_results, "minimal_check", minimal_result):
-                first_failed = "minimal_check"
+            full_ok = False
+            for index, (stage, preexec_factory) in enumerate(policy_matrix):
+                moriarty.probe_isolation_preexec = preexec_factory
+                label = f"policy-{index}-{stage}"
+                cargo_home = isolation.create_isolated_cargo_home(cargo_template, workspace, label)
+                result = moriarty.run_probe(
+                    "rust_all",
+                    workspace / f"home-{label}",
+                    minimal,
+                    cargo_home,
+                    workspace / f"target-{label}",
+                    python_exec,
+                    cargo_exec,
+                    rustc_exec,
+                    rustdoc_exec,
+                    rust_runtime,
+                )
+                ok = _record(stage_results, stage, result)
+                if stage == "minimal_full":
+                    full_ok = ok
+
+            moriarty.probe_isolation_preexec = original_preexec
+            if not full_ok:
+                first_failed = "minimal_full"
             else:
                 for index, (stage, tail) in enumerate(STAGES):
                     moriarty.PROBES["rust_all"] = (original_argv[0], *tail)
@@ -128,6 +185,7 @@ def main() -> int:
                         break
         finally:
             moriarty.PROBES["rust_all"] = original_argv
+            moriarty.probe_isolation_preexec = original_preexec
 
     diagnostic = {
         "schema": "moriarty-rust-stage-diagnostic/1",
