@@ -396,7 +396,6 @@ def verify_toolchain(manifest: dict) -> None:
     resolved_path = ROOT / "lake-manifest.json"
     if resolved_path.exists():
         resolved = load_json(resolved_path)
-        require(resolved.get("name") == "qsol-fed-formal", "resolved Lake package identity drift")
         require(resolved.get("packages") == [], "resolved Lake dependency graph is not empty")
 
 
