@@ -101,7 +101,7 @@ def _bootstrap_tree_entry(tree_payload: bytes, wanted: str) -> tuple[str, str]:
     cursor = 0
     while cursor < len(tree_payload):
         space = tree_payload.find(b" ", cursor)
-        nul = tree_payload.find(b"\\0", space + 1 if space >= 0 else cursor)
+        nul = tree_payload.find(b"\x00", space + 1 if space >= 0 else cursor)
         if space <= cursor or nul <= space or nul + 21 > len(tree_payload):
             raise SystemExit("moriarty_bootstrap_tree_malformed")
         mode = tree_payload[cursor:space].decode("ascii", errors="strict")
@@ -115,7 +115,7 @@ def _bootstrap_tree_entry(tree_payload: bytes, wanted: str) -> tuple[str, str]:
 
 def _bootstrap_verified_blob(target: str, relative: str) -> bytes:
     commit_payload = _bootstrap_git_object("commit", target)
-    first_line = commit_payload.split(b"\\n", 1)[0]
+    first_line = commit_payload.split(b"\n", 1)[0]
     if not first_line.startswith(b"tree "):
         raise SystemExit("moriarty_bootstrap_commit_tree_missing")
     tree_id = first_line[5:].decode("ascii", errors="strict")
