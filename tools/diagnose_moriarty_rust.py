@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+"""Closed, non-authoritative stage diagnostic for MORIARTY Rust isolation."""
+from __future__ import annotations
+
+import argparse
+import tempfile
+from pathlib import Path
+
+import moriarty_isolation as isolation
+import run_moriarty as moriarty
+from qsol_canonical import serialize
+
+
+STAGES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("metadata", ("metadata", "--format-version", "1", "--no-deps", "--frozen")),
+    ("check_lib", ("check", "--lib", "--frozen")),
+    ("test_no_run", ("test", "--all-targets", "--no-run", "--frozen")),
+    ("test_full", ("test", "--all-targets", "--frozen")),
+)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--target-commit", required=True)
+    parser.add_argument("--output", required=True)
+    args = parser.parse_args()
+
+    target = args.target_commit
+    if moriarty.git_head() != target:
+        raise SystemExit("moriarty_diag_target_mismatch")
+    if not moriarty.tracked_tree_clean() or not moriarty.harness_files_match_target(target):
+        raise SystemExit("moriarty_diag_dirty_or_unbound_harness")
+
+    stage_results: list[dict[str, object]] = []
+    first_failed: str | None = None
+    original_argv = moriarty.PROBES["rust_all"]
+
+    with tempfile.TemporaryDirectory(prefix="qsol-fed-moriarty-rust-diag-") as work_dir:
+        workspace = Path(work_dir)
+        control = isolation.create_exact_export(target, workspace, moriarty.git_archive_bytes, "control")
+        cargo_template = isolation.create_verified_cargo_template(
+            moriarty.REAL_HOME / ".cargo", workspace, control / "Cargo.lock"
+        )
+        python_exec = isolation.stage_executable_from_fd(
+            moriarty.PYTHON_TRUSTED.fd, workspace / "python-runtime" / "python3"
+        )
+
+        rust_runtime: Path | None = None
+        if moriarty.RUSTUP_DISCOVERY_USED:
+            rust_source_root = Path(moriarty.CARGO_TRUSTED.executable).parent.parent
+            rust_runtime = isolation.stage_rust_toolchain_runtime(
+                rust_source_root,
+                workspace / "rust-runtime",
+                moriarty.CARGO_TRUSTED.fd,
+                moriarty.RUSTC_TRUSTED.fd,
+            )
+            cargo_exec = rust_runtime / "bin" / "cargo"
+            rustc_exec = rust_runtime / "bin" / "rustc"
+            rustdoc_candidate = rust_runtime / "bin" / "rustdoc"
+            rustdoc_exec = rustdoc_candidate if rustdoc_candidate.is_file() else None
+        else:
+            cargo_exec = Path(moriarty.CARGO_TRUSTED.executable)
+            rustc_exec = Path(moriarty.RUSTC_TRUSTED.executable)
+            rustdoc_exec = None
+
+        try:
+            for index, (stage, tail) in enumerate(STAGES):
+                moriarty.PROBES["rust_all"] = (original_argv[0], *tail)
+                label = f"stage-{index}-{stage}"
+                source = isolation.create_exact_export(target, workspace, moriarty.git_archive_bytes, label)
+                cargo_home = isolation.create_isolated_cargo_home(cargo_template, workspace, label)
+                result = moriarty.run_probe(
+                    "rust_all",
+                    workspace / f"home-{label}",
+                    source,
+                    cargo_home,
+                    workspace / f"target-{label}",
+                    python_exec,
+                    cargo_exec,
+                    rustc_exec,
+                    rustdoc_exec,
+                    rust_runtime,
+                )
+                stage_results.append({
+                    "stage": stage,
+                    "ok": result["ok"],
+                    "exit_code": result["exit_code"],
+                    "failure_kind": result["failure_kind"],
+                })
+                if not result["ok"]:
+                    first_failed = stage
+                    break
+        finally:
+            moriarty.PROBES["rust_all"] = original_argv
+
+    diagnostic = {
+        "schema": "moriarty-rust-stage-diagnostic/1",
+        "target_commit": target,
+        "first_failed_stage": first_failed,
+        "stages": stage_results,
+        "raw_output_persisted": False,
+        "authority_effect": "none",
+    }
+    output = Path(args.output).resolve()
+    isolation.write_report_exclusive(output, serialize(diagnostic).encode("utf-8"), moriarty.ROOT)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
