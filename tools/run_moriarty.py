@@ -680,6 +680,7 @@ RUSTC_EXE = RUSTC_TRUSTED.invocation
 # finder serves exact-export tool modules only when their names do not collide with a
 # standard-library module. This prevents tracked tools/json.py-style shadowing.
 PYTHON_PROBE_BOOTSTRAP = r"""
+import builtins
 import importlib.abc
 import importlib.util
 import pathlib
@@ -698,7 +699,7 @@ class ExactToolsLoader(importlib.abc.Loader):
         module.__file__ = str(self.path)
         module.__cached__ = None
         code = compile(self.path.read_bytes(), str(self.path), "exec", dont_inherit=True, optimize=0)
-        exec(code, module.__dict__)
+        getattr(builtins, "exec")(code, module.__dict__)
 
 class ExactToolsFinder(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
@@ -713,7 +714,7 @@ sys.meta_path.insert(0, ExactToolsFinder())
 sys.path[:] = [entry for entry in sys.path if entry not in {"", str(root), str(tools)}]
 sys.argv = [str(validator)]
 namespace = {"__name__": "__main__", "__file__": str(validator), "__package__": None, "__cached__": None}
-exec(compile(validator.read_bytes(), str(validator), "exec", dont_inherit=True, optimize=0), namespace)
+getattr(builtins, "exec")(compile(validator.read_bytes(), str(validator), "exec", dont_inherit=True, optimize=0), namespace)
 """
 
 PYTHON_VALIDATORS = {
