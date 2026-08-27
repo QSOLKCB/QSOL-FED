@@ -1,0 +1,6 @@
+name = "qsol-fed-formal"
+version = "0.11.0"
+defaultTargets = ["QSOLFed"]
+
+[[lean_lib]]
+name = "QSOLFed"
