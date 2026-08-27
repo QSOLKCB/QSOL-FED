@@ -4,8 +4,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import subprocess
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +24,23 @@ TARGET_TREE = "93f23cd7eda6dd92ae13b7bb96bee01935b80731"
 LEAN_TOOLCHAIN = "leanprover/lean4:v4.33.1"
 LEAN_ARCHIVE_SHA256 = "890afd185370f85666025b883914ab4f4b339136f8c96167b69cfb62aecaf235"
 EXPECTED_THEOREM_COUNT = 47
+EXPECTED_FROZEN_INPUTS = {
+    "ROADMAP.md": "42db05b1106e11cfb116920a5f4d8a2d92d60a66",
+    "PRIME_DIRECTIVE.md": "ad6b5cdae5f8ada9b48f8066e3cb0f68ac9a6c93",
+    "invariants/fed-v1.json": "97b62def1fd42cdc78cb178cddc9f269c98c620b",
+    "wire/phase1.json": "1d34ac72d5d07c3f6b5bd28337eb6606cf44e782",
+    "crypto/phase2.json": "042a850ccef4a058be595e955a87797d5e108e47",
+    "state/phase4.json": "c9d7bcfcab9cd4581dc179a56071d7da1df97b13",
+    "state/phase5a-holodeck.json": "bbb030469dcd66f4af37664c732820e6b6f0d760",
+    "state/phase5.json": "5d2c22c46e9059668054a1dcb64facf071334505",
+    "state/phase6.json": "c4eafb645c888d97f1d38e5eb1fe600e5aa49d0e",
+    "state/phase7.json": "458c28c8ac075a6b3dcc2ea7189c3c77f0170a71",
+    "state/phase8.json": "b855104b4fe4c97342b5bd48b248ca915e578703",
+    "state/phase9.json": "c2bd1415cc86d27873a4432adb00d2306b87dbb0",
+    "claims/phase9.json": "9ee94894169b0085c7282ac6c98a51b794eb0221",
+    "fixtures/phase9/attack-corpus.json": "77d1a04e0912eec98613fc496478a04e6bae6cd6",
+    "schemas/moriarty-report-v1.schema.json": "2c1992a796c48265309770653923effdb65b4f79",
+}
 PLACEHOLDER_RE = re.compile(r"\b(?:sorry|admit)\b")
 DECL_RE_TEMPLATE = r"\btheorem\s+{name}\b"
 AXIOM_PRINT_RE = re.compile(r"(?m)^[ \t]*#print[ \t]+axioms[ \t]+QSOLFed\.([a-z][a-z0-9_]*)[ \t]*$")
@@ -334,19 +353,22 @@ def verify_moriarty_binding(manifest: dict) -> None:
 
 def verify_frozen_inputs(manifest: dict) -> set[str]:
     items = manifest.get("frozen_inputs")
-    require(isinstance(items, list) and items, "frozen_inputs must be a nonempty list")
-    seen: set[str] = set()
+    require(isinstance(items, list), "frozen_inputs must be a list")
+    require(len(items) == len(EXPECTED_FROZEN_INPUTS), "frozen input inventory count drift")
+    observed: dict[str, str] = {}
     for item in items:
-        require(set(item) == {"path", "git_blob_sha1"}, "frozen input field set drift")
+        require(isinstance(item, dict) and set(item) == {"path", "git_blob_sha1"}, "frozen input field set drift")
         path = item["path"]
         blob = item["git_blob_sha1"]
-        require(isinstance(path, str) and path and path not in seen, f"invalid/duplicate frozen input path: {path!r}")
+        require(isinstance(path, str) and path and path not in observed, f"invalid/duplicate frozen input path: {path!r}")
         require(re.fullmatch(r"[0-9a-f]{40}", blob) is not None, f"invalid frozen input blob: {path}")
+        observed[path] = blob
+    require(observed == EXPECTED_FROZEN_INPUTS, "frozen input inventory/path/blob drift")
+    for path, blob in EXPECTED_FROZEN_INPUTS.items():
         actual = git("rev-parse", f"{TARGET_TAG}:{path}")
         require(actual == blob, f"frozen input blob drift: {path}: {actual} != {blob}")
         require(git("cat-file", "-t", actual) == "blob", f"frozen input is not a blob: {path}")
-        seen.add(path)
-    return seen
+    return set(observed)
 
 
 def verify_toolchain(manifest: dict) -> None:
@@ -356,6 +378,26 @@ def verify_toolchain(manifest: dict) -> None:
     require(toolchain.get("lean_toolchain") == LEAN_TOOLCHAIN, "manifest lean-toolchain drift")
     require(toolchain.get("archive_sha256") == LEAN_ARCHIVE_SHA256, "manifest Lean archive checksum drift")
     require(toolchain.get("external_dependencies") == [], "Phase 10 must remain dependency-free beyond Lean core")
+
+    lakefile_path = ROOT / "lakefile.toml"
+    require(lakefile_path.is_file(), "lakefile.toml missing")
+    try:
+        lakefile = tomllib.loads(lakefile_path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as exc:
+        raise GateError(f"lakefile.toml invalid: {exc}") from exc
+    expected_lakefile = {
+        "name": "qsol-fed-formal",
+        "version": "0.11.0",
+        "defaultTargets": ["QSOLFed"],
+        "lean_lib": [{"name": "QSOLFed"}],
+    }
+    require(_json_equal(lakefile, expected_lakefile), "lakefile dependency/configuration drift")
+
+    resolved_path = ROOT / "lake-manifest.json"
+    if resolved_path.exists():
+        resolved = load_json(resolved_path)
+        require(resolved.get("name") == "qsol-fed-formal", "resolved Lake package identity drift")
+        require(resolved.get("packages") == [], "resolved Lake dependency graph is not empty")
 
 
 def verify_theorems(manifest: dict, frozen_inputs: set[str]) -> None:
@@ -415,7 +457,14 @@ def verify_no_placeholders() -> None:
 def verify_manifest_policy(manifest: dict) -> None:
     require(manifest.get("schema") == "qsol-fed-lean-phase10-manifest/1", "manifest schema drift")
     require(manifest.get("protocol") == "qsol-fed/0" and manifest.get("phase") == 10, "manifest protocol/phase drift")
-    require(manifest.get("status") in {"IMPLEMENTED_PENDING_CI", "LEAN_VERIFIED_ON_BRANCH", "LEAN_VERIFIED_ON_MERGED_MAIN"}, "manifest verification status drift")
+    status = manifest.get("status")
+    require(status in {"IMPLEMENTED_PENDING_CI", "LEAN_VERIFIED_ON_BRANCH", "LEAN_VERIFIED_ON_MERGED_MAIN"}, "manifest verification status drift")
+    if status == "LEAN_VERIFIED_ON_MERGED_MAIN":
+        require(os.environ.get("GITHUB_EVENT_NAME") == "push", "merged-main status requires GitHub push context")
+        require(os.environ.get("GITHUB_REF") == "refs/heads/main", "merged-main status requires refs/heads/main")
+        event_sha = os.environ.get("GITHUB_SHA", "")
+        require(re.fullmatch(r"[0-9a-f]{40}", event_sha) is not None, "merged-main status requires exact GitHub SHA")
+        require(git("rev-parse", "HEAD") == event_sha, "merged-main status SHA differs from checked-out commit")
     assumptions = manifest.get("assumptions")
     require(isinstance(assumptions, list) and {x.get("id") for x in assumptions} == {"MODEL_SCOPE", "CANONICAL_BYTES_INPUT", "REAL_WORLD_PRINCIPALS"}, "named assumptions drift")
     nonclaims = set(manifest.get("nonclaims", []))
@@ -456,6 +505,10 @@ def verify_phase10_contracts(manifest: dict, schema: dict) -> None:
     claims = load_json(CLAIMS_PATH)
     phase9_claims = load_json(ROOT / "claims/phase9.json")
     phase8_claims = load_json(ROOT / "claims/phase8.json")
+    try:
+        frozen_phase9_claims = json.loads(git("show", f"{TARGET_TAG}:claims/phase9.json"))
+    except json.JSONDecodeError as exc:
+        raise GateError(f"frozen Phase 9 claims invalid JSON: {exc}") from exc
 
     require(state.get("document_type") == "qsol-fed-phase10-lean-contract" and state.get("phase") == "10", "Phase 10 state contract identity drift")
     source = state.get("source_release", {})
@@ -468,11 +521,21 @@ def verify_phase10_contracts(manifest: dict, schema: dict) -> None:
 
     require(claims.get("document_type") == "qsol-fed-phase10-lean-claims" and claims.get("phase") == "10", "Phase 10 claim identity drift")
     require(claims.get("claim_surface_changed") is False, "Phase 10 must not change runtime capability claims")
-    require(claims.get("capabilities") == phase9_claims.get("capabilities") == phase8_claims.get("capabilities"), "Phase 10 capability map differs from Phase 9/8 baseline")
+    frozen_capabilities = frozen_phase9_claims.get("capabilities")
+    require(isinstance(frozen_capabilities, dict), "frozen Phase 9 capability baseline missing")
+    require(claims.get("capabilities") == frozen_capabilities, "Phase 10 capability map differs from immutable v0.11.0 Phase 9 baseline")
+    require(phase9_claims.get("capabilities") == frozen_capabilities, "working Phase 9 capability map differs from immutable v0.11.0 baseline")
+    require(phase8_claims.get("capabilities") == frozen_capabilities, "working Phase 8 capability map differs from immutable v0.11.0 baseline")
     assurance = claims.get("formalization_assurance", {})
     require(assurance.get("theorem_count") == EXPECTED_THEOREM_COUNT, "Phase 10 formalization assurance theorem count drift")
     require(assurance.get("unresolved_sorry_or_admit") is False and assurance.get("custom_axioms") is False and assurance.get("graduation_theorem_kernel_axiom_dependencies") is False, "Phase 10 formalization assurance proof-discipline drift")
-    require(assurance.get("whole_implementation_verified") is False and assurance.get("deployment_security_proof") is False and assurance.get("source_release_rewritten") is False, "Phase 10 formalization assurance overclaim")
+    require(
+        assurance.get("whole_implementation_verified") is False
+        and assurance.get("deployment_security_proof") is False
+        and assurance.get("source_release_rewritten") is False
+        and assurance.get("formalization_creates_authority") is False,
+        "Phase 10 formalization assurance overclaim",
+    )
 
     require(schema.get("$id") == "https://qsol.example/schemas/lean-phase10-manifest-v1.schema.json", "Phase 10 manifest schema ID drift")
     properties = schema.get("properties", {})

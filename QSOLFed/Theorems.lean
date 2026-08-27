@@ -35,7 +35,9 @@ theorem signature_validity_does_not_create_authority (valid : Bool) :
     authorityFromSignature valid = false := rfl
 
 theorem valid_signature_does_not_bypass_local_rejection :
-    (signedAdmission true .reject).localAuthorityGranted = false := rfl
+    (signedAdmission true .reject).localAdmission = .reject ∧
+    (signedAdmission true .reject).localAuthorityGranted = false := by
+  exact ⟨rfl, rfl⟩
 
 /-! Peering / capability separation -/
 
