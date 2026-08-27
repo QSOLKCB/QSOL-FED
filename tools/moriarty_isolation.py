@@ -8,6 +8,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import stat
 import sys
 import tarfile
@@ -24,6 +25,8 @@ MAX_CARGO_ARCHIVE_BYTES = 64 * 1024 * 1024
 MAX_CARGO_INDEX_BYTES = 16 * 1024 * 1024
 MAX_CARGO_INDEX_ENTRIES = 16_384
 MAX_CARGO_INDEX_DEPTH = 16
+_CARGO_PACKAGE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
+_CARGO_PACKAGE_VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$")
 
 _LANDLOCK_CREATE_RULESET = 444
 _LANDLOCK_ADD_RULE = 445
@@ -244,12 +247,14 @@ def _socket_syscalls() -> tuple[int, int, int, int]:
     fail("moriarty_network_seccomp_arch_unsupported")
 
 
-def _signal_syscalls() -> tuple[int, int, int, int]:
+def _signal_syscalls() -> tuple[int, int, int, int, int, int]:
     machine = os.uname().machine
     if machine == "x86_64":
-        return (62, 200, 234, 424)
+        # kill, tkill, tgkill, pidfd_send_signal, rt_sigqueueinfo, rt_tgsigqueueinfo
+        return (62, 200, 234, 424, 129, 297)
     if machine == "aarch64":
-        return (129, 130, 131, 424)
+        # asm-generic signal-delivery syscall numbers.
+        return (129, 130, 131, 424, 138, 240)
     fail("moriarty_signal_seccomp_arch_unsupported")
 
 
@@ -279,7 +284,7 @@ def apply_network_seccomp_policy(harness_pid: int, harness_pgid: int) -> None:
     deny = _SECCOMP_RET_ERRNO | errno.EPERM
     allow = _SECCOMP_RET_ALLOW
     socket_nr, socketpair_nr, connect_nr, audit_arch = _socket_syscalls()
-    kill_nr, tkill_nr, tgkill_nr, pidfd_signal_nr = _signal_syscalls()
+    kill_nr, tkill_nr, tgkill_nr, pidfd_signal_nr, rt_sigqueueinfo_nr, rt_tgsigqueueinfo_nr = _signal_syscalls()
     forbidden_targets = (
         harness_pid & 0xFFFFFFFF,
         (-harness_pgid) & 0xFFFFFFFF,
@@ -294,7 +299,7 @@ def apply_network_seccomp_policy(harness_pid: int, harness_pgid: int) -> None:
     for number in (*_io_uring_syscalls(), pidfd_signal_nr, *_process_memory_syscalls()):
         instructions.append(_SockFilter(_BPF_JMP_JEQ_K, 0, 1, number))
         instructions.append(_SockFilter(_BPF_RET_K, 0, 0, deny))
-    for number in (kill_nr, tkill_nr, tgkill_nr):
+    for number in (kill_nr, tkill_nr, tgkill_nr, rt_sigqueueinfo_nr, rt_tgsigqueueinfo_nr):
         block: list[_SockFilter] = [_SockFilter(_BPF_LD_W_ABS, 0, 0, _SECCOMP_DATA_ARG0_OFFSET)]
         for target in forbidden_targets:
             block.append(_SockFilter(_BPF_JMP_JEQ_K, 0, 1, target))
@@ -592,6 +597,8 @@ def _locked_registry_packages(cargo_lock: Path) -> list[tuple[str, str, str]]:
             not isinstance(name, str)
             or not isinstance(version, str)
             or not isinstance(checksum, str)
+            or _CARGO_PACKAGE_NAME_RE.fullmatch(name) is None
+            or _CARGO_PACKAGE_VERSION_RE.fullmatch(version) is None
             or len(checksum) != 64
             or any(ch not in "0123456789abcdef" for ch in checksum)
         ):
@@ -624,12 +631,19 @@ def create_verified_cargo_template(
         bound_prefix="moriarty_cargo_index",
     )
     cache_root = real_cargo_home / "registry" / "cache"
+    cache_root_resolved = cache_root.resolve(strict=True) if cache_root.exists() else None
+    template_resolved = template.resolve(strict=True)
     for name, version, checksum in _locked_registry_packages(cargo_lock):
         filename = f"{name}-{version}.crate"
+        if Path(filename).name != filename or "/" in filename or "\\" in filename:
+            fail("moriarty_cargo_lock_registry_package_path_invalid")
         candidates = sorted(cache_root.glob(f"*/{filename}")) if cache_root.exists() else []
         matching: list[Path] = []
         for candidate in candidates:
             if candidate.is_file() and not candidate.is_symlink():
+                resolved_candidate = candidate.resolve(strict=True)
+                if cache_root_resolved is None or not resolved_candidate.is_relative_to(cache_root_resolved):
+                    fail("moriarty_cargo_archive_escaped_cache_root")
                 digest = _sha256_regular_file(
                     candidate,
                     max_bytes=MAX_CARGO_ARCHIVE_BYTES,
@@ -650,7 +664,13 @@ def create_verified_cargo_template(
             continue
         selected = matching[0]
         cache_namespace = selected.parent.name
-        _copy_regular_file(selected, template / "registry" / "cache" / cache_namespace / filename, checksum)
+        destination = template / "registry" / "cache" / cache_namespace / filename
+        if not destination.is_relative_to(template) or not destination.parent.is_relative_to(template):
+            fail("moriarty_cargo_archive_destination_escape")
+        _copy_regular_file(selected, destination, checksum)
+        resolved_destination = destination.resolve(strict=True)
+        if not resolved_destination.is_relative_to(template_resolved):
+            fail("moriarty_cargo_archive_destination_escape")
     if (template / "registry" / "src").exists():
         fail("moriarty_cargo_template_must_not_copy_registry_src")
     seal_read_only_tree(template)

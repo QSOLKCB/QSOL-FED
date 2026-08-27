@@ -6,8 +6,8 @@ import argparse
 from dataclasses import dataclass
 import hashlib
 import io
-import importlib.machinery
-import importlib.util
+import builtins
+import types
 import json
 import os
 import pwd
@@ -144,13 +144,18 @@ def _load_verified_source_module(name: str, target: str):
         raise SystemExit(f"moriarty_bootstrap_source_unavailable:{name}")
     if actual != expected:
         raise SystemExit(f"moriarty_bootstrap_source_mismatch:{name}")
-    loader = importlib.machinery.SourceFileLoader(name, str(path))
-    spec = importlib.util.spec_from_loader(name, loader)
-    if spec is None:
-        raise SystemExit(f"moriarty_bootstrap_spec_unavailable:{name}")
-    module = importlib.util.module_from_spec(spec)
+    module = types.ModuleType(name)
+    module.__file__ = str(path)
+    module.__package__ = ""
+    module.__loader__ = None
+    module.__spec__ = None
     sys.modules[name] = module
-    loader.exec_module(module)
+    try:
+        code = compile(expected, str(path), "exec", dont_inherit=True, optimize=0)
+        getattr(builtins, "exec")(code, module.__dict__)
+    except BaseException:
+        sys.modules.pop(name, None)
+        raise
     return module
 
 _BOOTSTRAP_TARGET = _bootstrap_target()
@@ -960,7 +965,18 @@ def _system_read_exec_paths() -> tuple[Path, ...]:
 
 
 def _system_read_paths() -> tuple[Path, ...]:
-    return tuple(path for path in (Path("/etc"), Path("/dev/urandom"), Path("/dev/random")) if path.exists())
+    # Credential-free runtime metadata only. Never grant recursive /etc access.
+    candidates = (
+        Path("/etc/ld.so.cache"),
+        Path("/etc/localtime"),
+        Path("/etc/nsswitch.conf"),
+        Path("/etc/passwd"),
+        Path("/etc/group"),
+        Path("/etc/hosts"),
+        Path("/dev/urandom"),
+        Path("/dev/random"),
+    )
+    return tuple(path for path in candidates if path.is_file() and not path.is_symlink())
 
 
 def _system_writable_files() -> tuple[Path, ...]:
@@ -1905,6 +1921,9 @@ def main() -> int:
         write_report_exclusive(diagnostic_path, serialize(diagnostic).encode("utf-8"), ROOT)
     if git_head() != target or not tracked_tree_clean() or not harness_files_match_target(target):
         fail("moriarty_target_or_harness_changed_during_report_publication")
+
+    # Authenticate the exact report bytes across the runner/validator process boundary.
+    print(f"MORIARTY_REPORT_SHA256={hashlib.sha256(encoded).hexdigest()}")
 
     if report["graduated"]:
         print(

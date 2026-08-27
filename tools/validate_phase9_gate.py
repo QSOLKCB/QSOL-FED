@@ -6,10 +6,11 @@ import argparse
 import copy
 import os
 import hashlib
-import importlib.machinery
-import importlib.util
+import builtins
+import types
 import json
 import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -137,13 +138,18 @@ def _load_verified_source_module(name: str, target: str):
         raise SystemExit(f"moriarty_bootstrap_source_unavailable:{name}")
     if actual != expected:
         raise SystemExit(f"moriarty_bootstrap_source_mismatch:{name}")
-    loader = importlib.machinery.SourceFileLoader(name, str(path))
-    spec = importlib.util.spec_from_loader(name, loader)
-    if spec is None:
-        raise SystemExit(f"moriarty_bootstrap_spec_unavailable:{name}")
-    module = importlib.util.module_from_spec(spec)
+    module = types.ModuleType(name)
+    module.__file__ = str(path)
+    module.__package__ = ""
+    module.__loader__ = None
+    module.__spec__ = None
     sys.modules[name] = module
-    loader.exec_module(module)
+    try:
+        code = compile(expected, str(path), "exec", dont_inherit=True, optimize=0)
+        getattr(builtins, "exec")(code, module.__dict__)
+    except BaseException:
+        sys.modules.pop(name, None)
+        raise
     return module
 
 _BOOTSTRAP_TARGET = _bootstrap_target()
@@ -595,6 +601,9 @@ def validate_probe_map() -> None:
     require(0 < moriarty.MAX_GIT_TREE_ENTRIES <= 65536, "MORIARTY Git tree entry bound invalid")
     require(0 < moriarty.MAX_GIT_TREE_METADATA_BYTES <= moriarty.MAX_GIT_ARCHIVE_BYTES, "MORIARTY Git tree metadata bound invalid")
     require(0 < moriarty.MAX_GIT_PATH_BYTES <= 4096, "MORIARTY Git path bound invalid")
+    system_reads = moriarty._system_read_paths()
+    require(Path("/etc") not in system_reads, "MORIARTY recursive /etc read access reintroduced")
+    require(all(path.is_file() and not path.is_dir() for path in system_reads), "MORIARTY system read allowlist contains a directory")
 
     bad_exit = {
         "schema": moriarty.COUNTEREXAMPLE_SCHEMA,
@@ -639,7 +648,7 @@ def validate_runner_source() -> None:
     source = (ROOT / "tools/run_moriarty.py").read_text(encoding="utf-8")
     validator_bootstrap = "\n".join((ROOT / "tools/validate_phase9_gate.py").read_text(encoding="utf-8").splitlines()[:180])
     require("sys.path.insert" not in validator_bootstrap, "Phase 9 validator bootstrap reintroduced checkout import search")
-    require("_bootstrap_verified_blob" in validator_bootstrap and "SourceFileLoader" in validator_bootstrap, "Phase 9 validator bootstrap is not target-byte verified")
+    require("_bootstrap_verified_blob" in validator_bootstrap and "compile(expected" in validator_bootstrap and "SourceFileLoader" not in validator_bootstrap, "Phase 9 validator bootstrap does not execute verified target bytes directly")
     for marker in (
         "provider-neutral-fixed-probe/1", "moriarty-counterexample/1", "moriarty-report/1",
         "PROBES: dict[str, tuple[str, ...]]", "PROBE_EXECUTABLES", "TrustedExecutable",
@@ -656,7 +665,7 @@ def validate_runner_source() -> None:
         "counterexample_identity_projection", "verify_accepted_counterexamples",
         "production_credentials_used", "production_targets_used", "constitutional_bypass_used",
         "security_proof", "no_counterexample_found_implies_none_exist", "stdout_truncated", "stderr_truncated",
-        "_bootstrap_verified_blob", "SourceFileLoader", "ALLOWED_OWNER_PHASES", "_RUNTIME_NORMALIZATIONS", "close_fds=True",
+        "_bootstrap_verified_blob", "compile(expected", "ALLOWED_OWNER_PHASES", "_RUNTIME_NORMALIZATIONS", "close_fds=True",
     ):
         require(marker in source, f"MORIARTY runner marker missing: {marker}")
     require("accepted_external" not in source, "MORIARTY runner still admits accepted_external")
@@ -848,6 +857,17 @@ def validate_isolation_negative_tests(target: str) -> None:
         oversized_index = ambient / "registry" / "index" / "oversized"
         oversized_index.write_bytes(b"")
         os.truncate(oversized_index, moriarty._moriarty_isolation.MAX_CARGO_INDEX_BYTES + 1)
+        traversal_lock = root / "Cargo-traversal.lock"
+        traversal_lock.write_text(
+            'version = 4\n\n[[package]]\nname = "../../payload"\nversion = "1.0.0"\nsource = "registry+https://github.com/rust-lang/crates.io-index"\nchecksum = "' + good_sha + '"\n',
+            encoding="utf-8",
+        )
+        workspace_traversal = root / "workspace-traversal"
+        workspace_traversal.mkdir()
+        _expect_reject(
+            lambda: moriarty.create_verified_cargo_template(ambient, workspace_traversal, traversal_lock),
+            "Cargo.lock package path traversal",
+        )
         workspace_index = root / "workspace-index"
         workspace_index.mkdir()
         _expect_reject(
@@ -1014,14 +1034,33 @@ else:
 import ctypes
 libc = ctypes.CDLL(None, use_errno=True)
 libc.syscall.restype = ctypes.c_long
+machine = os.uname().machine
+queue_nr, tgqueue_nr = ((129, 297) if machine == "x86_64" else (138, 240))
+for number, args in (
+    (queue_nr, (int(parent_pid), signal.SIGUSR1, ctypes.c_void_p(0))),
+    (tgqueue_nr, (int(parent_pid), int(parent_pid), signal.SIGUSR1, ctypes.c_void_p(0))),
+):
+    ctypes.set_errno(0)
+    result = libc.syscall(number, *args)
+    if result != -1 or ctypes.get_errno() != errno.EPERM:
+        raise SystemExit(8)
+forbidden_etc = Path("/etc/hostname")
+if forbidden_etc.exists():
+    try:
+        forbidden_etc.read_bytes()
+    except PermissionError:
+        pass
+    else:
+        raise SystemExit(9)
+ctypes.set_errno(0)
 result = libc.syscall(425, 1, ctypes.c_void_p(0))
 if result != -1 or ctypes.get_errno() != errno.EPERM:
-    raise SystemExit(8)
+    raise SystemExit(10)
 raise SystemExit(0)
 """
         preexec = moriarty.probe_isolation_preexec(
             tuple(path for path in (Path("/usr"), Path("/bin"), Path("/lib"), Path("/lib64")) if path.exists()),
-            tuple(path for path in (Path("/etc"), Path("/dev/urandom"), Path("/dev/random")) if path.exists()),
+            moriarty._system_read_paths(),
             tuple(path for path in (writable, Path("/dev/null")) if path.exists()),
         )
         completed = subprocess.run(
@@ -1080,7 +1119,9 @@ def validate_report_common(report: dict[str, Any], target: str) -> None:
             require(exit_code is None, "timeout/tool_error probe must not expose an exit code")
         for stream in ("stdout", "stderr"):
             if item[f"{stream}_truncated"]:
-                require(item[f"{stream}_bytes"] == moriarty.MAX_PROBE_OUTPUT_BYTES, f"truncated {stream} did not stop at byte bound")
+                # Digests/counts are over normalized bounded evidence, which can be
+                # shorter than the raw 1 MiB prefix after path/timing/PID replacement.
+                require(0 < item[f"{stream}_bytes"] <= moriarty.MAX_PROBE_OUTPUT_BYTES, f"truncated {stream} normalized byte count invalid")
                 require(failure_kind == "tool_error", f"truncated {stream} must be a tool_error")
         for digest in ("stdout_sha256", "stderr_sha256"):
             require(isinstance(item[digest], str) and moriarty.SHA256_REF_RE.fullmatch(item[digest]) is not None, f"MORIARTY probe digest invalid: {digest}")
@@ -1217,6 +1258,48 @@ def failure_diagnostic(report: dict[str, Any]) -> str:
     }, sort_keys=True, separators=(",", ":"))
 
 
+def _runner_report_attestation(stdout: bytes) -> str:
+    prefix = b"MORIARTY_REPORT_SHA256="
+    values = [line[len(prefix):].decode("ascii", errors="strict") for line in stdout.splitlines() if line.startswith(prefix)]
+    require(len(values) == 1 and re.fullmatch(r"[0-9a-f]{64}", values[0]) is not None, "MORIARTY runner report attestation missing or invalid")
+    return values[0]
+
+
+def _read_attested_report(path: Path, expected_sha256: str) -> bytes:
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        raise SystemExit(f"MORIARTY attested report open failed: {exc}")
+    try:
+        before = os.fstat(fd)
+        require(stat.S_ISREG(before.st_mode), "MORIARTY attested report is not a regular file")
+        require(before.st_uid == os.getuid(), "MORIARTY attested report owner drift")
+        require(before.st_nlink == 1, "MORIARTY attested report link-count drift")
+        require(0 <= before.st_size <= moriarty.MAX_REPORT_BYTES, "MORIARTY report exceeds canonical byte bound")
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            chunk = os.read(fd, min(65536, moriarty.MAX_REPORT_BYTES + 1 - total))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+            require(total <= moriarty.MAX_REPORT_BYTES, "MORIARTY report exceeds canonical byte bound")
+        after = os.fstat(fd)
+        require(
+            (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
+            == (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns),
+            "MORIARTY attested report changed during descriptor read",
+        )
+        raw = b"".join(chunks)
+        require(len(raw) == before.st_size, "MORIARTY attested report size drift")
+        require(hashlib.sha256(raw).hexdigest() == expected_sha256, "MORIARTY report bytes do not match runner attestation")
+        return raw
+    finally:
+        os.close(fd)
+
+
 def execute_exact_commit_gate(target: str, report_dir: Path | None) -> None:
     require(git_head() == target, "Phase 9 target commit does not match checked-out HEAD")
     require(moriarty.tracked_tree_clean(), "Phase 9 target tracked tree/index flags are dirty before runner")
@@ -1254,8 +1337,8 @@ def execute_exact_commit_gate(target: str, report_dir: Path | None) -> None:
             "MORIARTY runner did not emit report: "
             + diagnostic[:2048]
         )
-    raw = report_path.read_bytes()
-    require(len(raw) <= moriarty.MAX_REPORT_BYTES, "MORIARTY report exceeds canonical byte bound")
+    attested_sha256 = _runner_report_attestation(completed.stdout)
+    raw = _read_attested_report(report_path, attested_sha256)
     try:
         decoded = raw.decode("utf-8", errors="strict")
         report = json.loads(decoded)
