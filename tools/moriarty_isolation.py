@@ -575,12 +575,51 @@ def _join_probe_cgroup(root: Path) -> None:
         raise OSError(exc.errno, "moriarty_probe_cgroup_join_failed") from exc
 
 
+def _proc_status_unprivileged(status_text: str) -> bool:
+    fields: dict[str, str] = {}
+    for raw_line in status_text.splitlines():
+        if ":" not in raw_line:
+            continue
+        key, value = raw_line.split(":", 1)
+        fields[key] = value.strip()
+    try:
+        uids = tuple(int(value) for value in fields["Uid"].split())
+        gids = tuple(int(value) for value in fields["Gid"].split())
+        capabilities = tuple(
+            int(fields[key], 16)
+            for key in ("CapInh", "CapPrm", "CapEff", "CapAmb")
+        )
+    except (KeyError, ValueError):
+        return False
+    return (
+        len(uids) == 4
+        and len(gids) == 4
+        and len(set(uids)) == 1
+        and len(set(gids)) == 1
+        and uids[0] != 0
+        and gids[0] != 0
+        and all(value == 0 for value in capabilities)
+    )
+
+
+def require_unprivileged_probe_launcher() -> None:
+    if sys.platform != "linux":
+        fail("moriarty_linux_isolation_platform_required")
+    try:
+        status_text = Path("/proc/self/status").read_text(encoding="ascii")
+    except (OSError, UnicodeError):
+        fail("moriarty_launcher_privilege_status_unavailable")
+    if not _proc_status_unprivileged(status_text):
+        fail("moriarty_privileged_probe_launcher_rejected")
+
+
 def probe_isolation_preexec(
     read_exec_paths: tuple[Path, ...],
     read_paths: tuple[Path, ...],
     writable_paths: tuple[Path, ...],
     cgroup_root: Path | None = None,
 ):
+    require_unprivileged_probe_launcher()
     read_exec = tuple(Path(path).resolve(strict=True) for path in read_exec_paths if Path(path).exists())
     readable = tuple(Path(path).resolve(strict=True) for path in read_paths if Path(path).exists())
     writable = tuple(Path(path).resolve(strict=True) for path in writable_paths if Path(path).exists())

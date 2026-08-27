@@ -500,6 +500,28 @@ def validate_schemas_and_fixtures() -> None:
     require(result_props["stdout_bytes"].get("maximum") == moriarty.MAX_PROBE_OUTPUT_BYTES, "report stdout bound schema drift")
     require(result_props["stderr_bytes"].get("maximum") == moriarty.MAX_PROBE_OUTPUT_BYTES, "report stderr bound schema drift")
     require(set(result_props["failure_kind"].get("enum", [])) == {None, "exit_nonzero", "timeout", "tool_error"}, "report failure-kind schema drift")
+    result_item_schema = report_props["probe_results"]["items"]
+    result_conditionals = result_item_schema.get("allOf")
+    require(isinstance(result_conditionals, list) and len(result_conditionals) == 5, "report probe semantic conditional set drift")
+    success_rule = next((rule for rule in result_conditionals if rule.get("if", {}).get("properties", {}).get("ok", {}).get("const") is True), None)
+    require(success_rule is not None, "report probe success conditional missing")
+    success_props = success_rule.get("then", {}).get("properties", {})
+    require(success_props.get("exit_code", {}).get("const") == 0 and success_props.get("failure_kind", {}).get("const", "missing") is None, "report probe success semantics schema drift")
+    require(success_props.get("stdout_truncated", {}).get("const") is False and success_props.get("stderr_truncated", {}).get("const") is False, "report successful probe truncation schema drift")
+    require(replay_item_schema["properties"]["failure_result"].get("allOf") == result_conditionals, "remediation failure-result semantic conditionals drift")
+    replay_conditionals = replay_item_schema.get("allOf")
+    require(isinstance(replay_conditionals, list) and len(replay_conditionals) == 6, "remediation replay semantic conditional set drift")
+    replay_success = next((rule for rule in replay_conditionals if rule.get("if", {}).get("properties", {}).get("ok", {}).get("const") is True), None)
+    require(replay_success is not None and replay_success.get("then", {}).get("properties", {}).get("target_reproduced", {}).get("const") is True, "remediation success semantics schema drift")
+    report_conditionals = report_schema.get("allOf")
+    require(isinstance(report_conditionals, list) and len(report_conditionals) == 2, "report graduation conditional set drift")
+    graduation_rule = next((rule for rule in report_conditionals if rule.get("if", {}).get("properties", {}).get("graduated", {}).get("const") is True), None)
+    require(graduation_rule is not None, "report graduation-success conditional missing")
+    graduation_props = graduation_rule.get("then", {}).get("properties", {})
+    require(graduation_props.get("unresolved_counterexamples", {}).get("const") == 0, "graduated report unresolved-count schema drift")
+    require(graduation_props.get("probe_results", {}).get("items", {}).get("properties", {}).get("ok", {}).get("const") is True, "graduated report probe-green schema drift")
+    require(graduation_props.get("remediation_replays", {}).get("items", {}).get("properties", {}).get("ok", {}).get("const") is True, "graduated report replay-green schema drift")
+    require(graduation_props.get("counterexamples", {}).get("items", {}).get("properties", {}).get("status", {}).get("const") == "resolved", "graduated report counterexample-status schema drift")
     for key in (
         "production_credentials_used", "production_targets_used", "constitutional_bypass_used",
         "security_proof", "no_counterexample_found_implies_none_exist",
@@ -647,6 +669,17 @@ def validate_probe_map() -> None:
             (fake / "src/bin" / name).write_text("", encoding="utf-8")
         (fake / "Cargo.toml").write_text('[package]\nname="qsol-fed"\nversion="0.0.0"\nedition="2024"\n\n[lib]\npath="/dev/null"\n', encoding="utf-8")
         _expect_reject(lambda: moriarty.validate_rust_target_topology(fake), "Cargo target topology override")
+    cleanup_root = Path(os.environ["MORIARTY_PROBE_WRITABLE_ROOT"]).resolve(strict=True) / "cleanup-permission-negative"
+    require(not cleanup_root.exists(), "cleanup negative-test path already exists")
+    locked = cleanup_root / "locked" / "deeper"
+    locked.mkdir(parents=True)
+    (locked / "payload").write_text("probe-controlled", encoding="utf-8")
+    os.chmod(locked, 0)
+    os.chmod(locked.parent, 0)
+    os.chmod(cleanup_root, 0)
+    moriarty._cleanup_probe_writable_paths(cleanup_root)
+    require(not cleanup_root.exists(), "probe cleanup could not reclaim chmod(0) tree")
+
     with tempfile.TemporaryDirectory(prefix="moriarty-python-shadow-") as temp_dir:
         fake = Path(temp_dir)
         (fake / "tools").mkdir()
@@ -661,6 +694,11 @@ def validate_probe_map() -> None:
         )
         require(completed.returncode == 0, "MORIARTY isolated Python bootstrap admitted stdlib shadow")
     isolation = moriarty._moriarty_isolation
+    safe_status = "Uid:\t1000\t1000\t1000\t1000\nGid:\t1000\t1000\t1000\t1000\nCapInh:\t0000000000000000\nCapPrm:\t0000000000000000\nCapEff:\t0000000000000000\nCapAmb:\t0000000000000000\n"
+    require(isolation._proc_status_unprivileged(safe_status), "unprivileged launcher status parser regression failed")
+    require(not isolation._proc_status_unprivileged(safe_status.replace("Uid:\t1000\t1000\t1000\t1000", "Uid:\t0\t0\t0\t0")), "root launcher status was accepted")
+    require(not isolation._proc_status_unprivileged(safe_status.replace("CapEff:\t0000000000000000", "CapEff:\t0000000000000001")), "capability-bearing launcher status was accepted")
+    require(isolation._proc_status_unprivileged(Path("/proc/self/status").read_text(encoding="ascii")), "canonical CI launcher is privileged")
     require(0 < isolation.PROBE_RLIMIT_NPROC <= 256, "MORIARTY process-count ceiling invalid")
     require(0 < isolation.PROBE_RLIMIT_NOFILE <= 512, "MORIARTY descriptor ceiling invalid")
     require(0 < isolation.PROBE_RLIMIT_AS_BYTES <= 2 * 1024 * 1024 * 1024, "MORIARTY address-space ceiling invalid")

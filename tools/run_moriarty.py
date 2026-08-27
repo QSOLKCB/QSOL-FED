@@ -753,6 +753,18 @@ def validate_rust_target_topology(source_root: Path) -> None:
             manifest = tomllib.load(handle)
     except (OSError, tomllib.TOMLDecodeError):
         fail("moriarty_cargo_manifest_invalid")
+    cargo_config_root = source_root / ".cargo"
+    for config_name in ("config", "config.toml"):
+        config_path = cargo_config_root / config_name
+        try:
+            config_info = os.lstat(config_path)
+        except FileNotFoundError:
+            continue
+        except OSError:
+            fail("moriarty_cargo_project_config_unreadable")
+        if stat.S_ISLNK(config_info.st_mode) or stat.S_ISREG(config_info.st_mode) or stat.S_ISDIR(config_info.st_mode):
+            fail(f"moriarty_cargo_project_config_forbidden:{config_name}")
+        fail(f"moriarty_cargo_project_config_forbidden:{config_name}")
     package = manifest.get("package")
     if not isinstance(package, dict) or package.get("name") != "qsol-fed":
         fail("moriarty_cargo_package_identity_drift")
@@ -1859,23 +1871,54 @@ def counterexample_failure_matches(item: dict[str, Any], result: dict[str, Any])
     )
 
 
+def _force_remove_probe_path(path: Path) -> None:
+    """Remove a disposable probe path even after probe-controlled chmod(0)."""
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        return
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+        return
+    try:
+        os.chmod(path, 0o700, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    try:
+        with os.scandir(path) as entries:
+            for entry in entries:
+                child = path / entry.name
+                try:
+                    child_info = entry.stat(follow_symlinks=False)
+                except FileNotFoundError:
+                    continue
+                if stat.S_ISDIR(child_info.st_mode) and not stat.S_ISLNK(child_info.st_mode):
+                    _force_remove_probe_path(child)
+                else:
+                    try:
+                        child.unlink()
+                    except FileNotFoundError:
+                        pass
+                    except IsADirectoryError:
+                        _force_remove_probe_path(child)
+    except FileNotFoundError:
+        return
+    try:
+        path.rmdir()
+    except FileNotFoundError:
+        pass
+
+
 def _cleanup_probe_writable_paths(*paths: Path) -> None:
     root = _probe_writable_root()
     for path in paths:
         absolute = Path(path).absolute()
         if absolute == root or not absolute.is_relative_to(root):
             fail("moriarty_probe_cleanup_path_escape")
-        try:
-            info = os.lstat(absolute)
-        except FileNotFoundError:
-            continue
-        if stat.S_ISLNK(info.st_mode):
-            absolute.unlink()
-        elif stat.S_ISDIR(info.st_mode):
-            shutil.rmtree(absolute)
-        else:
-            absolute.unlink()
-
+        _force_remove_probe_path(absolute)
 
 def _run_probe_with_cleanup(
     probe_id: str,

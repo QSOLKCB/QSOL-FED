@@ -121,7 +121,151 @@
           "stderr_truncated": {
             "type": "boolean"
           }
-        }
+        },
+        "allOf": [
+          {
+            "if": {
+              "type": "object",
+              "properties": {
+                "ok": {
+                  "const": true
+                }
+              },
+              "required": [
+                "ok"
+              ]
+            },
+            "then": {
+              "properties": {
+                "exit_code": {
+                  "const": 0
+                },
+                "failure_kind": {
+                  "const": null
+                },
+                "stdout_truncated": {
+                  "const": false
+                },
+                "stderr_truncated": {
+                  "const": false
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "type": "object",
+              "properties": {
+                "ok": {
+                  "const": false
+                }
+              },
+              "required": [
+                "ok"
+              ]
+            },
+            "then": {
+              "properties": {
+                "failure_kind": {
+                  "enum": [
+                    "exit_nonzero",
+                    "timeout",
+                    "tool_error"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "type": "object",
+              "properties": {
+                "failure_kind": {
+                  "const": "exit_nonzero"
+                }
+              },
+              "required": [
+                "failure_kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "ok": {
+                  "const": false
+                },
+                "exit_code": {
+                  "type": "integer",
+                  "not": {
+                    "const": 0
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "type": "object",
+              "properties": {
+                "failure_kind": {
+                  "enum": [
+                    "timeout",
+                    "tool_error"
+                  ]
+                }
+              },
+              "required": [
+                "failure_kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "ok": {
+                  "const": false
+                },
+                "exit_code": {
+                  "const": null
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "type": "object",
+              "anyOf": [
+                {
+                  "properties": {
+                    "stdout_truncated": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "stdout_truncated"
+                  ]
+                },
+                {
+                  "properties": {
+                    "stderr_truncated": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "stderr_truncated"
+                  ]
+                }
+              ]
+            },
+            "then": {
+              "properties": {
+                "ok": {
+                  "const": false
+                },
+                "failure_kind": {
+                  "const": "tool_error"
+                }
+              }
+            }
+          }
+        ]
       }
     },
     "counterexamples": {
@@ -283,10 +427,437 @@
               "stderr_truncated": {
                 "type": "boolean"
               }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "exit_code": {
+                      "const": 0
+                    },
+                    "failure_kind": {
+                      "const": null
+                    },
+                    "stdout_truncated": {
+                      "const": false
+                    },
+                    "stderr_truncated": {
+                      "const": false
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": false
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "failure_kind": {
+                      "enum": [
+                        "exit_nonzero",
+                        "timeout",
+                        "tool_error"
+                      ]
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "type": "object",
+                  "properties": {
+                    "failure_kind": {
+                      "const": "exit_nonzero"
+                    }
+                  },
+                  "required": [
+                    "failure_kind"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "ok": {
+                      "const": false
+                    },
+                    "exit_code": {
+                      "type": "integer",
+                      "not": {
+                        "const": 0
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "type": "object",
+                  "properties": {
+                    "failure_kind": {
+                      "enum": [
+                        "timeout",
+                        "tool_error"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "failure_kind"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "ok": {
+                      "const": false
+                    },
+                    "exit_code": {
+                      "const": null
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "type": "object",
+                  "anyOf": [
+                    {
+                      "properties": {
+                        "stdout_truncated": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "stdout_truncated"
+                      ]
+                    },
+                    {
+                      "properties": {
+                        "stderr_truncated": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "stderr_truncated"
+                      ]
+                    }
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "ok": {
+                      "const": false
+                    },
+                    "failure_kind": {
+                      "const": "tool_error"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "ok": {
+                  "const": true
+                }
+              },
+              "required": [
+                "ok"
+              ]
+            },
+            "then": {
+              "properties": {
+                "target_reproduced": {
+                  "const": true
+                },
+                "failure_kind": {
+                  "const": null
+                },
+                "failure_result": {
+                  "const": null
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "ok": {
+                  "const": false
+                }
+              },
+              "required": [
+                "ok"
+              ]
+            },
+            "then": {
+              "properties": {
+                "failure_kind": {
+                  "enum": [
+                    "target_failure_not_reproduced",
+                    "resolution_probe_not_green",
+                    "replay_setup_error"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "unresolved"
+                }
+              },
+              "required": [
+                "status"
+              ]
+            },
+            "then": {
+              "properties": {
+                "resolution_green": {
+                  "const": null
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "allOf": [
+                {
+                  "properties": {
+                    "status": {
+                      "const": "resolved"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                },
+                {
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              ]
+            },
+            "then": {
+              "properties": {
+                "resolution_green": {
+                  "const": true
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "failure_kind": {
+                  "const": "target_failure_not_reproduced"
+                }
+              },
+              "required": [
+                "failure_kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "ok": {
+                  "const": false
+                },
+                "target_reproduced": {
+                  "const": false
+                },
+                "failure_result": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "failure_kind": {
+                  "const": "resolution_probe_not_green"
+                }
+              },
+              "required": [
+                "failure_kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "ok": {
+                  "const": false
+                },
+                "target_reproduced": {
+                  "const": true
+                },
+                "resolution_green": {
+                  "const": false
+                },
+                "failure_result": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "graduated": {
+            "const": true
+          }
+        },
+        "required": [
+          "graduated"
+        ]
+      },
+      "then": {
+        "properties": {
+          "unresolved_counterexamples": {
+            "const": 0
+          },
+          "probe_results": {
+            "items": {
+              "properties": {
+                "ok": {
+                  "const": true
+                }
+              },
+              "required": [
+                "ok"
+              ]
+            }
+          },
+          "remediation_replays": {
+            "items": {
+              "properties": {
+                "ok": {
+                  "const": true
+                }
+              },
+              "required": [
+                "ok"
+              ]
+            }
+          },
+          "counterexamples": {
+            "items": {
+              "properties": {
+                "status": {
+                  "const": "resolved"
+                }
+              },
+              "required": [
+                "status"
+              ]
             }
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "graduated": {
+            "const": false
+          }
+        },
+        "required": [
+          "graduated"
+        ]
+      },
+      "then": {
+        "anyOf": [
+          {
+            "properties": {
+              "unresolved_counterexamples": {
+                "minimum": 1
+              }
+            }
+          },
+          {
+            "properties": {
+              "probe_results": {
+                "contains": {
+                  "properties": {
+                    "ok": {
+                      "const": false
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "remediation_replays": {
+                "contains": {
+                  "properties": {
+                    "ok": {
+                      "const": false
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "counterexamples": {
+                "contains": {
+                  "properties": {
+                    "status": {
+                      "const": "unresolved"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
     }
-  }
+  ]
 }
