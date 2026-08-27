@@ -270,10 +270,8 @@ def _socket_syscalls() -> tuple[int, int, int, int]:
 def _signal_syscalls() -> tuple[int, int, int, int, int, int]:
     machine = os.uname().machine
     if machine == "x86_64":
-        # kill, tkill, tgkill, pidfd_send_signal, rt_sigqueueinfo, rt_tgsigqueueinfo
         return (62, 200, 234, 424, 129, 297)
     if machine == "aarch64":
-        # asm-generic signal-delivery syscall numbers.
         return (129, 130, 131, 424, 138, 240)
     fail("moriarty_signal_seccomp_arch_unsupported")
 
@@ -301,15 +299,7 @@ def _prlimit_syscall() -> int:
 
 
 def apply_network_seccomp_policy(harness_pid: int, harness_pgid: int) -> None:
-    """Deny addressable IPC/network creation and probe-to-host control.
-
-    Addressable socket() and connect() are denied outright. Only anonymous
-    socketpair(AF_UNIX) IPC is admitted. Signal-delivery syscalls are denied
-    wholesale because seccomp cannot prove that an arbitrary same-UID PID/TID
-    belongs to the probe subtree. io_uring, pidfd signaling, ptrace/process_vm
-    access, and foreign-PID prlimit64 are also denied. On x86_64, x32 syscall
-    numbers are rejected before native-number dispatch.
-    """
+    """Deny addressable IPC/network creation and probe-to-host control."""
     _ = (harness_pid, harness_pgid)
     libc = _linux_libc()
     deny = _SECCOMP_RET_ERRNO | errno.EPERM
@@ -328,19 +318,11 @@ def apply_network_seccomp_policy(harness_pid: int, harness_pgid: int) -> None:
             _SockFilter(_BPF_RET_K, 0, 0, deny),
         ])
     for number in (
-        *_io_uring_syscalls(),
-        pidfd_signal_nr,
-        kill_nr,
-        tkill_nr,
-        tgkill_nr,
-        rt_sigqueueinfo_nr,
-        rt_tgsigqueueinfo_nr,
-        *_process_memory_syscalls(),
+        *_io_uring_syscalls(), pidfd_signal_nr, kill_nr, tkill_nr, tgkill_nr,
+        rt_sigqueueinfo_nr, rt_tgsigqueueinfo_nr, *_process_memory_syscalls(),
     ):
         instructions.append(_SockFilter(_BPF_JMP_JEQ_K, 0, 1, number))
         instructions.append(_SockFilter(_BPF_RET_K, 0, 0, deny))
-    # prlimit64 is self-only: pid 0 may tighten the probe's own inherited hard
-    # ceiling, while any named PID is denied.
     prlimit_block = [
         _SockFilter(_BPF_LD_W_ABS, 0, 0, _SECCOMP_DATA_ARG0_OFFSET),
         _SockFilter(_BPF_JMP_JEQ_K, 1, 0, 0),
@@ -350,15 +332,12 @@ def apply_network_seccomp_policy(harness_pid: int, harness_pgid: int) -> None:
     instructions.append(_SockFilter(_BPF_JMP_JEQ_K, 0, len(prlimit_block), _prlimit_syscall()))
     instructions.extend(prlimit_block)
     instructions.extend([
-        _SockFilter(_BPF_JMP_JEQ_K, 0, 1, socket_nr),
-        _SockFilter(_BPF_RET_K, 0, 0, deny),
-        _SockFilter(_BPF_JMP_JEQ_K, 0, 1, connect_nr),
-        _SockFilter(_BPF_RET_K, 0, 0, deny),
+        _SockFilter(_BPF_JMP_JEQ_K, 0, 1, socket_nr), _SockFilter(_BPF_RET_K, 0, 0, deny),
+        _SockFilter(_BPF_JMP_JEQ_K, 0, 1, connect_nr), _SockFilter(_BPF_RET_K, 0, 0, deny),
         _SockFilter(_BPF_JMP_JEQ_K, 0, 4, socketpair_nr),
         _SockFilter(_BPF_LD_W_ABS, 0, 0, _SECCOMP_DATA_ARG0_OFFSET),
         _SockFilter(_BPF_JMP_JEQ_K, 0, 1, _AF_UNIX),
-        _SockFilter(_BPF_RET_K, 0, 0, allow),
-        _SockFilter(_BPF_RET_K, 0, 0, deny),
+        _SockFilter(_BPF_RET_K, 0, 0, allow), _SockFilter(_BPF_RET_K, 0, 0, deny),
         _SockFilter(_BPF_RET_K, 0, 0, allow),
     ])
     array_type = _SockFilter * len(instructions)
@@ -377,7 +356,6 @@ def _apply_probe_resource_limits() -> None:
         if target <= 0:
             fail("moriarty_probe_resource_limit_unavailable")
         resource.setrlimit(kind, (target, target))
-
     set_ceiling(resource.RLIMIT_AS, PROBE_RLIMIT_AS_BYTES)
     set_ceiling(resource.RLIMIT_FSIZE, PROBE_RLIMIT_FSIZE_BYTES)
     set_ceiling(resource.RLIMIT_NPROC, PROBE_RLIMIT_NPROC)
@@ -425,12 +403,7 @@ def probe_writable_tree_within_limits(paths: tuple[Path, ...]) -> bool:
 
 
 def _mountinfo_unescape(value: str) -> str:
-    return (
-        value.replace("\\040", " ")
-        .replace("\\011", "\t")
-        .replace("\\012", "\n")
-        .replace("\\134", "\\")
-    )
+    return value.replace("\\040", " ").replace("\\011", "\t").replace("\\012", "\n").replace("\\134", "\\")
 
 
 def _tmpfs_root(path: Path, *, maximum_bytes: int, require_empty: bool, label: str) -> Path:
@@ -443,8 +416,7 @@ def _tmpfs_root(path: Path, *, maximum_bytes: int, require_empty: bool, label: s
         fail(f"moriarty_{label}_root_not_private")
     if not os.path.ismount(root):
         fail(f"moriarty_{label}_root_not_mount")
-
-    fs_type: str | None = None
+    fs_type = None
     try:
         with open("/proc/self/mountinfo", "r", encoding="utf-8") as handle:
             for line in handle:
@@ -452,8 +424,6 @@ def _tmpfs_root(path: Path, *, maximum_bytes: int, require_empty: bool, label: s
                 if "-" not in fields or len(fields) < 7:
                     continue
                 separator = fields.index("-")
-                if separator + 1 >= len(fields):
-                    continue
                 mount_point = Path(_mountinfo_unescape(fields[4]))
                 try:
                     resolved_mount = mount_point.resolve(strict=True)
@@ -466,48 +436,28 @@ def _tmpfs_root(path: Path, *, maximum_bytes: int, require_empty: bool, label: s
         fail(f"moriarty_{label}_mountinfo_unavailable")
     if fs_type != "tmpfs":
         fail(f"moriarty_{label}_root_not_tmpfs")
-
-    try:
-        filesystem = os.statvfs(root)
-    except OSError:
-        fail(f"moriarty_{label}_statvfs_failed")
+    filesystem = os.statvfs(root)
     capacity = filesystem.f_blocks * filesystem.f_frsize
     if capacity <= 0 or capacity > maximum_bytes:
         fail(f"moriarty_{label}_capacity_invalid")
     if require_empty:
-        try:
-            with os.scandir(root) as iterator:
-                if next(iterator, None) is not None:
-                    fail(f"moriarty_{label}_root_not_empty")
-        except OSError:
-            fail(f"moriarty_{label}_root_scan_failed")
+        with os.scandir(root) as iterator:
+            if next(iterator, None) is not None:
+                fail(f"moriarty_{label}_root_not_empty")
     return root
 
 
 def probe_quota_root(path: Path) -> Path:
-    """Require an empty private tmpfs whose allocation ceiling is <= 2 GiB."""
-    return _tmpfs_root(
-        path,
-        maximum_bytes=MAX_PROBE_WRITABLE_BYTES,
-        require_empty=True,
-        label="probe_quota",
-    )
+    return _tmpfs_root(path, maximum_bytes=MAX_PROBE_WRITABLE_BYTES, require_empty=True, label="probe_quota")
 
 
 def cargo_cache_root(path: Path) -> Path:
-    """Require a private quota-backed tmpfs for authenticated Cargo fetch input."""
-    return _tmpfs_root(
-        path,
-        maximum_bytes=MAX_CARGO_CACHE_BYTES,
-        require_empty=False,
-        label="cargo_cache",
-    )
+    return _tmpfs_root(path, maximum_bytes=MAX_CARGO_CACHE_BYTES, require_empty=False, label="cargo_cache")
 
 
 def _parse_cgroup_limit(path: Path, maximum: int, label: str) -> int:
     try:
-        raw = path.read_text(encoding="ascii").strip()
-        value = int(raw, 10)
+        value = int(path.read_text(encoding="ascii").strip(), 10)
     except (OSError, UnicodeError, ValueError):
         fail(f"moriarty_probe_cgroup_{label}_invalid")
     if value <= 0 or value > maximum:
@@ -516,7 +466,6 @@ def _parse_cgroup_limit(path: Path, maximum: int, label: str) -> int:
 
 
 def probe_cgroup_root(path: Path) -> Path:
-    """Require an explicitly bounded cgroup-v2 memory/PID envelope."""
     try:
         root = Path(path).resolve(strict=True)
         cgroup_root = Path("/sys/fs/cgroup").resolve(strict=True)
@@ -532,12 +481,8 @@ def probe_cgroup_root(path: Path) -> Path:
     _parse_cgroup_limit(root / "memory.max", PROBE_CGROUP_MEMORY_BYTES, "memory_max")
     _parse_cgroup_limit(root / "pids.max", PROBE_CGROUP_PIDS, "pids_max")
     swap = root / "memory.swap.max"
-    if swap.is_file():
-        try:
-            if swap.read_text(encoding="ascii").strip() != "0":
-                fail("moriarty_probe_cgroup_swap_not_disabled")
-        except (OSError, UnicodeError):
-            fail("moriarty_probe_cgroup_swap_invalid")
+    if swap.is_file() and swap.read_text(encoding="ascii").strip() != "0":
+        fail("moriarty_probe_cgroup_swap_not_disabled")
     if not os.access(root / "cgroup.procs", os.W_OK):
         fail("moriarty_probe_cgroup_not_delegated")
     return root
@@ -545,14 +490,12 @@ def probe_cgroup_root(path: Path) -> Path:
 
 def probe_cgroup_pids(root: Path) -> tuple[int, ...]:
     try:
-        values = (root / "cgroup.procs").read_text(encoding="ascii").splitlines()
-        return tuple(sorted(int(value) for value in values if value))
+        return tuple(sorted(int(v) for v in (root / "cgroup.procs").read_text(encoding="ascii").splitlines() if v))
     except (OSError, UnicodeError, ValueError):
         fail("moriarty_probe_cgroup_process_list_invalid")
 
 
 def kill_probe_cgroup(root: Path) -> None:
-    """Kill every remaining task in the delegated probe cgroup."""
     for _ in range(8):
         pids = probe_cgroup_pids(root)
         if not pids:
@@ -576,35 +519,21 @@ def _join_probe_cgroup(root: Path) -> None:
 
 
 def _proc_status_unprivileged(status_text: str) -> bool:
-    fields: dict[str, str] = {}
+    fields = {}
     for raw_line in status_text.splitlines():
-        if ":" not in raw_line:
-            continue
-        key, value = raw_line.split(":", 1)
-        fields[key] = value.strip()
+        if ":" in raw_line:
+            key, value = raw_line.split(":", 1)
+            fields[key] = value.strip()
     try:
-        uids = tuple(int(value) for value in fields["Uid"].split())
-        gids = tuple(int(value) for value in fields["Gid"].split())
-        capabilities = tuple(
-            int(fields[key], 16)
-            for key in ("CapInh", "CapPrm", "CapEff", "CapAmb")
-        )
+        uids = tuple(int(v) for v in fields["Uid"].split())
+        gids = tuple(int(v) for v in fields["Gid"].split())
+        capabilities = tuple(int(fields[k], 16) for k in ("CapInh", "CapPrm", "CapEff", "CapAmb"))
     except (KeyError, ValueError):
         return False
-    return (
-        len(uids) == 4
-        and len(gids) == 4
-        and len(set(uids)) == 1
-        and len(set(gids)) == 1
-        and uids[0] != 0
-        and gids[0] != 0
-        and all(value == 0 for value in capabilities)
-    )
+    return len(uids) == 4 and len(gids) == 4 and len(set(uids)) == 1 and len(set(gids)) == 1 and uids[0] != 0 and gids[0] != 0 and all(v == 0 for v in capabilities)
 
 
 def require_unprivileged_probe_launcher() -> None:
-    if sys.platform != "linux":
-        fail("moriarty_linux_isolation_platform_required")
     try:
         status_text = Path("/proc/self/status").read_text(encoding="ascii")
     except (OSError, UnicodeError):
@@ -613,43 +542,31 @@ def require_unprivileged_probe_launcher() -> None:
         fail("moriarty_privileged_probe_launcher_rejected")
 
 
-def probe_isolation_preexec(
-    read_exec_paths: tuple[Path, ...],
-    read_paths: tuple[Path, ...],
-    writable_paths: tuple[Path, ...],
-    cgroup_root: Path | None = None,
-):
+def probe_isolation_preexec(read_exec_paths, read_paths, writable_paths, cgroup_root=None):
     require_unprivileged_probe_launcher()
-    read_exec = tuple(Path(path).resolve(strict=True) for path in read_exec_paths if Path(path).exists())
-    readable = tuple(Path(path).resolve(strict=True) for path in read_paths if Path(path).exists())
-    writable = tuple(Path(path).resolve(strict=True) for path in writable_paths if Path(path).exists())
+    read_exec = tuple(Path(p).resolve(strict=True) for p in read_exec_paths if Path(p).exists())
+    readable = tuple(Path(p).resolve(strict=True) for p in read_paths if Path(p).exists())
+    writable = tuple(Path(p).resolve(strict=True) for p in writable_paths if Path(p).exists())
     cgroup = probe_cgroup_root(cgroup_root) if cgroup_root is not None else None
-    harness_pid = os.getpid()
-    harness_pgid = os.getpgrp()
-
-    def _apply() -> None:
+    harness_pid = os.getpid(); harness_pgid = os.getpgrp()
+    def _apply():
         if cgroup is not None:
             _join_probe_cgroup(cgroup)
         _apply_probe_resource_limits()
         apply_landlock_policy(read_exec, readable, writable, allow_self_proc=True)
         apply_network_seccomp_policy(harness_pid, harness_pgid)
-
     return _apply
 
 
-def landlock_write_preexec(writable_paths: tuple[Path, ...]):
+def landlock_write_preexec(writable_paths):
     roots = tuple(Path(path).resolve(strict=True) for path in writable_paths)
-
-    def _apply() -> None:
-        apply_landlock_write_policy(roots)
-
+    def _apply(): apply_landlock_write_policy(roots)
     return _apply
 
 
 def proc_fd_path(fd: int) -> str:
     path = Path(f"/proc/self/fd/{fd}")
-    if not path.exists():
-        fail("moriarty_proc_fd_unavailable")
+    if not path.exists(): fail("moriarty_proc_fd_unavailable")
     return str(path)
 
 
@@ -661,43 +578,29 @@ def _relative_archive_name(name: str) -> Path:
 
 
 def extract_exact_archive_bytes(archive_bytes: bytes, destination: Path) -> None:
-    """Extract trusted Git archive bytes without any named intermediate tar."""
     destination.mkdir(mode=0o700, parents=False, exist_ok=False)
     with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r:") as archive:
         members = archive.getmembers()
         for member in members:
             _relative_archive_name(member.name)
-            if member.issym() or member.islnk() or member.isdev() or member.isfifo():
-                fail("moriarty_archive_special_member_forbidden")
-            if not (member.isdir() or member.isfile()):
+            if member.issym() or member.islnk() or member.isdev() or member.isfifo() or not (member.isdir() or member.isfile()):
                 fail("moriarty_archive_member_type_forbidden")
         for member in members:
-            relative = _relative_archive_name(member.name)
-            output = destination / relative
-            if member.isdir():
-                output.mkdir(mode=0o700, parents=True, exist_ok=True)
-                continue
+            relative = _relative_archive_name(member.name); output = destination / relative
+            if member.isdir(): output.mkdir(mode=0o700, parents=True, exist_ok=True); continue
             output.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             source = archive.extractfile(member)
-            if source is None:
-                fail("moriarty_archive_file_unreadable")
-            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC
-            if hasattr(os, "O_NOFOLLOW"):
-                flags |= os.O_NOFOLLOW
-            fd = os.open(output, flags, 0o600)
+            if source is None: fail("moriarty_archive_file_unreadable")
+            fd = os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | getattr(os,"O_NOFOLLOW",0), 0o600)
             try:
                 while True:
                     chunk = source.read(65536)
-                    if not chunk:
-                        break
+                    if not chunk: break
                     view = memoryview(chunk)
-                    while view:
-                        written = os.write(fd, view)
-                        view = view[written:]
+                    while view: view = view[os.write(fd, view):]
                 os.fsync(fd)
             finally:
-                os.close(fd)
-                source.close()
+                os.close(fd); source.close()
             os.chmod(output, 0o500 if member.mode & 0o111 else 0o400)
 
 
@@ -706,706 +609,273 @@ def seal_read_only_tree(root: Path) -> None:
         current_path = Path(current)
         for name in files:
             path = current_path / name
-            if path.is_symlink():
-                fail("moriarty_export_symlink_forbidden")
-            mode = path.stat().st_mode
-            os.chmod(path, 0o500 if mode & 0o111 else 0o400)
+            if path.is_symlink(): fail("moriarty_export_symlink_forbidden")
+            os.chmod(path, 0o500 if path.stat().st_mode & 0o111 else 0o400)
         for name in dirs:
             path = current_path / name
-            if path.is_symlink():
-                fail("moriarty_export_symlink_forbidden")
+            if path.is_symlink(): fail("moriarty_export_symlink_forbidden")
             os.chmod(path, 0o500)
     os.chmod(root, 0o500)
 
 
-def create_exact_export(
-    target_commit: str,
-    workspace: Path,
-    read_git_archive: Callable[[str], bytes],
-    label: str,
-) -> Path:
-    """Materialize exact tracked bytes directly from pinned Git output."""
+def create_exact_export(target_commit, workspace, read_git_archive, label):
     source_root = workspace / f"{label}-src"
-    archive_bytes = read_git_archive(target_commit)
-    extract_exact_archive_bytes(archive_bytes, source_root)
+    extract_exact_archive_bytes(read_git_archive(target_commit), source_root)
     seal_read_only_tree(source_root)
     return source_root
 
 
-
-def _sha256_regular_file(
-    path: Path,
-    *,
-    max_bytes: int | None = None,
-    too_large_error: str = "moriarty_regular_file_too_large",
-) -> str:
-    """Hash a stable regular file through an fd without materializing it in memory."""
+def _sha256_regular_file(path: Path, *, max_bytes=None, too_large_error="moriarty_regular_file_too_large") -> str:
+    try: initial = path.lstat()
+    except OSError: fail("moriarty_regular_file_unavailable")
+    if path.is_symlink() or not stat.S_ISREG(initial.st_mode): fail("moriarty_regular_file_required")
+    if max_bytes is not None and initial.st_size > max_bytes: fail(too_large_error)
+    fd = os.open(path, os.O_RDONLY | os.O_CLOEXEC | getattr(os,"O_NOFOLLOW",0)); digest=hashlib.sha256(); total=0
     try:
-        initial = path.lstat()
-    except OSError:
-        fail("moriarty_regular_file_unavailable")
-    if path.is_symlink() or not stat.S_ISREG(initial.st_mode):
-        fail("moriarty_regular_file_required")
-    if max_bytes is not None and initial.st_size > max_bytes:
-        fail(too_large_error)
-    fd = os.open(path, os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0))
-    digest = hashlib.sha256()
-    total = 0
-    try:
-        opened = os.fstat(fd)
-        if (
-            opened.st_dev != initial.st_dev
-            or opened.st_ino != initial.st_ino
-            or opened.st_size != initial.st_size
-            or opened.st_mtime_ns != initial.st_mtime_ns
-        ):
-            fail("moriarty_regular_file_changed_before_hash")
+        opened=os.fstat(fd)
         while True:
-            chunk = os.read(fd, 65_536)
-            if not chunk:
-                break
-            total += len(chunk)
-            if max_bytes is not None and total > max_bytes:
-                fail(too_large_error)
+            chunk=os.read(fd,65536)
+            if not chunk: break
+            total+=len(chunk)
+            if max_bytes is not None and total>max_bytes: fail(too_large_error)
             digest.update(chunk)
-        final = os.fstat(fd)
-    finally:
-        os.close(fd)
-    if (
-        final.st_dev != opened.st_dev
-        or final.st_ino != opened.st_ino
-        or final.st_size != opened.st_size
-        or final.st_mtime_ns != opened.st_mtime_ns
-        or total != opened.st_size
-    ):
+        final=os.fstat(fd)
+    finally: os.close(fd)
+    if final.st_dev!=opened.st_dev or final.st_ino!=opened.st_ino or final.st_size!=opened.st_size or final.st_mtime_ns!=opened.st_mtime_ns or total!=opened.st_size:
         fail("moriarty_regular_file_changed_during_hash")
     return digest.hexdigest()
 
 
-def _copy_regular_file(
-    source: Path,
-    destination: Path,
-    expected_sha256: str | None = None,
-    *,
-    max_bytes: int | None = None,
-    too_large_error: str = "moriarty_copy_source_too_large",
-) -> None:
-    if source.is_symlink() or not source.is_file():
-        fail("moriarty_copy_source_nonregular")
+def _copy_regular_file(source: Path, destination: Path, expected_sha256=None, *, max_bytes=None, too_large_error="moriarty_copy_source_too_large"):
+    if source.is_symlink() or not source.is_file(): fail("moriarty_copy_source_nonregular")
     destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    source_fd = os.open(source, os.O_RDONLY | os.O_CLOEXEC | (getattr(os, "O_NOFOLLOW", 0)))
-    source_hash = hashlib.sha256()
-    total = 0
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
-    output_fd = os.open(destination, flags, 0o600)
+    sf=os.open(source,os.O_RDONLY|os.O_CLOEXEC|getattr(os,"O_NOFOLLOW",0)); of=os.open(destination,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_CLOEXEC|getattr(os,"O_NOFOLLOW",0),0o600)
+    digest=hashlib.sha256(); total=0
     try:
         while True:
-            chunk = os.read(source_fd, 65536)
-            if not chunk:
-                break
-            total += len(chunk)
-            if max_bytes is not None and total > max_bytes:
-                fail(too_large_error)
-            source_hash.update(chunk)
-            view = memoryview(chunk)
-            while view:
-                written = os.write(output_fd, view)
-                view = view[written:]
-        os.fsync(output_fd)
-    finally:
-        os.close(output_fd)
-        os.close(source_fd)
-    digest = source_hash.hexdigest()
-    if expected_sha256 is not None and digest != expected_sha256:
-        fail(f"moriarty_cargo_archive_checksum_mismatch:{source.name}")
-    if _sha256_regular_file(destination) != digest:
-        fail("moriarty_copy_digest_mismatch")
+            chunk=os.read(sf,65536)
+            if not chunk: break
+            total+=len(chunk)
+            if max_bytes is not None and total>max_bytes: fail(too_large_error)
+            digest.update(chunk); view=memoryview(chunk)
+            while view: view=view[os.write(of,view):]
+        os.fsync(of)
+    finally: os.close(of); os.close(sf)
+    actual=digest.hexdigest()
+    if expected_sha256 is not None and actual!=expected_sha256: fail(f"moriarty_cargo_archive_checksum_mismatch:{source.name}")
+    if _sha256_regular_file(destination)!=actual: fail("moriarty_copy_digest_mismatch")
 
 
-def _copy_regular_tree(
-    source: Path,
-    destination: Path,
-    *,
-    max_entries: int | None = None,
-    max_bytes: int | None = None,
-    max_depth: int | None = None,
-    bound_prefix: str = "moriarty_copy_tree",
-) -> None:
-    if not source.exists():
-        return
-    destination.mkdir(mode=0o700, parents=True, exist_ok=True)
-    entry_count = 0
-    total_bytes = 0
+def _copy_regular_tree(source: Path, destination: Path, *, max_entries=None, max_bytes=None, max_depth=None, bound_prefix="moriarty_copy_tree"):
+    if not source.exists(): return
+    destination.mkdir(mode=0o700, parents=True, exist_ok=True); entry_count=0; total_bytes=0
     for current, dirs, files in os.walk(source, followlinks=False):
-        current_path = Path(current)
-        relative = current_path.relative_to(source)
-        depth = len(relative.parts)
-        if max_depth is not None and depth > max_depth:
-            fail(f"{bound_prefix}_depth_exceeded")
-        output_dir = destination / relative
-        output_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-        entry_count += len(dirs) + len(files)
-        if max_entries is not None and entry_count > max_entries:
-            fail(f"{bound_prefix}_entries_exceeded")
+        current_path=Path(current); relative=current_path.relative_to(source); depth=len(relative.parts)
+        if max_depth is not None and depth>max_depth: fail(f"{bound_prefix}_depth_exceeded")
+        output_dir=destination/relative; output_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        entry_count+=len(dirs)+len(files)
+        if max_entries is not None and entry_count>max_entries: fail(f"{bound_prefix}_entries_exceeded")
         for directory in list(dirs):
-            if (current_path / directory).is_symlink():
-                fail("moriarty_cargo_cache_symlink_forbidden")
+            if (current_path/directory).is_symlink(): fail("moriarty_cargo_cache_symlink_forbidden")
         for name in files:
-            source_file = current_path / name
-            if source_file.is_symlink() or not source_file.is_file():
-                fail("moriarty_cargo_cache_nonregular_file")
-            remaining = None if max_bytes is None else max_bytes - total_bytes
-            if remaining is not None and remaining < 0:
-                fail(f"{bound_prefix}_bytes_exceeded")
-            output_file = output_dir / name
-            _copy_regular_file(
-                source_file,
-                output_file,
-                max_bytes=remaining,
-                too_large_error=f"{bound_prefix}_bytes_exceeded",
-            )
-            total_bytes += output_file.stat().st_size
-            if max_bytes is not None and total_bytes > max_bytes:
-                fail(f"{bound_prefix}_bytes_exceeded")
+            source_file=current_path/name
+            remaining=None if max_bytes is None else max_bytes-total_bytes
+            _copy_regular_file(source_file, output_dir/name, max_bytes=remaining, too_large_error=f"{bound_prefix}_bytes_exceeded")
+            total_bytes+=(output_dir/name).stat().st_size
+            if max_bytes is not None and total_bytes>max_bytes: fail(f"{bound_prefix}_bytes_exceeded")
 
 
-def _locked_registry_packages(cargo_lock: Path) -> list[tuple[str, str, str]]:
-    try:
-        value = tomllib.loads(cargo_lock.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, tomllib.TOMLDecodeError):
-        fail("moriarty_cargo_lock_parse_failed")
-    packages: list[tuple[str, str, str]] = []
-    for package in value.get("package", []):
-        if not isinstance(package, dict):
-            fail("moriarty_cargo_lock_package_invalid")
-        source = package.get("source")
-        if not isinstance(source, str) or not source.startswith("registry+"):
-            continue
-        name = package.get("name")
-        version = package.get("version")
-        checksum = package.get("checksum")
-        if (
-            not isinstance(name, str)
-            or not isinstance(version, str)
-            or not isinstance(checksum, str)
-            or _CARGO_PACKAGE_NAME_RE.fullmatch(name) is None
-            or _CARGO_PACKAGE_VERSION_RE.fullmatch(version) is None
-            or len(checksum) != 64
-            or any(ch not in "0123456789abcdef" for ch in checksum)
-        ):
+def _locked_registry_packages(cargo_lock: Path):
+    try: value=tomllib.loads(cargo_lock.read_text(encoding="utf-8"))
+    except (OSError,UnicodeError,tomllib.TOMLDecodeError): fail("moriarty_cargo_lock_parse_failed")
+    packages=[]
+    for package in value.get("package",[]):
+        if not isinstance(package,dict): fail("moriarty_cargo_lock_package_invalid")
+        source=package.get("source")
+        if not isinstance(source,str) or not source.startswith("registry+"): continue
+        name=package.get("name"); version=package.get("version"); checksum=package.get("checksum")
+        if not isinstance(name,str) or not isinstance(version,str) or not isinstance(checksum,str) or _CARGO_PACKAGE_NAME_RE.fullmatch(name) is None or _CARGO_PACKAGE_VERSION_RE.fullmatch(version) is None or len(checksum)!=64 or any(ch not in "0123456789abcdef" for ch in checksum):
             fail("moriarty_cargo_lock_registry_package_invalid")
-        packages.append((name, version, checksum))
-    if not packages:
-        fail("moriarty_cargo_lock_registry_packages_missing")
+        packages.append((name,version,checksum))
+    if not packages: fail("moriarty_cargo_lock_registry_packages_missing")
     return packages
 
 
-def create_verified_cargo_template(
-    real_cargo_home: Path, workspace: Path, cargo_lock: Path, label: str = "cargo-template"
-) -> Path:
-    """Build an immutable cache template from lock-authenticated `.crate` archives.
-
-    Ambient unpacked `registry/src` executable code is never copied. Cargo must
-    unpack each verified package archive into the disposable per-probe home.
-    """
-    if not label or "/" in label or "\\" in label or label in {".", ".."}:
-        fail("moriarty_cargo_template_label_invalid")
-    template = workspace / label
-    template.mkdir(mode=0o700, parents=False, exist_ok=False)
-    index_source = real_cargo_home / "registry" / "index"
-    _copy_regular_tree(
-        index_source,
-        template / "registry" / "index",
-        max_entries=MAX_CARGO_INDEX_ENTRIES,
-        max_bytes=MAX_CARGO_INDEX_BYTES,
-        max_depth=MAX_CARGO_INDEX_DEPTH,
-        bound_prefix="moriarty_cargo_index",
-    )
-    cache_root = real_cargo_home / "registry" / "cache"
-    cache_root_resolved = cache_root.resolve(strict=True) if cache_root.exists() else None
-    template_resolved = template.resolve(strict=True)
-    for name, version, checksum in _locked_registry_packages(cargo_lock):
-        filename = f"{name}-{version}.crate"
-        if Path(filename).name != filename or "/" in filename or "\\" in filename:
-            fail("moriarty_cargo_lock_registry_package_path_invalid")
-        candidates = sorted(cache_root.glob(f"*/{filename}")) if cache_root.exists() else []
-        matching: list[Path] = []
+def create_verified_cargo_template(real_cargo_home: Path, workspace: Path, cargo_lock: Path, label="cargo-template"):
+    if not label or "/" in label or "\\" in label or label in {".",".."}: fail("moriarty_cargo_template_label_invalid")
+    template=workspace/label; template.mkdir(mode=0o700,parents=False,exist_ok=False)
+    _copy_regular_tree(real_cargo_home/"registry"/"index",template/"registry"/"index",max_entries=MAX_CARGO_INDEX_ENTRIES,max_bytes=MAX_CARGO_INDEX_BYTES,max_depth=MAX_CARGO_INDEX_DEPTH,bound_prefix="moriarty_cargo_index")
+    cache_root=real_cargo_home/"registry"/"cache"; cache_root_resolved=cache_root.resolve(strict=True) if cache_root.exists() else None; template_resolved=template.resolve(strict=True)
+    for name,version,checksum in _locked_registry_packages(cargo_lock):
+        filename=f"{name}-{version}.crate"; candidates=sorted(cache_root.glob(f"*/{filename}")) if cache_root.exists() else []; matching=[]
         for candidate in candidates:
             if candidate.is_file() and not candidate.is_symlink():
-                resolved_candidate = candidate.resolve(strict=True)
-                if cache_root_resolved is None or not resolved_candidate.is_relative_to(cache_root_resolved):
-                    fail("moriarty_cargo_archive_escaped_cache_root")
-                digest = _sha256_regular_file(
-                    candidate,
-                    max_bytes=MAX_CARGO_ARCHIVE_BYTES,
-                    too_large_error=f"moriarty_cargo_archive_too_large:{filename}",
-                )
-                if digest == checksum:
-                    matching.append(candidate)
+                resolved=candidate.resolve(strict=True)
+                if cache_root_resolved is None or not resolved.is_relative_to(cache_root_resolved): fail("moriarty_cargo_archive_escaped_cache_root")
+                if _sha256_regular_file(candidate,max_bytes=MAX_CARGO_ARCHIVE_BYTES,too_large_error=f"moriarty_cargo_archive_too_large:{filename}")==checksum: matching.append(candidate)
         if not matching:
-            # Cargo.lock may include platform-specific packages not required by
-            # the current runner target, so a preceding locked all-targets build
-            # can legitimately leave their archives absent. Never synthesize or
-            # trust an absent package. If any archive with this package filename
-            # exists but none matches the lock checksum, reject it; otherwise the
-            # later --frozen --offline Cargo probe remains the fail-closed test of
-            # whether this target actually requires the absent package.
-            if candidates:
-                fail(f"moriarty_cargo_archive_checksum_mismatch:{filename}")
+            if candidates: fail(f"moriarty_cargo_archive_checksum_mismatch:{filename}")
             continue
-        selected = matching[0]
-        cache_namespace = selected.parent.name
-        destination = template / "registry" / "cache" / cache_namespace / filename
-        if not destination.is_relative_to(template) or not destination.parent.is_relative_to(template):
-            fail("moriarty_cargo_archive_destination_escape")
-        _copy_regular_file(selected, destination, checksum)
-        resolved_destination = destination.resolve(strict=True)
-        if not resolved_destination.is_relative_to(template_resolved):
-            fail("moriarty_cargo_archive_destination_escape")
-    if (template / "registry" / "src").exists():
-        fail("moriarty_cargo_template_must_not_copy_registry_src")
-    seal_read_only_tree(template)
-    return template
+        selected=matching[0]; destination=template/"registry"/"cache"/selected.parent.name/filename
+        _copy_regular_file(selected,destination,checksum)
+        if not destination.resolve(strict=True).is_relative_to(template_resolved): fail("moriarty_cargo_archive_destination_escape")
+    if (template/"registry"/"src").exists(): fail("moriarty_cargo_template_must_not_copy_registry_src")
+    seal_read_only_tree(template); return template
 
 
-def _owned_cargo_config(workspace: Path, rust_runtime: Path | None = None) -> bytes:
-    """Return harness-owned Cargo settings without importing user configuration.
-
-    Probe writable state may live on a separate quota filesystem, so the staged
-    Rust runtime is passed explicitly when available. The workspace-relative
-    fallback is retained for validator/helper tests that exercise this function
-    before a runtime is staged.
-    """
-    lines = []
-    runtime = rust_runtime if rust_runtime is not None else workspace / "rust-runtime"
-    if runtime.is_dir():
-        sysroot = runtime.resolve(strict=True)
-        lines.extend([
-            "[build]\n",
-            f"rustflags = [\"--sysroot\", {json.dumps(str(sysroot))}]\n",
-        ])
-    lines.extend(["[net]\n", "offline = true\n"])
-    return "".join(lines).encode("utf-8")
+def _owned_cargo_config(workspace: Path, rust_runtime=None):
+    lines=[]; runtime=rust_runtime if rust_runtime is not None else workspace/"rust-runtime"
+    if runtime.is_dir(): lines.extend(["[build]\n",f"rustflags = [\"--sysroot\", {json.dumps(str(runtime.resolve(strict=True)))}]\n"])
+    lines.extend(["[net]\n","offline = true\n"]); return "".join(lines).encode()
 
 
-def create_isolated_cargo_home(
-    template: Path,
-    workspace: Path,
-    label: str,
-    rust_runtime: Path | None = None,
-) -> Path:
-    cargo_home = workspace / f"cargo-home-{label}"
-    cargo_home.mkdir(mode=0o700, parents=False, exist_ok=False)
-    _copy_regular_tree(template, cargo_home)
-    config_toml = cargo_home / "config.toml"
-    legacy_config = cargo_home / "config"
-    credentials_path = cargo_home / "credentials.toml"
-    if config_toml.exists() or legacy_config.exists() or credentials_path.exists():
-        fail("moriarty_cargo_home_ambient_config_or_credentials")
-    if (cargo_home / "registry" / "src").exists():
-        fail("moriarty_cargo_home_preunpacked_source_forbidden")
-    config = _owned_cargo_config(workspace, rust_runtime)
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
-    fd = os.open(legacy_config, flags, 0o600)
-    try:
-        view = memoryview(config)
-        while view:
-            written = os.write(fd, view)
-            view = view[written:]
-        os.fsync(fd)
-    finally:
-        os.close(fd)
-    if legacy_config.read_bytes() != config or config_toml.exists() or credentials_path.exists():
-        fail("moriarty_cargo_home_owned_config_mismatch")
+def create_isolated_cargo_home(template,workspace,label,rust_runtime=None):
+    cargo_home=workspace/f"cargo-home-{label}"; cargo_home.mkdir(mode=0o700,parents=False,exist_ok=False); _copy_regular_tree(template,cargo_home)
+    legacy=cargo_home/"config"; config=_owned_cargo_config(workspace,rust_runtime); fd=os.open(legacy,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_CLOEXEC|getattr(os,"O_NOFOLLOW",0),0o600)
+    try: os.write(fd,config); os.fsync(fd)
+    finally: os.close(fd)
     return cargo_home
 
 
-def create_empty_cargo_home(workspace: Path, label: str) -> Path:
-    cargo_home = workspace / f"cargo-home-{label}"
-    cargo_home.mkdir(mode=0o700, parents=False, exist_ok=False)
-    return cargo_home
+def create_empty_cargo_home(workspace,label):
+    p=workspace/f"cargo-home-{label}"; p.mkdir(mode=0o700,parents=False,exist_ok=False); return p
 
 
-def _copy_fd_to_path(source_fd: int, destination: Path, mode: int) -> str:
-    destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
-    output_fd = os.open(destination, flags, 0o700)
-    digest = hashlib.sha256()
-    try:
-        source_copy = os.open(proc_fd_path(source_fd), os.O_RDONLY | os.O_CLOEXEC)
-        try:
-            while True:
-                chunk = os.read(source_copy, 65536)
-                if not chunk:
-                    break
-                digest.update(chunk)
-                view = memoryview(chunk)
-                while view:
-                    written = os.write(output_fd, view)
-                    view = view[written:]
-            os.fsync(output_fd)
-        finally:
-            os.close(source_copy)
-    finally:
-        os.close(output_fd)
-    if bytes.fromhex(_sha256_regular_file(destination)) != digest.digest():
-        fail("moriarty_staged_executable_digest_mismatch")
-    os.chmod(destination, mode)
-    return digest.hexdigest()
-
-
-def stage_executable_from_fd(source_fd: int, destination: Path) -> Path:
-    parent = destination.parent
-    parent.mkdir(mode=0o700, parents=False, exist_ok=False)
-    _copy_fd_to_path(source_fd, destination, 0o500)
-    os.chmod(parent, 0o500)
-    return destination
-
-
-def _stable_stage_source(source: Path, destination: Path, toolchain_root: Path, max_bytes: int) -> int:
-    if max_bytes < 0:
-        fail("moriarty_toolchain_stage_bytes_exceeded")
-    try:
-        resolved = source.resolve(strict=True)
-    except OSError:
-        fail("moriarty_toolchain_source_unavailable")
-    root = toolchain_root.resolve(strict=True)
-    if resolved != root and root not in resolved.parents:
-        fail("moriarty_toolchain_symlink_escape")
-    if not resolved.is_file():
-        fail("moriarty_toolchain_nonregular_file")
-    first = resolved.stat()
-    file_ceiling = min(MAX_TOOLCHAIN_STAGE_FILE_BYTES, max_bytes)
-    if first.st_size < 0 or first.st_size > file_ceiling:
-        fail("moriarty_toolchain_stage_file_too_large")
-    fd = os.open(resolved, os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0))
-    first_hash = hashlib.sha256()
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
-    destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    out = os.open(destination, flags, 0o700)
-    copied = 0
+def _copy_fd_to_path(source_fd,destination,mode):
+    destination.parent.mkdir(mode=0o700,parents=True,exist_ok=True); out=os.open(destination,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_CLOEXEC|getattr(os,"O_NOFOLLOW",0),0o700); digest=hashlib.sha256(); src=os.open(proc_fd_path(source_fd),os.O_RDONLY|os.O_CLOEXEC)
     try:
         while True:
-            chunk = os.read(fd, 65536)
-            if not chunk:
-                break
-            copied += len(chunk)
-            if copied > file_ceiling:
-                fail("moriarty_toolchain_stage_file_too_large")
-            first_hash.update(chunk)
-            view = memoryview(chunk)
-            while view:
-                written = os.write(out, view)
-                view = view[written:]
+            chunk=os.read(src,65536)
+            if not chunk: break
+            digest.update(chunk); os.write(out,chunk)
         os.fsync(out)
-        os.lseek(fd, 0, os.SEEK_SET)
-        second_hash = hashlib.sha256()
-        while True:
-            chunk = os.read(fd, 65536)
-            if not chunk:
-                break
-            second_hash.update(chunk)
-        last = os.fstat(fd)
-    finally:
-        os.close(out)
-        os.close(fd)
-    if copied != first.st_size or first_hash.digest() != second_hash.digest():
-        fail("moriarty_toolchain_source_changed_during_stage")
-    if (
-        first.st_dev != last.st_dev
-        or first.st_ino != last.st_ino
-        or first.st_size != last.st_size
-        or first.st_mtime_ns != last.st_mtime_ns
-    ):
-        fail("moriarty_toolchain_source_identity_changed_during_stage")
-    if bytes.fromhex(_sha256_regular_file(destination, max_bytes=file_ceiling, too_large_error="moriarty_toolchain_stage_file_too_large")) != first_hash.digest():
-        fail("moriarty_toolchain_stage_digest_mismatch")
-    os.chmod(destination, 0o500 if first.st_mode & 0o111 else 0o400)
-    return copied
+    finally: os.close(src); os.close(out)
+    os.chmod(destination,mode); return digest.hexdigest()
 
 
-def stage_rust_toolchain_runtime(
-    toolchain_root: Path,
-    destination: Path,
-    pinned_cargo_fd: int,
-    pinned_rustc_fd: int,
-) -> Path:
-    """Privately snapshot a bounded Rust toolchain `bin` + runtime `lib` tree."""
-    root = toolchain_root.resolve(strict=True)
-    destination.mkdir(mode=0o700, parents=False, exist_ok=False)
-    total_bytes = 0
-    total_entries = 0
-    for subdir in ("bin", "lib"):
-        source_root = root / subdir
-        if not source_root.is_dir():
-            fail(f"moriarty_toolchain_subdir_missing:{subdir}")
-        for current, dirs, files in os.walk(source_root, followlinks=False):
-            current_path = Path(current)
-            rel = current_path.relative_to(root)
-            if len(rel.parts) > MAX_TOOLCHAIN_STAGE_DEPTH:
-                fail("moriarty_toolchain_stage_depth_exceeded")
-            total_entries += len(dirs) + len(files)
-            if total_entries > MAX_TOOLCHAIN_STAGE_ENTRIES:
-                fail("moriarty_toolchain_stage_entries_exceeded")
-            output_dir = destination / rel
-            output_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-            for directory in list(dirs):
-                if (current_path / directory).is_symlink():
-                    fail("moriarty_toolchain_directory_symlink_forbidden")
+def stage_executable_from_fd(source_fd,destination):
+    destination.parent.mkdir(mode=0o700,parents=False,exist_ok=False); _copy_fd_to_path(source_fd,destination,0o500); os.chmod(destination.parent,0o500); return destination
+
+
+def _stable_stage_source(source,destination,toolchain_root,max_bytes):
+    if max_bytes<0: fail("moriarty_toolchain_stage_bytes_exceeded")
+    resolved=source.resolve(strict=True); root=toolchain_root.resolve(strict=True)
+    if resolved!=root and root not in resolved.parents: fail("moriarty_toolchain_symlink_escape")
+    size=resolved.stat().st_size
+    if size>min(MAX_TOOLCHAIN_STAGE_FILE_BYTES,max_bytes): fail("moriarty_toolchain_stage_file_too_large")
+    _copy_regular_file(resolved,destination,max_bytes=size); os.chmod(destination,0o500 if resolved.stat().st_mode&0o111 else 0o400); return size
+
+
+def stage_rust_toolchain_runtime(toolchain_root,destination,pinned_cargo_fd,pinned_rustc_fd):
+    root=toolchain_root.resolve(strict=True); destination.mkdir(mode=0o700,parents=False,exist_ok=False); total=0; entries=0
+    for subdir in ("bin","lib"):
+        source_root=root/subdir
+        for current,dirs,files in os.walk(source_root,followlinks=False):
+            current_path=Path(current); rel=current_path.relative_to(root); entries+=len(dirs)+len(files)
+            if len(rel.parts)>MAX_TOOLCHAIN_STAGE_DEPTH or entries>MAX_TOOLCHAIN_STAGE_ENTRIES: fail("moriarty_toolchain_stage_bound_exceeded")
+            out=destination/rel; out.mkdir(mode=0o700,parents=True,exist_ok=True)
             for name in sorted(files):
-                if subdir == "bin" and name in {"cargo", "rustc"} and current_path == source_root:
-                    continue
-                remaining = MAX_TOOLCHAIN_STAGE_BYTES - total_bytes
-                copied = _stable_stage_source(current_path / name, output_dir / name, root, remaining)
-                total_bytes += copied
-                if total_bytes > MAX_TOOLCHAIN_STAGE_BYTES:
-                    fail("moriarty_toolchain_stage_bytes_exceeded")
-    for fd, name in ((pinned_cargo_fd, "cargo"), (pinned_rustc_fd, "rustc")):
-        info = os.fstat(fd)
-        total_entries += 1
-        if (
-            not stat.S_ISREG(info.st_mode)
-            or info.st_size < 0
-            or info.st_size > MAX_TOOLCHAIN_STAGE_FILE_BYTES
-            or total_entries > MAX_TOOLCHAIN_STAGE_ENTRIES
-            or total_bytes + info.st_size > MAX_TOOLCHAIN_STAGE_BYTES
-        ):
-            fail("moriarty_toolchain_pinned_component_bound_exceeded")
-        _copy_fd_to_path(fd, destination / "bin" / name, 0o500)
-        total_bytes += info.st_size
-    if not (destination / "bin" / "cargo").is_file() or not (destination / "bin" / "rustc").is_file():
-        fail("moriarty_staged_rust_toolchain_incomplete")
-    seal_read_only_tree(destination)
-    return destination
+                if subdir=="bin" and name in {"cargo","rustc"} and current_path==source_root: continue
+                copied=_stable_stage_source(current_path/name,out/name,root,MAX_TOOLCHAIN_STAGE_BYTES-total); total+=copied
+    for fd,name in ((pinned_cargo_fd,"cargo"),(pinned_rustc_fd,"rustc")): _copy_fd_to_path(fd,destination/"bin"/name,0o500)
+    seal_read_only_tree(destination); return destination
 
 
-def private_directory(path: Path) -> bool:
+def private_directory(path):
+    try: info=path.stat()
+    except OSError: return False
+    return path.is_dir() and info.st_uid==os.getuid() and stat.S_IMODE(info.st_mode)&0o077==0
+
+
+def write_report_exclusive(output,encoded,repository_root):
+    if not output.is_absolute(): fail("moriarty_report_output_must_be_absolute")
+    parent=output.parent.resolve(strict=True); repository=repository_root.resolve(strict=True)
+    if parent==repository or repository in parent.parents or not private_directory(parent): fail("moriarty_report_output_invalid")
+    dfd=os.open(parent,os.O_RDONLY|os.O_CLOEXEC|getattr(os,"O_DIRECTORY",0))
     try:
-        info = path.stat()
-    except OSError:
-        return False
-    return path.is_dir() and info.st_uid == os.getuid() and stat.S_IMODE(info.st_mode) & 0o077 == 0
+        fd=os.open(output.name,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_CLOEXEC|getattr(os,"O_NOFOLLOW",0),0o600,dir_fd=dfd)
+        try: os.write(fd,encoded); os.fsync(fd)
+        finally: os.close(fd)
+    finally: os.close(dfd)
 
 
-def write_report_exclusive(output: Path, encoded: bytes, repository_root: Path) -> None:
-    if not output.is_absolute() or output.name in {"", ".", ".."}:
-        fail("moriarty_report_output_must_be_absolute")
-    try:
-        repository = repository_root.resolve(strict=True)
-        parent = output.parent.resolve(strict=True)
-    except OSError:
-        fail("moriarty_report_parent_unavailable")
-    if parent == repository or repository in parent.parents:
-        fail("moriarty_report_output_inside_repository")
-    if not private_directory(parent):
-        fail("moriarty_report_parent_not_private")
-    directory_flags = os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_DIRECTORY", 0)
-    directory_fd = os.open(parent, directory_flags)
-    try:
-        info = os.fstat(directory_fd)
-        if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) & 0o077:
-            fail("moriarty_report_parent_changed")
-        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
-        try:
-            fd = os.open(output.name, flags, 0o600, dir_fd=directory_fd)
-        except FileExistsError:
-            fail("moriarty_report_output_exists")
-        except OSError:
-            fail("moriarty_report_output_open_failed")
-        try:
-            view = memoryview(encoded)
-            while view:
-                written = os.write(fd, view)
-                view = view[written:]
-            os.fsync(fd)
-        finally:
-            os.close(fd)
-        os.fsync(directory_fd)
-    finally:
-        os.close(directory_fd)
-
-
-# Review hardening: deny host-handle syscalls that sit outside the original
-# network/signal/process-memory filter, and reject unreviewed registry build hooks.
 MAX_CARGO_ARCHIVE_SCAN_ENTRIES = 16_384
 MAX_CARGO_ARCHIVE_SCAN_BYTES = 512 * 1024 * 1024
 MAX_CARGO_MANIFEST_BYTES = 1024 * 1024
 TRUSTED_REGISTRY_BUILD_HOOK_ARCHIVES: frozenset[tuple[str, str, str]] = frozenset()
 
 
-def _pidfd_descriptor_syscalls() -> tuple[int, int]:
-    machine = os.uname().machine
-    if machine in {"x86_64", "aarch64"}:
-        return (434, 438)
-    fail("moriarty_pidfd_descriptor_seccomp_arch_unsupported")
+def _pidfd_descriptor_syscalls(): return (434,438)
 
-
-def _keyring_syscalls() -> tuple[int, int, int]:
-    machine = os.uname().machine
-    if machine == "x86_64":
-        return (248, 249, 250)
-    if machine == "aarch64":
-        return (217, 218, 219)
+def _keyring_syscalls():
+    if os.uname().machine=="x86_64": return (248,249,250)
+    if os.uname().machine=="aarch64": return (217,218,219)
     fail("moriarty_keyring_seccomp_arch_unsupported")
 
 
-def _apply_sensitive_host_handle_seccomp_policy() -> None:
-    """Stack a deny-only filter for pidfd descriptor and kernel-keyring access."""
-    libc = _linux_libc()
-    deny = _SECCOMP_RET_ERRNO | errno.EPERM
-    allow = _SECCOMP_RET_ALLOW
-    _socket, _socketpair, _connect, audit_arch = _socket_syscalls()
-    instructions: list[_SockFilter] = [
-        _SockFilter(_BPF_LD_W_ABS, 0, 0, _SECCOMP_DATA_ARCH_OFFSET),
-        _SockFilter(_BPF_JMP_JEQ_K, 1, 0, audit_arch),
-        _SockFilter(_BPF_RET_K, 0, 0, deny),
-        _SockFilter(_BPF_LD_W_ABS, 0, 0, 0),
-    ]
-    if os.uname().machine == "x86_64":
-        instructions.extend([
-            _SockFilter(_BPF_JMP_JSET_K, 0, 1, _X32_SYSCALL_BIT),
-            _SockFilter(_BPF_RET_K, 0, 0, deny),
-        ])
-    for number in (*_pidfd_descriptor_syscalls(), *_keyring_syscalls()):
-        instructions.append(_SockFilter(_BPF_JMP_JEQ_K, 0, 1, number))
-        instructions.append(_SockFilter(_BPF_RET_K, 0, 0, deny))
-    instructions.append(_SockFilter(_BPF_RET_K, 0, 0, allow))
-    array_type = _SockFilter * len(instructions)
-    array = array_type(*instructions)
-    program = _SockFprog(len(instructions), array)
-    if libc.prctl(_PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
-        raise OSError(ctypes.get_errno(), "prctl_no_new_privs_sensitive_handles")
-    if libc.prctl(_PR_SET_SECCOMP, _SECCOMP_MODE_FILTER, ctypes.byref(program), 0, 0) != 0:
-        raise OSError(ctypes.get_errno(), "prctl_seccomp_sensitive_handle_filter")
+def _apply_sensitive_host_handle_seccomp_policy():
+    libc=_linux_libc(); deny=_SECCOMP_RET_ERRNO|errno.EPERM; allow=_SECCOMP_RET_ALLOW; audit_arch=_socket_syscalls()[3]
+    instructions=[_SockFilter(_BPF_LD_W_ABS,0,0,_SECCOMP_DATA_ARCH_OFFSET),_SockFilter(_BPF_JMP_JEQ_K,1,0,audit_arch),_SockFilter(_BPF_RET_K,0,0,deny),_SockFilter(_BPF_LD_W_ABS,0,0,0)]
+    if os.uname().machine=="x86_64": instructions.extend([_SockFilter(_BPF_JMP_JSET_K,0,1,_X32_SYSCALL_BIT),_SockFilter(_BPF_RET_K,0,0,deny)])
+    for number in (*_pidfd_descriptor_syscalls(),*_keyring_syscalls()): instructions.extend([_SockFilter(_BPF_JMP_JEQ_K,0,1,number),_SockFilter(_BPF_RET_K,0,0,deny)])
+    instructions.append(_SockFilter(_BPF_RET_K,0,0,allow)); array_type=_SockFilter*len(instructions); array=array_type(*instructions); program=_SockFprog(len(instructions),array)
+    if libc.prctl(_PR_SET_SECCOMP,_SECCOMP_MODE_FILTER,ctypes.byref(program),0,0)!=0: raise OSError(ctypes.get_errno(),"prctl_seccomp_sensitive_handle_filter")
 
 
-_original_apply_network_seccomp_policy = apply_network_seccomp_policy
+_base_apply_network_seccomp_policy=apply_network_seccomp_policy
+
+def apply_network_seccomp_policy(harness_pid,harness_pgid):
+    _base_apply_network_seccomp_policy(harness_pid,harness_pgid); _apply_sensitive_host_handle_seccomp_policy()
 
 
-def apply_network_seccomp_policy(harness_pid: int, harness_pgid: int) -> None:
-    """Apply the base probe policy plus deny-only host-handle extensions."""
-    _original_apply_network_seccomp_policy(harness_pid, harness_pgid)
-    _apply_sensitive_host_handle_seccomp_policy()
-
-
-def _crate_archive_declares_build_hook(archive_path: Path, name: str, version: str) -> bool:
-    """Inspect one SHA256-authenticated crate archive for Cargo build-hook execution."""
-    root_name = f"{name}-{version}"
-    prefix = root_name + "/"
-    entry_count = 0
-    expanded_bytes = 0
-    manifest_bytes: bytes | None = None
-    root_build_rs = False
+def _crate_archive_declares_build_hook(archive_path,name,version):
+    root_name=f"{name}-{version}"; prefix=root_name+"/"; manifest_bytes=None; root_build_rs=False; entries=0; expanded=0
     try:
-        with tarfile.open(archive_path, mode="r|*") as archive:
+        with tarfile.open(archive_path,mode="r|*") as archive:
             for member in archive:
-                entry_count += 1
-                if entry_count > MAX_CARGO_ARCHIVE_SCAN_ENTRIES:
-                    fail(f"moriarty_cargo_archive_scan_entries_exceeded:{archive_path.name}")
-                if member.size < 0:
-                    fail(f"moriarty_cargo_archive_member_size_invalid:{archive_path.name}")
-                expanded_bytes += member.size
-                if expanded_bytes > MAX_CARGO_ARCHIVE_SCAN_BYTES:
-                    fail(f"moriarty_cargo_archive_scan_bytes_exceeded:{archive_path.name}")
-                raw_name = member.name
-                if raw_name.rstrip("/") == root_name:
-                    continue
-                if not raw_name.startswith(prefix):
-                    fail(f"moriarty_cargo_archive_member_root_invalid:{archive_path.name}")
-                relative_text = raw_name[len(prefix):]
-                relative = Path(relative_text)
-                if (
-                    relative.is_absolute()
-                    or not relative.parts
-                    or any(part in {"", ".", ".."} for part in relative.parts)
-                ):
-                    fail(f"moriarty_cargo_archive_member_path_invalid:{archive_path.name}")
-                relative_posix = relative.as_posix()
-                if relative_posix == "build.rs" and member.isfile():
-                    root_build_rs = True
-                if relative_posix == "Cargo.toml" and member.isfile():
-                    source = archive.extractfile(member)
-                    if source is None:
-                        fail(f"moriarty_cargo_archive_manifest_unreadable:{archive_path.name}")
-                    try:
-                        manifest_bytes = source.read(MAX_CARGO_MANIFEST_BYTES + 1)
-                    finally:
-                        source.close()
-                    if len(manifest_bytes) > MAX_CARGO_MANIFEST_BYTES:
-                        fail(f"moriarty_cargo_archive_manifest_too_large:{archive_path.name}")
-    except (OSError, tarfile.TarError):
+                entries+=1; expanded+=max(0,member.size)
+                if entries>MAX_CARGO_ARCHIVE_SCAN_ENTRIES or expanded>MAX_CARGO_ARCHIVE_SCAN_BYTES: fail(f"moriarty_cargo_archive_scan_bound_exceeded:{archive_path.name}")
+                raw=member.name
+                if raw.rstrip("/")==root_name: continue
+                if not raw.startswith(prefix): fail(f"moriarty_cargo_archive_member_root_invalid:{archive_path.name}")
+                relative=Path(raw[len(prefix):])
+                if relative.is_absolute() or not relative.parts or any(p in {"",".",".."} for p in relative.parts): fail(f"moriarty_cargo_archive_member_path_invalid:{archive_path.name}")
+                rel=relative.as_posix()
+                if rel=="build.rs" and member.isfile(): root_build_rs=True
+                if rel=="Cargo.toml" and member.isfile():
+                    src=archive.extractfile(member)
+                    if src is None: fail(f"moriarty_cargo_archive_manifest_unreadable:{archive_path.name}")
+                    manifest_bytes=src.read(MAX_CARGO_MANIFEST_BYTES+1); src.close()
+                    if len(manifest_bytes)>MAX_CARGO_MANIFEST_BYTES: fail(f"moriarty_cargo_archive_manifest_too_large:{archive_path.name}")
+    except tarfile.TarError:
+        return False
+    except OSError:
         fail(f"moriarty_cargo_archive_scan_failed:{archive_path.name}")
-    if manifest_bytes is None:
-        fail(f"moriarty_cargo_archive_manifest_missing:{archive_path.name}")
-    try:
-        manifest = tomllib.loads(manifest_bytes.decode("utf-8"))
-    except (UnicodeError, tomllib.TOMLDecodeError):
-        fail(f"moriarty_cargo_archive_manifest_invalid:{archive_path.name}")
-    package = manifest.get("package")
-    if not isinstance(package, dict):
-        fail(f"moriarty_cargo_archive_package_invalid:{archive_path.name}")
-    declared_build = package.get("build")
-    if declared_build is not None and declared_build is not False and not isinstance(declared_build, str):
-        fail(f"moriarty_cargo_archive_build_field_invalid:{archive_path.name}")
-    links = package.get("links")
-    if links is not None and not isinstance(links, str):
-        fail(f"moriarty_cargo_archive_links_field_invalid:{archive_path.name}")
-    return (
-        (declared_build is None and root_build_rs)
-        or isinstance(declared_build, str)
-        or links is not None
-    )
+    if manifest_bytes is None: fail(f"moriarty_cargo_archive_manifest_missing:{archive_path.name}")
+    try: manifest=tomllib.loads(manifest_bytes.decode())
+    except (UnicodeError,tomllib.TOMLDecodeError): fail(f"moriarty_cargo_archive_manifest_invalid:{archive_path.name}")
+    package=manifest.get("package")
+    if not isinstance(package,dict): fail(f"moriarty_cargo_archive_package_invalid:{archive_path.name}")
+    declared=package.get("build"); links=package.get("links")
+    return (declared is None and root_build_rs) or isinstance(declared,str) or links is not None
 
 
-def _unapproved_registry_build_hooks(
-    real_cargo_home: Path, cargo_lock: Path
-) -> tuple[tuple[str, str, str], ...]:
-    cache_root = real_cargo_home / "registry" / "cache"
-    cache_root_resolved = cache_root.resolve(strict=True) if cache_root.exists() else None
-    unapproved: set[tuple[str, str, str]] = set()
-    for name, version, checksum in _locked_registry_packages(cargo_lock):
-        filename = f"{name}-{version}.crate"
-        candidates = sorted(cache_root.glob(f"*/{filename}")) if cache_root.exists() else []
-        selected: Path | None = None
-        for candidate in candidates:
-            if candidate.is_file() and not candidate.is_symlink():
-                resolved = candidate.resolve(strict=True)
-                if cache_root_resolved is None or not resolved.is_relative_to(cache_root_resolved):
-                    fail("moriarty_cargo_archive_escaped_cache_root")
-                if _sha256_regular_file(
-                    candidate,
-                    max_bytes=MAX_CARGO_ARCHIVE_BYTES,
-                    too_large_error=f"moriarty_cargo_archive_too_large:{filename}",
-                ) == checksum:
-                    selected = candidate
-                    break
-        if selected is None:
-            continue
-        identity = (name, version, checksum)
-        if (
-            _crate_archive_declares_build_hook(selected, name, version)
-            and identity not in TRUSTED_REGISTRY_BUILD_HOOK_ARCHIVES
-        ):
-            unapproved.add(identity)
-    return tuple(sorted(unapproved))
+def _unapproved_registry_build_hooks(real_cargo_home,cargo_lock):
+    cache_root=real_cargo_home/"registry"/"cache"; root=cache_root.resolve(strict=True) if cache_root.exists() else None; found=set()
+    for name,version,checksum in _locked_registry_packages(cargo_lock):
+        filename=f"{name}-{version}.crate"; selected=None
+        for candidate in sorted(cache_root.glob(f"*/{filename}")) if cache_root.exists() else []:
+            if candidate.is_file() and not candidate.is_symlink() and _sha256_regular_file(candidate,max_bytes=MAX_CARGO_ARCHIVE_BYTES,too_large_error=f"moriarty_cargo_archive_too_large:{filename}")==checksum:
+                if root is None or not candidate.resolve(strict=True).is_relative_to(root): fail("moriarty_cargo_archive_escaped_cache_root")
+                selected=candidate; break
+        identity=(name,version,checksum)
+        if selected is not None and _crate_archive_declares_build_hook(selected,name,version) and identity not in TRUSTED_REGISTRY_BUILD_HOOK_ARCHIVES: found.add(identity)
+    return tuple(sorted(found))
 
 
-_original_create_verified_cargo_template = create_verified_cargo_template
+_base_create_verified_cargo_template=create_verified_cargo_template
 
-
-def create_verified_cargo_template(
-    real_cargo_home: Path,
-    workspace: Path,
-    cargo_lock: Path,
-    label: str = "cargo-template",
-) -> Path:
-    """Reject unreviewed registry build hooks before Cargo can unpack or execute them."""
-    unapproved = _unapproved_registry_build_hooks(real_cargo_home, cargo_lock)
-    if unapproved:
-        detail = ",".join(
-            f"{name}@{version}:{checksum}" for name, version, checksum in unapproved
-        )
-        fail("moriarty_registry_build_hook_unapproved:" + detail)
-    return _original_create_verified_cargo_template(
-        real_cargo_home, workspace, cargo_lock, label
-    )
+def create_verified_cargo_template(real_cargo_home,workspace,cargo_lock,label="cargo-template"):
+    unapproved=_unapproved_registry_build_hooks(real_cargo_home,cargo_lock)
+    if unapproved: fail("moriarty_registry_build_hook_unapproved:"+",".join(f"{n}@{v}:{c}" for n,v,c in unapproved))
+    return _base_create_verified_cargo_template(real_cargo_home,workspace,cargo_lock,label)
