@@ -68,8 +68,11 @@ _BPF_JMP_JEQ_K = 0x15
 _BPF_RET_K = 0x06
 _SECCOMP_RET_ALLOW = 0x7FFF0000
 _SECCOMP_RET_ERRNO = 0x00050000
+_SECCOMP_DATA_ARCH_OFFSET = 4
 _SECCOMP_DATA_ARG0_OFFSET = 16
 _AF_UNIX = 1
+_AUDIT_ARCH_X86_64 = 0xC000003E
+_AUDIT_ARCH_AARCH64 = 0xC00000B7
 
 
 class _LandlockRulesetAttr(ctypes.Structure):
@@ -227,30 +230,44 @@ def apply_landlock_write_policy(writable_paths: tuple[Path, ...]) -> None:
         os.close(ruleset_fd)
 
 
-def _socket_syscalls() -> tuple[int, int]:
+def _socket_syscalls() -> tuple[int, int, int]:
     machine = os.uname().machine
     if machine == "x86_64":
-        return (41, 53)
+        return (41, 53, _AUDIT_ARCH_X86_64)
     if machine == "aarch64":
-        return (198, 199)
+        return (198, 199, _AUDIT_ARCH_AARCH64)
     fail("moriarty_network_seccomp_arch_unsupported")
 
 
-def apply_network_seccomp_policy() -> None:
-    """Allow Unix-domain IPC while denying creation of every other socket family.
+def _io_uring_syscalls() -> tuple[int, int, int]:
+    # io_uring syscall numbers are shared by the supported Linux architectures.
+    return (425, 426, 427)
 
-    The child receives no ambient network descriptors. By filtering both socket()
-    and socketpair() on argument zero, descendants may use AF_UNIX for compiler
-    and Cargo-local IPC, while AF_INET, AF_INET6, AF_NETLINK, AF_PACKET, and every
-    other non-local family fail at creation with EPERM. Socket I/O syscalls stay
-    available only for descriptors that survived this creation boundary.
+
+def apply_network_seccomp_policy() -> None:
+    """Allow AF_UNIX IPC while denying external socket creation and io_uring.
+
+    The filter first binds itself to the expected Linux audit architecture. It
+    denies io_uring entirely so IORING_OP_SOCKET/CONNECT/SEND cannot bypass the
+    native syscall policy. Native socket()/socketpair() are then allowed only for
+    AF_UNIX; every other family fails at creation with EPERM. The probe receives
+    no ambient network descriptors, so later socket I/O can only operate on local
+    Unix-domain IPC descriptors created inside the sandbox.
     """
     libc = _linux_libc()
     deny = _SECCOMP_RET_ERRNO | errno.EPERM
     allow = _SECCOMP_RET_ALLOW
-    socket_nr, socketpair_nr = _socket_syscalls()
-    instructions = [
+    socket_nr, socketpair_nr, audit_arch = _socket_syscalls()
+    instructions: list[_SockFilter] = [
+        _SockFilter(_BPF_LD_W_ABS, 0, 0, _SECCOMP_DATA_ARCH_OFFSET),
+        _SockFilter(_BPF_JMP_JEQ_K, 1, 0, audit_arch),
+        _SockFilter(_BPF_RET_K, 0, 0, deny),
         _SockFilter(_BPF_LD_W_ABS, 0, 0, 0),
+    ]
+    for number in _io_uring_syscalls():
+        instructions.append(_SockFilter(_BPF_JMP_JEQ_K, 0, 1, number))
+        instructions.append(_SockFilter(_BPF_RET_K, 0, 0, deny))
+    instructions.extend([
         _SockFilter(_BPF_JMP_JEQ_K, 2, 0, socket_nr),
         _SockFilter(_BPF_JMP_JEQ_K, 1, 0, socketpair_nr),
         _SockFilter(_BPF_RET_K, 0, 0, allow),
@@ -258,7 +275,7 @@ def apply_network_seccomp_policy() -> None:
         _SockFilter(_BPF_JMP_JEQ_K, 0, 1, _AF_UNIX),
         _SockFilter(_BPF_RET_K, 0, 0, allow),
         _SockFilter(_BPF_RET_K, 0, 0, deny),
-    ]
+    ])
     array_type = _SockFilter * len(instructions)
     array = array_type(*instructions)
     program = _SockFprog(len(instructions), array)
@@ -456,13 +473,17 @@ def _locked_registry_packages(cargo_lock: Path) -> list[tuple[str, str, str]]:
     return packages
 
 
-def create_verified_cargo_template(real_cargo_home: Path, workspace: Path, cargo_lock: Path) -> Path:
+def create_verified_cargo_template(
+    real_cargo_home: Path, workspace: Path, cargo_lock: Path, label: str = "cargo-template"
+) -> Path:
     """Build an immutable cache template from lock-authenticated `.crate` archives.
 
     Ambient unpacked `registry/src` executable code is never copied. Cargo must
     unpack each verified package archive into the disposable per-probe home.
     """
-    template = workspace / "cargo-template"
+    if not label or "/" in label or "\\" in label or label in {".", ".."}:
+        fail("moriarty_cargo_template_label_invalid")
+    template = workspace / label
     template.mkdir(mode=0o700, parents=False, exist_ok=False)
     index_source = real_cargo_home / "registry" / "index"
     _copy_regular_tree(index_source, template / "registry" / "index")

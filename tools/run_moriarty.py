@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 import hashlib
+import io
 import json
 import os
 import pwd
@@ -14,6 +15,7 @@ import signal
 import stat
 import subprocess
 import sys
+import tarfile
 import tempfile
 import time
 from pathlib import Path
@@ -187,6 +189,51 @@ def trusted_run(
     )
 
 
+def trusted_capture_bounded(
+    trusted: TrustedExecutable,
+    args: Sequence[str],
+    *,
+    limit: int,
+    cwd: Path,
+    env: dict[str, str],
+    overflow_error: str,
+    command_error: str,
+) -> bytes:
+    """Capture trusted stdout incrementally without exceeding `limit` bytes."""
+    if limit < 0 or not trusted_executable_matches(trusted):
+        fail(f"moriarty_trusted_capture_invalid:{trusted.name}")
+    process = subprocess.Popen(
+        [trusted.invocation, *args],
+        executable=proc_fd_path(trusted.fd),
+        pass_fds=(trusted.fd,),
+        cwd=cwd,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        bufsize=0,
+    )
+    assert process.stdout is not None
+    output = bytearray()
+    try:
+        while True:
+            chunk = process.stdout.read(min(65_536, limit - len(output) + 1))
+            if not chunk:
+                break
+            if len(output) + len(chunk) > limit:
+                process.kill()
+                process.wait()
+                fail(overflow_error)
+            output.extend(chunk)
+        return_code = process.wait()
+    finally:
+        process.stdout.close()
+    if return_code != 0:
+        fail(command_error)
+    if not trusted_executable_matches(trusted):
+        fail(f"moriarty_trusted_executable_changed:{trusted.name}")
+    return bytes(output)
+
+
 def _trusted_exact_path(name: str, path: Path) -> TrustedExecutable:
     invocation = path.absolute()
     try:
@@ -292,6 +339,33 @@ def _rustup_which(rustup: TrustedExecutable, toolchain: str, component: str) -> 
     return _trusted_exact_path(component, resolved)
 
 
+
+def _direct_toolchain_root(cargo: TrustedExecutable, rustc: TrustedExecutable) -> Path:
+    completed = trusted_run(
+        rustc,
+        ("--print", "sysroot"),
+        cwd=REAL_HOME,
+        env={"PATH": "/usr/bin:/bin", "HOME": str(REAL_HOME), "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"},
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if completed.returncode != 0:
+        fail("moriarty_direct_rustc_sysroot_unavailable")
+    try:
+        root = Path(completed.stdout.decode("utf-8", errors="strict").strip()).resolve(strict=True)
+    except (UnicodeError, OSError):
+        fail("moriarty_direct_rustc_sysroot_invalid")
+    expected_bin = root / "bin"
+    if (
+        Path(cargo.executable).parent != expected_bin
+        or Path(rustc.executable).parent != expected_bin
+        or not (root / "lib").is_dir()
+    ):
+        fail("moriarty_direct_toolchain_not_self_contained")
+    return root
+
+
 PYTHON_TRUSTED = _trusted_executable("python3", preferred=Path(sys.executable))
 GIT_TRUSTED = _trusted_executable("git")
 CARGO_ENTRY_TRUSTED = _trusted_executable("cargo")
@@ -392,6 +466,7 @@ def _git_env() -> dict[str, str]:
         "LC_ALL": "C.UTF-8",
         "GIT_CONFIG_NOSYSTEM": "1",
         "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_ATTR_NOSYSTEM": "1",
         "GIT_NO_REPLACE_OBJECTS": "1",
     }
 
@@ -463,12 +538,58 @@ def harness_files_match_target(target: str, extra_paths: Sequence[str] = ()) -> 
 
 
 def git_archive_bytes(commit: str) -> bytes:
-    completed = git("archive", "--format=tar", commit)
-    if completed.returncode != 0:
-        fail("moriarty_exact_export_git_archive_failed")
-    if len(completed.stdout) > MAX_GIT_ARCHIVE_BYTES:
+    """Build a bounded tar from commit tree/blob objects, bypassing archive attributes."""
+    if not git_commit_exists(commit):
+        fail("moriarty_exact_export_commit_missing")
+    listing = trusted_capture_bounded(
+        GIT_TRUSTED,
+        ("ls-tree", "-rz", "--full-tree", commit),
+        limit=MAX_GIT_ARCHIVE_BYTES,
+        cwd=ROOT,
+        env=_git_env(),
+        overflow_error="moriarty_exact_export_tree_listing_too_large",
+        command_error="moriarty_exact_export_ls_tree_failed",
+    )
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:") as archive:
+        for raw_record in listing.split(b"\0"):
+            if not raw_record:
+                continue
+            try:
+                metadata, raw_path = raw_record.split(b"\t", 1)
+                mode, object_type, object_id = metadata.decode("ascii", errors="strict").split(" ")
+                relative = raw_path.decode("utf-8", errors="strict")
+            except (ValueError, UnicodeError):
+                fail("moriarty_exact_export_tree_record_invalid")
+            if object_type != "blob" or mode not in {"100644", "100755"}:
+                fail("moriarty_exact_export_nonregular_entry_forbidden")
+            if not relative or relative.startswith("/") or any(part in {"", ".", ".."} for part in Path(relative).parts):
+                fail("moriarty_exact_export_tree_path_invalid")
+            remaining = MAX_GIT_ARCHIVE_BYTES - buffer.tell()
+            if remaining <= 0:
+                fail("moriarty_exact_export_archive_too_large")
+            blob = trusted_capture_bounded(
+                GIT_TRUSTED,
+                ("cat-file", "blob", object_id),
+                limit=remaining,
+                cwd=ROOT,
+                env=_git_env(),
+                overflow_error="moriarty_exact_export_archive_too_large",
+                command_error="moriarty_exact_export_blob_read_failed",
+            )
+            info = tarfile.TarInfo(relative)
+            info.size = len(blob)
+            info.mode = 0o755 if mode == "100755" else 0o644
+            info.uid = 0
+            info.gid = 0
+            info.mtime = 0
+            archive.addfile(info, io.BytesIO(blob))
+            if buffer.tell() > MAX_GIT_ARCHIVE_BYTES:
+                fail("moriarty_exact_export_archive_too_large")
+    encoded = buffer.getvalue()
+    if len(encoded) > MAX_GIT_ARCHIVE_BYTES:
         fail("moriarty_exact_export_archive_too_large")
-    return completed.stdout
+    return encoded
 
 
 def git_commit_exists(commit: str) -> bool:
@@ -643,10 +764,10 @@ def validate_counterexample_shape(item: Any) -> None:
         or not SHA256_REF_RE.fullmatch(item["stderr_sha256"])
         or not isinstance(item["stdout_bytes"], int)
         or isinstance(item["stdout_bytes"], bool)
-        or not 0 <= item["stdout_bytes"] <= 9007199254740991
+        or not 0 <= item["stdout_bytes"] <= MAX_PROBE_OUTPUT_BYTES
         or not isinstance(item["stderr_bytes"], int)
         or isinstance(item["stderr_bytes"], bool)
-        or not 0 <= item["stderr_bytes"] <= 9007199254740991
+        or not 0 <= item["stderr_bytes"] <= MAX_PROBE_OUTPUT_BYTES
     ):
         fail("moriarty_counterexample_boundary_invalid")
 
@@ -1097,7 +1218,6 @@ def counterexample_failure_matches(item: dict[str, Any], result: dict[str, Any])
 def verify_resolved_counterexamples(
     accepted: list[dict[str, Any]],
     workspace: Path,
-    cargo_template: Path,
     python_exec: Path,
     cargo_exec: Path,
     rustc_exec: Path,
@@ -1111,8 +1231,20 @@ def verify_resolved_counterexamples(
         before_source = create_exact_export(
             item["target_commit"], workspace, git_archive_bytes, f"resolved-{index}-before"
         )
+        if probe_id == "rust_all" and not (before_source / "Cargo.lock").is_file():
+            fail("moriarty_resolution_target_cargo_lock_missing")
+        before_template = (
+            create_verified_cargo_template(
+                REAL_HOME / ".cargo",
+                workspace,
+                before_source / "Cargo.lock",
+                f"resolved-{index}-before-template",
+            )
+            if probe_id == "rust_all"
+            else workspace
+        )
         before_cargo = _fresh_cargo_home(
-            probe_id, cargo_template, workspace, f"resolved-{index}-before"
+            probe_id, before_template, workspace, f"resolved-{index}-before"
         )
         before = run_probe(
             probe_id,
@@ -1134,8 +1266,20 @@ def verify_resolved_counterexamples(
         after_source = create_exact_export(
             resolution, workspace, git_archive_bytes, f"resolved-{index}-after"
         )
+        if probe_id == "rust_all" and not (after_source / "Cargo.lock").is_file():
+            fail("moriarty_resolution_commit_cargo_lock_missing")
+        after_template = (
+            create_verified_cargo_template(
+                REAL_HOME / ".cargo",
+                workspace,
+                after_source / "Cargo.lock",
+                f"resolved-{index}-after-template",
+            )
+            if probe_id == "rust_all"
+            else workspace
+        )
         after_cargo = _fresh_cargo_home(
-            probe_id, cargo_template, workspace, f"resolved-{index}-after"
+            probe_id, after_template, workspace, f"resolved-{index}-after"
         )
         after = run_probe(
             probe_id,
@@ -1193,23 +1337,23 @@ def main() -> int:
             PYTHON_TRUSTED.fd, workspace / "python-runtime" / "python3"
         )
 
-        rust_runtime: Path | None = None
-        if RUSTUP_DISCOVERY_USED:
-            rust_source_root = Path(CARGO_TRUSTED.executable).parent.parent
-            rust_runtime = stage_rust_toolchain_runtime(
-                rust_source_root,
-                workspace / "rust-runtime",
-                CARGO_TRUSTED.fd,
-                RUSTC_TRUSTED.fd,
-            )
-            cargo_exec = rust_runtime / "bin" / "cargo"
-            rustc_exec = rust_runtime / "bin" / "rustc"
-            rustdoc_candidate = rust_runtime / "bin" / "rustdoc"
-            rustdoc_exec = rustdoc_candidate if rustdoc_candidate.is_file() else None
-        else:
-            cargo_exec = Path(CARGO_TRUSTED.executable)
-            rustc_exec = Path(RUSTC_TRUSTED.executable)
-            rustdoc_exec = None
+        rust_source_root = (
+            Path(CARGO_TRUSTED.executable).parent.parent
+            if RUSTUP_DISCOVERY_USED
+            else _direct_toolchain_root(CARGO_TRUSTED, RUSTC_TRUSTED)
+        )
+        rust_runtime = stage_rust_toolchain_runtime(
+            rust_source_root,
+            workspace / "rust-runtime",
+            CARGO_TRUSTED.fd,
+            RUSTC_TRUSTED.fd,
+        )
+        cargo_exec = rust_runtime / "bin" / "cargo"
+        rustc_exec = rust_runtime / "bin" / "rustc"
+        rustdoc_candidate = rust_runtime / "bin" / "rustdoc"
+        rustdoc_exec = rustdoc_candidate if rustdoc_candidate.is_file() else None
+        if rustdoc_exec is None:
+            fail("moriarty_staged_rustdoc_missing")
 
         corpus = load_json(control_source / "fixtures/phase9/attack-corpus.json")
         attacks = validate_attack_corpus(corpus)
@@ -1254,7 +1398,6 @@ def main() -> int:
         verify_resolved_counterexamples(
             accepted,
             workspace,
-            cargo_template,
             python_exec,
             cargo_exec,
             rustc_exec,

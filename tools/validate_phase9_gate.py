@@ -402,7 +402,7 @@ def validate_runner_source() -> None:
         "PROBES: dict[str, tuple[str, ...]]", "PROBE_EXECUTABLES", "TrustedExecutable",
         "proc_fd_path(trusted.fd)", "pass_fds=pass_fds", "create_exact_export",
         "create_isolated_cargo_home", "create_verified_cargo_template", "probe_isolation_preexec",
-        "stage_rust_toolchain_runtime", "git_archive_bytes", "index_flags_clean",
+        "stage_rust_toolchain_runtime", "git_archive_bytes", "trusted_capture_bounded", "index_flags_clean",
         "write_report_exclusive", "--frozen", "candidate",
         "GIT_NO_REPLACE_OBJECTS", "RUSTUP_DISCOVERY_USED", "_rustup_which", "bounded_output_update",
         "enable_child_subreaper", "_kill_probe_tree", "post_exit_deadline", "termination_deadline",
@@ -473,7 +473,7 @@ def validate_docs_and_ci() -> None:
     require("cargo test --all-targets --locked" in workflow, "CI Rust suite is not lockfile-bound")
     require("MORIARTY_REPORT_DIR" in workflow, "CI MORIARTY persistent report directory missing")
     require("actions/upload-artifact@v4" in workflow and "Preserve Phase 9 MORIARTY report" in workflow, "CI MORIARTY report artifact preservation missing")
-    require("python3 tools/validate_phase9_gate.py --target-commit \"$MORIARTY_TARGET_COMMIT\" --report-dir \"$MORIARTY_REPORT_DIR\"" in workflow, "CI missing exact-commit Phase 9 gate")
+    require("python3 -I tools/validate_phase9_gate.py --target-commit \"$MORIARTY_TARGET_COMMIT\" --report-dir \"$MORIARTY_REPORT_DIR\"" in workflow, "CI missing isolated exact-commit Phase 9 gate")
 
 
 def _counterexample_for_test(target: str, attack: dict[str, Any]) -> dict[str, Any]:
@@ -718,10 +718,17 @@ else:
 try:
     socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 except OSError as exc:
-    if exc.errno == errno.EPERM:
-        raise SystemExit(0)
-    raise
-raise SystemExit(4)
+    if exc.errno != errno.EPERM:
+        raise
+else:
+    raise SystemExit(4)
+import ctypes
+libc = ctypes.CDLL(None, use_errno=True)
+libc.syscall.restype = ctypes.c_long
+result = libc.syscall(425, 1, ctypes.c_void_p(0))
+if result != -1 or ctypes.get_errno() != errno.EPERM:
+    raise SystemExit(5)
+raise SystemExit(0)
 """
         preexec = moriarty.probe_isolation_preexec(
             tuple(path for path in (Path("/usr"), Path("/bin"), Path("/lib"), Path("/lib64")) if path.exists()),
@@ -875,7 +882,7 @@ def execute_exact_commit_gate(target: str, report_dir: Path | None) -> None:
 
     completed = moriarty.trusted_run(
         moriarty.PYTHON_TRUSTED,
-        ("tools/run_moriarty.py", "--target-commit", target, "--output", str(report_path)),
+        ("-I", "tools/run_moriarty.py", "--target-commit", target, "--output", str(report_path)),
         cwd=ROOT,
         env={
             "PATH": "/usr/bin:/bin",
