@@ -13,6 +13,7 @@ MANIFEST_PATH = ROOT / "machine/lean-phase10-manifest.json"
 MANIFEST_SCHEMA_PATH = ROOT / "schemas/lean-phase10-manifest-v1.schema.json"
 STATE_PATH = ROOT / "state/phase10.json"
 CLAIMS_PATH = ROOT / "claims/phase10.json"
+AXIOM_AUDIT_PATH = ROOT / "QSOLFed/AxiomAudit.lean"
 REPORT_PATH = ROOT / "evidence/phase10/moriarty-report-c953463724cdf218802e66e16f582ae8d600ca47.json"
 REPORT_SHA256 = "6c215f44a1c52aa3bfefadc4039013ea69ddbe0f2afd06f6dac27377369b185c"
 TARGET_TAG = "v0.11.0"
@@ -23,6 +24,7 @@ LEAN_ARCHIVE_SHA256 = "890afd185370f85666025b883914ab4f4b339136f8c96167b69cfb62a
 EXPECTED_THEOREM_COUNT = 47
 PLACEHOLDER_RE = re.compile(r"\b(?:sorry|admit)\b")
 DECL_RE_TEMPLATE = r"\btheorem\s+{name}\b"
+AXIOM_PRINT_RE = re.compile(r"(?m)^[ \t]*#print[ \t]+axioms[ \t]+QSOLFed\.([a-z][a-z0-9_]*)[ \t]*$")
 
 
 class GateError(RuntimeError):
@@ -177,6 +179,16 @@ def verify_theorems(manifest: dict, frozen_inputs: set[str]) -> None:
         require(theorem["proof_status"] == "IMPLEMENTED", f"unexpected proof status for {declaration}")
 
 
+def verify_axiom_audit_coverage(manifest: dict) -> None:
+    require(AXIOM_AUDIT_PATH.is_file(), "Phase 10 axiom audit source missing")
+    audit_source = AXIOM_AUDIT_PATH.read_text(encoding="utf-8")
+    audited = AXIOM_PRINT_RE.findall(audit_source)
+    expected = [theorem["declaration"] for theorem in manifest.get("theorems", [])]
+    require(len(audited) == EXPECTED_THEOREM_COUNT, "Phase 10 axiom audit theorem count drift")
+    require(len(audited) == len(set(audited)), "Phase 10 axiom audit contains duplicate theorem entries")
+    require(audited == expected, "Phase 10 axiom audit coverage/order differs from theorem manifest")
+
+
 def verify_no_placeholders() -> None:
     lean_files = sorted(ROOT.glob("QSOLFed/**/*.lean")) + [ROOT / "QSOLFed.lean"]
     require(lean_files, "no Lean source files found")
@@ -225,7 +237,6 @@ def verify_frozen_roadmap_contract() -> None:
         require(text in roadmap, f"frozen Phase 10 ROADMAP contract missing: {text}")
 
 
-
 def verify_phase10_contracts(manifest: dict) -> None:
     state = load_json(STATE_PATH)
     claims = load_json(CLAIMS_PATH)
@@ -261,6 +272,7 @@ def verify_phase10_contracts(manifest: dict) -> None:
     for text in (TARGET_TAG, TARGET_COMMIT, TARGET_TREE, "LEAN THEOREM != DEPLOYMENT SECURITY PROOF", "TARGET_BOUND SOURCE RELEASE != POST-TAG FORMALIZATION LAYER"):
         require(text in docs, f"FORMALIZATION.md missing boundary/source text: {text}")
 
+
 def validate() -> dict:
     manifest = load_json(MANIFEST_PATH)
     verify_manifest_policy(manifest)
@@ -270,6 +282,7 @@ def validate() -> dict:
     frozen_inputs = verify_frozen_inputs(manifest)
     verify_toolchain(manifest)
     verify_theorems(manifest, frozen_inputs)
+    verify_axiom_audit_coverage(manifest)
     verify_no_placeholders()
     verify_frozen_roadmap_contract()
     return {
