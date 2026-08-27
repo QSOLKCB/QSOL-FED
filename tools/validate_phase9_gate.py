@@ -677,7 +677,7 @@ def validate_probe_map() -> None:
     os.chmod(locked, 0)
     os.chmod(locked.parent, 0)
     os.chmod(cleanup_root, 0)
-    moriarty._cleanup_probe_writable_paths(cleanup_root)
+    moriarty._force_remove_probe_path(cleanup_root)
     require(not cleanup_root.exists(), "probe cleanup could not reclaim chmod(0) tree")
 
     with tempfile.TemporaryDirectory(prefix="moriarty-python-shadow-") as temp_dir:
