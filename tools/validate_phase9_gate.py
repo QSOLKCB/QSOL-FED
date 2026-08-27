@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import io
 import os
 import hashlib
 import builtins
@@ -13,6 +14,7 @@ import re
 import stat
 import subprocess
 import sys
+import tarfile
 import tempfile
 from pathlib import Path
 from typing import Any, Callable
@@ -1076,6 +1078,32 @@ def validate_isolation_negative_tests(target: str) -> None:
         (first / "config.toml").write_text("[build]\nrustc-wrapper='evil'\n", encoding="utf-8")
         require(not (second / "config.toml").exists(), "per-probe Cargo homes contaminated each other")
 
+        hook_archive = cache / "hooked-1.0.0.crate"
+        hook_manifest = b'[package]\nname = "hooked"\nversion = "1.0.0"\nbuild = "build.rs"\n'
+        hook_source = b"fn main() {}\n"
+        with tarfile.open(hook_archive, mode="w:gz") as archive:
+            for member_name, payload in (
+                ("hooked-1.0.0/Cargo.toml", hook_manifest),
+                ("hooked-1.0.0/build.rs", hook_source),
+            ):
+                info = tarfile.TarInfo(member_name)
+                info.size = len(payload)
+                info.mode = 0o644
+                info.mtime = 0
+                archive.addfile(info, io.BytesIO(payload))
+        hook_sha = hashlib.sha256(hook_archive.read_bytes()).hexdigest()
+        hook_lock = root / "Cargo-hook.lock"
+        hook_lock.write_text(
+            'version = 4\n\n[[package]]\nname = "hooked"\nversion = "1.0.0"\nsource = "registry+https://github.com/rust-lang/crates.io-index"\nchecksum = "' + hook_sha + '"\n',
+            encoding="utf-8",
+        )
+        workspace_hook = root / "workspace-hook"
+        workspace_hook.mkdir()
+        _expect_reject(
+            lambda: moriarty.create_verified_cargo_template(ambient, workspace_hook, hook_lock),
+            "unreviewed checksum-authenticated registry build hook",
+        )
+
         writable_bound = root / "writable-bound"
         writable_bound.mkdir()
         oversized_writable = writable_bound / "oversized"
@@ -1264,6 +1292,24 @@ ctypes.set_errno(0)
 result = libc.syscall(prlimit_nr, int(parent_pid), resource.RLIMIT_NOFILE, ctypes.byref(new_limit), ctypes.c_void_p(0))
 if result != -1 or ctypes.get_errno() != errno.EPERM:
     raise SystemExit(9)
+for number, args, code in (
+    (434, (int(parent_pid), 0), 13),
+    (438, (-1, 0, 0), 14),
+):
+    ctypes.set_errno(0)
+    result = libc.syscall(number, *args)
+    if result != -1 or ctypes.get_errno() != errno.EPERM:
+        raise SystemExit(code)
+add_key_nr, request_key_nr, keyctl_nr = ((248, 249, 250) if machine == "x86_64" else (217, 218, 219))
+for number, args, code in (
+    (add_key_nr, (ctypes.c_void_p(0), ctypes.c_void_p(0), ctypes.c_void_p(0), 0, -1), 15),
+    (request_key_nr, (ctypes.c_void_p(0), ctypes.c_void_p(0), ctypes.c_void_p(0), -1), 16),
+    (keyctl_nr, (0, 0, 0, 0, 0), 17),
+):
+    ctypes.set_errno(0)
+    result = libc.syscall(number, *args)
+    if result != -1 or ctypes.get_errno() != errno.EPERM:
+        raise SystemExit(code)
 forbidden_etc = Path("/etc/hostname")
 if forbidden_etc.exists():
     try:
