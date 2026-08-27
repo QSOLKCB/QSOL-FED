@@ -73,40 +73,6 @@ jobs:
           sudo mount -t tmpfs -o "size=1073741824,nosuid,nodev,mode=0700,uid=$(id -u),gid=$(id -g)" tmpfs "$CARGO_SOURCE_ROOT"
           test "$(stat -f -c %T "$CARGO_SOURCE_ROOT")" = "tmpfs"
           test -z "$(find "$CARGO_SOURCE_ROOT" -mindepth 1 -print -quit)"
-
-          DELEGATE_UNIT="qsol-moriarty-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.service"
-          sudo systemd-run --quiet --unit="$DELEGATE_UNIT" \
-            --property=Delegate=yes \
-            --property=DelegateSubgroup=anchor \
-            --uid="$(id -u)" --gid="$(id -g)" \
-            /usr/bin/sleep infinity
-          echo "MORIARTY_CGROUP_DELEGATE_UNIT=$DELEGATE_UNIT" >> "$GITHUB_ENV"
-          CONTROL_GROUP="$(sudo systemctl show "$DELEGATE_UNIT" --property=ControlGroup --value)"
-          test -n "$CONTROL_GROUP"
-          CGROUP_PARENT="/sys/fs/cgroup${CONTROL_GROUP}"
-          test -d "$CGROUP_PARENT"
-          test -z "$(cat "$CGROUP_PARENT/cgroup.procs")"
-          grep -qw memory "$CGROUP_PARENT/cgroup.controllers"
-          grep -qw pids "$CGROUP_PARENT/cgroup.controllers"
-          echo '+memory +pids' | sudo tee "$CGROUP_PARENT/cgroup.subtree_control" >/dev/null
-          grep -qw memory "$CGROUP_PARENT/cgroup.subtree_control"
-          grep -qw pids "$CGROUP_PARENT/cgroup.subtree_control"
-          PROBE_CGROUP="$CGROUP_PARENT/probe"
-          sudo mkdir "$PROBE_CGROUP"
-          echo 2147483648 | sudo tee "$PROBE_CGROUP/memory.max" >/dev/null
-          echo 128 | sudo tee "$PROBE_CGROUP/pids.max" >/dev/null
-          if test -f "$PROBE_CGROUP/memory.swap.max"; then
-            echo 0 | sudo tee "$PROBE_CGROUP/memory.swap.max" >/dev/null
-          fi
-          if test -f "$PROBE_CGROUP/memory.oom.group"; then
-            echo 1 | sudo tee "$PROBE_CGROUP/memory.oom.group" >/dev/null
-          fi
-          sudo chown "$(id -u):$(id -g)" "$PROBE_CGROUP/cgroup.procs"
-          test -w "$PROBE_CGROUP/cgroup.procs"
-          test -z "$(cat "$PROBE_CGROUP/cgroup.procs")"
-          test "$(cat "$PROBE_CGROUP/memory.max")" = "2147483648"
-          test "$(cat "$PROBE_CGROUP/pids.max")" = "128"
-          echo "MORIARTY_PROBE_CGROUP=$PROBE_CGROUP" >> "$GITHUB_ENV"
       - name: Prepare authenticated Cargo archives without repository execution
         env:
           MORIARTY_CARGO_CACHE_ROOT: /mnt/qsol-moriarty-cargo-source
@@ -161,8 +127,78 @@ jobs:
           MORIARTY_CARGO_CACHE_ROOT: /mnt/qsol-moriarty-cargo-source
           MORIARTY_PROBE_WRITABLE_ROOT: /mnt/qsol-moriarty-probe-writable
         run: |
+          set -euo pipefail
           install -d -m 700 "$MORIARTY_REPORT_DIR"
+          DELEGATE_UNIT="qsol-moriarty-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.service"
+          GATE_SCRIPT="$RUNNER_TEMP/moriarty-delegated-gate-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.sh"
+          cat > "$GATE_SCRIPT" <<'BASH'
+          #!/usr/bin/bash
+          set -euo pipefail
+          CURRENT_CGROUP="$(awk -F: '$1 == "0" {print $3}' /proc/self/cgroup)"
+          case "$CURRENT_CGROUP" in
+            */anchor) ;;
+            *) echo "delegated validator subgroup missing: $CURRENT_CGROUP" >&2; exit 1 ;;
+          esac
+          CGROUP_PARENT="/sys/fs/cgroup${CURRENT_CGROUP%/anchor}"
+          test -d "$CGROUP_PARENT"
+          test -z "$(cat "$CGROUP_PARENT/cgroup.procs")"
+          grep -qw memory "$CGROUP_PARENT/cgroup.controllers"
+          grep -qw pids "$CGROUP_PARENT/cgroup.controllers"
+          echo '+memory +pids' | sudo tee "$CGROUP_PARENT/cgroup.subtree_control" >/dev/null
+          grep -qw memory "$CGROUP_PARENT/cgroup.subtree_control"
+          grep -qw pids "$CGROUP_PARENT/cgroup.subtree_control"
+          sudo chown "$(id -u):$(id -g)" "$CGROUP_PARENT/cgroup.procs"
+          test -w "$CGROUP_PARENT/cgroup.procs"
+          PROBE_CGROUP="$CGROUP_PARENT/probe"
+          sudo mkdir "$PROBE_CGROUP"
+          echo 2147483648 | sudo tee "$PROBE_CGROUP/memory.max" >/dev/null
+          echo 128 | sudo tee "$PROBE_CGROUP/pids.max" >/dev/null
+          if test -f "$PROBE_CGROUP/memory.swap.max"; then
+            echo 0 | sudo tee "$PROBE_CGROUP/memory.swap.max" >/dev/null
+          fi
+          if test -f "$PROBE_CGROUP/memory.oom.group"; then
+            echo 1 | sudo tee "$PROBE_CGROUP/memory.oom.group" >/dev/null
+          fi
+          sudo chown "$(id -u):$(id -g)" "$PROBE_CGROUP/cgroup.procs"
+          test -w "$PROBE_CGROUP/cgroup.procs"
+          test -z "$(cat "$PROBE_CGROUP/cgroup.procs")"
+          test "$(cat "$PROBE_CGROUP/memory.max")" = "2147483648"
+          test "$(cat "$PROBE_CGROUP/pids.max")" = "128"
+          cleanup() {
+            set +e
+            if test -d "$PROBE_CGROUP"; then
+              while read -r pid; do
+                test -n "$pid" && sudo kill -KILL "$pid" 2>/dev/null || true
+              done < "$PROBE_CGROUP/cgroup.procs"
+              sudo rmdir "$PROBE_CGROUP" 2>/dev/null || true
+            fi
+          }
+          trap cleanup EXIT
+          export MORIARTY_PROBE_CGROUP="$PROBE_CGROUP"
           /usr/bin/python3 -I tools/validate_phase9_gate.py --target-commit "$MORIARTY_TARGET_COMMIT" --report-dir "$MORIARTY_REPORT_DIR"
+          BASH
+          chmod 500 "$GATE_SCRIPT"
+          cleanup_outer() {
+            set +e
+            sudo systemctl stop "$DELEGATE_UNIT" 2>/dev/null || true
+            sudo systemctl reset-failed "$DELEGATE_UNIT" 2>/dev/null || true
+            rm -f "$GATE_SCRIPT"
+          }
+          trap cleanup_outer EXIT
+          sudo systemd-run --quiet --wait --pipe --collect --unit="$DELEGATE_UNIT" \
+            --property=Delegate=yes \
+            --property=DelegateSubgroup=anchor \
+            --uid="$(id -u)" --gid="$(id -g)" \
+            --working-directory="$GITHUB_WORKSPACE" \
+            --setenv="MORIARTY_TARGET_COMMIT=$MORIARTY_TARGET_COMMIT" \
+            --setenv="MORIARTY_REPORT_DIR=$MORIARTY_REPORT_DIR" \
+            --setenv="MORIARTY_RUST_TOOLCHAIN_ROOT=$MORIARTY_RUST_TOOLCHAIN_ROOT" \
+            --setenv="MORIARTY_EXPECTED_PYTHON_VERSION=$MORIARTY_EXPECTED_PYTHON_VERSION" \
+            --setenv="MORIARTY_EXPECTED_RUSTC_VERSION=$MORIARTY_EXPECTED_RUSTC_VERSION" \
+            --setenv="MORIARTY_EXPECTED_CARGO_VERSION=$MORIARTY_EXPECTED_CARGO_VERSION" \
+            --setenv="MORIARTY_CARGO_CACHE_ROOT=$MORIARTY_CARGO_CACHE_ROOT" \
+            --setenv="MORIARTY_PROBE_WRITABLE_ROOT=$MORIARTY_PROBE_WRITABLE_ROOT" \
+            "$GATE_SCRIPT"
       - name: Preserve Phase 9 MORIARTY report
         if: always()
         uses: actions/upload-artifact@v4
@@ -175,16 +211,6 @@ jobs:
         if: always()
         run: |
           set +e
-          if test -n "${MORIARTY_PROBE_CGROUP:-}" && test -d "$MORIARTY_PROBE_CGROUP"; then
-            while read -r pid; do
-              test -n "$pid" && sudo kill -KILL "$pid" 2>/dev/null || true
-            done < "$MORIARTY_PROBE_CGROUP/cgroup.procs"
-            sudo rmdir "$MORIARTY_PROBE_CGROUP" || true
-          fi
-          if test -n "${MORIARTY_CGROUP_DELEGATE_UNIT:-}"; then
-            sudo systemctl stop "$MORIARTY_CGROUP_DELEGATE_UNIT" 2>/dev/null || true
-            sudo systemctl reset-failed "$MORIARTY_CGROUP_DELEGATE_UNIT" 2>/dev/null || true
-          fi
           sudo umount /mnt/qsol-moriarty-probe-writable 2>/dev/null || true
           sudo umount /mnt/qsol-moriarty-cargo-source 2>/dev/null || true
           sudo rmdir /mnt/qsol-moriarty-probe-writable 2>/dev/null || true
