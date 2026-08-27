@@ -84,7 +84,7 @@ def _bootstrap_git_object(kind: str, object_id: str) -> bytes:
     if completed.returncode != 0:
         raise SystemExit(f"moriarty_bootstrap_{kind}_read_failed")
     payload = completed.stdout
-    actual = hashlib.sha1(f"{kind} {len(payload)}\\0".encode("ascii") + payload).hexdigest()
+    actual = hashlib.sha1(f"{kind} {len(payload)}".encode("ascii") + b"\x00" + payload).hexdigest()
     if actual != object_id:
         raise SystemExit(f"moriarty_bootstrap_{kind}_hash_mismatch")
     return payload
