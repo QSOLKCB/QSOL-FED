@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import subprocess
@@ -9,6 +10,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "machine/lean-phase10-manifest.json"
+MANIFEST_SCHEMA_PATH = ROOT / "schemas/lean-phase10-manifest-v1.schema.json"
+STATE_PATH = ROOT / "state/phase10.json"
+CLAIMS_PATH = ROOT / "claims/phase10.json"
+REPORT_PATH = ROOT / "evidence/phase10/moriarty-report-c953463724cdf218802e66e16f582ae8d600ca47.json"
+REPORT_SHA256 = "6c215f44a1c52aa3bfefadc4039013ea69ddbe0f2afd06f6dac27377369b185c"
 TARGET_TAG = "v0.11.0"
 TARGET_COMMIT = "c953463724cdf218802e66e16f582ae8d600ca47"
 TARGET_TREE = "93f23cd7eda6dd92ae13b7bb96bee01935b80731"
@@ -71,6 +77,8 @@ def verify_moriarty_binding(manifest: dict) -> None:
         "run_number": 413,
         "artifact_id": 9645064099,
         "artifact_digest": "sha256:1c77cb56e83a0af19961e9f3c99d3ace02f6dd905655dc64b36aa90d46e9d9ce",
+        "report_path": "evidence/phase10/moriarty-report-c953463724cdf218802e66e16f582ae8d600ca47.json",
+        "report_sha256": "sha256:6c215f44a1c52aa3bfefadc4039013ea69ddbe0f2afd06f6dac27377369b185c",
         "target_commit": TARGET_COMMIT,
         "corpus_ref": "sha256:af50e8145a72a1a583ede29687535a59c0e17ac37fdd66e1ede51c453e8fd3e6",
         "family_count": 15,
@@ -80,6 +88,33 @@ def verify_moriarty_binding(manifest: dict) -> None:
         "security_proof": False,
     }
     require({key: binding.get(key) for key in expected} == expected, "MORIARTY binding drift")
+    require(REPORT_PATH.is_file(), "retained MORIARTY report missing")
+    report_bytes = REPORT_PATH.read_bytes()
+    require(hashlib.sha256(report_bytes).hexdigest() == REPORT_SHA256, "retained MORIARTY report SHA-256 drift")
+    report = json.loads(report_bytes.decode("utf-8"))
+    report_expected = {
+        "protocol": "MORIARTY/1",
+        "schema": "moriarty-report/1",
+        "target_commit": TARGET_COMMIT,
+        "corpus_ref": expected["corpus_ref"],
+        "family_count": 15,
+        "executed_probe_count": 13,
+        "unresolved_counterexamples": 0,
+        "graduated": True,
+        "security_proof": False,
+        "no_counterexample_found_implies_none_exist": False,
+        "production_credentials_used": False,
+        "production_targets_used": False,
+        "constitutional_bypass_used": False,
+        "authority_effect": "none",
+    }
+    require({key: report.get(key) for key in report_expected} == report_expected, "retained MORIARTY report semantic drift")
+    require(report.get("counterexamples") == [] and report.get("remediation_replays") == [], "retained MORIARTY report counterexample/replay drift")
+    probes = report.get("probe_results")
+    require(isinstance(probes, list) and len(probes) == 13, "retained MORIARTY probe inventory drift")
+    expected_probe_ids = {"constitution", "phase0", "phase1", "phase2", "phase3", "phase4", "phase5a", "phase5", "phase5c", "phase6", "phase7", "phase8", "rust_all"}
+    require({item.get("probe_id") for item in probes if isinstance(item, dict)} == expected_probe_ids, "retained MORIARTY probe ID drift")
+    require(all(item.get("ok") is True and item.get("exit_code") == 0 and item.get("failure_kind") is None for item in probes), "retained MORIARTY probe failure")
 
 
 def verify_frozen_inputs(manifest: dict) -> set[str]:
@@ -154,7 +189,7 @@ def verify_no_placeholders() -> None:
 def verify_manifest_policy(manifest: dict) -> None:
     require(manifest.get("schema") == "qsol-fed-lean-phase10-manifest/1", "manifest schema drift")
     require(manifest.get("protocol") == "qsol-fed/0" and manifest.get("phase") == 10, "manifest protocol/phase drift")
-    require(manifest.get("status") == "IMPLEMENTED_PENDING_CI", "manifest must not pre-claim LEAN_VERIFIED")
+    require(manifest.get("status") in {"IMPLEMENTED_PENDING_CI", "LEAN_VERIFIED_ON_BRANCH", "LEAN_VERIFIED_ON_MERGED_MAIN"}, "manifest verification status drift")
     assumptions = manifest.get("assumptions")
     require(isinstance(assumptions, list) and {x.get("id") for x in assumptions} == {"MODEL_SCOPE", "CANONICAL_BYTES_INPUT", "REAL_WORLD_PRINCIPALS"}, "named assumptions drift")
     nonclaims = set(manifest.get("nonclaims", []))
@@ -190,11 +225,48 @@ def verify_frozen_roadmap_contract() -> None:
         require(text in roadmap, f"frozen Phase 10 ROADMAP contract missing: {text}")
 
 
+
+def verify_phase10_contracts(manifest: dict) -> None:
+    state = load_json(STATE_PATH)
+    claims = load_json(CLAIMS_PATH)
+    phase9_claims = load_json(ROOT / "claims/phase9.json")
+    phase8_claims = load_json(ROOT / "claims/phase8.json")
+    schema = load_json(MANIFEST_SCHEMA_PATH)
+
+    require(state.get("document_type") == "qsol-fed-phase10-lean-contract" and state.get("phase") == "10", "Phase 10 state contract identity drift")
+    source = state.get("source_release", {})
+    require(source.get("tag") == TARGET_TAG and source.get("commit") == TARGET_COMMIT and source.get("tree") == TARGET_TREE and source.get("immutable") is True, "Phase 10 state source release drift")
+    scope = state.get("theorem_scope", {})
+    require(scope.get("theorem_count") == EXPECTED_THEOREM_COUNT, "Phase 10 state theorem count drift")
+    require(scope.get("no_sorry_or_admit") is True and scope.get("custom_axioms") == [] and scope.get("kernel_axiom_dependencies") == [], "Phase 10 state proof-discipline drift")
+    evidence = state.get("moriarty_source_evidence", {})
+    require(evidence.get("retained_report") == str(REPORT_PATH.relative_to(ROOT)) and evidence.get("retained_report_sha256") == "sha256:" + REPORT_SHA256, "Phase 10 state MORIARTY report binding drift")
+
+    require(claims.get("document_type") == "qsol-fed-phase10-lean-claims" and claims.get("phase") == "10", "Phase 10 claim identity drift")
+    require(claims.get("claim_surface_changed") is False, "Phase 10 must not change runtime capability claims")
+    require(claims.get("capabilities") == phase9_claims.get("capabilities") == phase8_claims.get("capabilities"), "Phase 10 capability map differs from Phase 9/8 baseline")
+    assurance = claims.get("formalization_assurance", {})
+    require(assurance.get("theorem_count") == EXPECTED_THEOREM_COUNT, "Phase 10 formalization assurance theorem count drift")
+    require(assurance.get("unresolved_sorry_or_admit") is False and assurance.get("custom_axioms") is False and assurance.get("graduation_theorem_kernel_axiom_dependencies") is False, "Phase 10 formalization assurance proof-discipline drift")
+    require(assurance.get("whole_implementation_verified") is False and assurance.get("deployment_security_proof") is False and assurance.get("source_release_rewritten") is False, "Phase 10 formalization assurance overclaim")
+
+    require(schema.get("$id") == "https://qsol.example/schemas/lean-phase10-manifest-v1.schema.json", "Phase 10 manifest schema ID drift")
+    properties = schema.get("properties", {})
+    require(properties.get("theorem_count", {}).get("const") == EXPECTED_THEOREM_COUNT, "Phase 10 manifest schema theorem count drift")
+    require(manifest.get("status") in properties.get("status", {}).get("enum", []), "Phase 10 manifest status not admitted by schema")
+    report_const = properties.get("moriarty_binding", {}).get("properties", {}).get("report_sha256", {}).get("const")
+    require(report_const == "sha256:" + REPORT_SHA256, "Phase 10 manifest schema report digest drift")
+
+    docs = (ROOT / "FORMALIZATION.md").read_text(encoding="utf-8")
+    for text in (TARGET_TAG, TARGET_COMMIT, TARGET_TREE, "LEAN THEOREM != DEPLOYMENT SECURITY PROOF", "TARGET_BOUND SOURCE RELEASE != POST-TAG FORMALIZATION LAYER"):
+        require(text in docs, f"FORMALIZATION.md missing boundary/source text: {text}")
+
 def validate() -> dict:
     manifest = load_json(MANIFEST_PATH)
     verify_manifest_policy(manifest)
     verify_frozen_target(manifest)
     verify_moriarty_binding(manifest)
+    verify_phase10_contracts(manifest)
     frozen_inputs = verify_frozen_inputs(manifest)
     verify_toolchain(manifest)
     verify_theorems(manifest, frozen_inputs)

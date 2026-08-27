@@ -98,5 +98,12 @@ jobs:
           retention-days: 14
           path: |
             machine/lean-phase10-manifest.json
+            state/phase10.json
+            claims/phase10.json
+            schemas/lean-phase10-manifest-v1.schema.json
+            FORMALIZATION.md
+            lean-toolchain
+            lakefile.toml
+            evidence/phase10/moriarty-report-c953463724cdf218802e66e16f582ae8d600ca47.json
             ${{ runner.temp }}/phase10-gate.json
             ${{ runner.temp }}/phase10-axioms.txt

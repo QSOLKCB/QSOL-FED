@@ -343,19 +343,30 @@ NO COUNTEREXAMPLE FOUND != NO COUNTEREXAMPLE EXISTS
 
 ## Phase 10 — Lean 4 formalization
 
-**Status: planned. Begins only after an exact merged commit passes its own MORIARTY/1 workflow run.**
+**Status: implemented on the post-tag formalization layer; branch verification green, reviewed merge/main verification pending.**
 
-Bind the Lean package to the exact Moriarty-surviving merged commit, invariant IDs, contracts, schemas, phase gates, attack corpus and adversarial report. Initial theorem targets include Prime Directive admission, signature/trust/authority separation, peering/capability separation, import non-authority, lifecycle monotonicity, partition sovereignty, provenance preservation, canonical identity determinism, Holodeck separation/safeguards, adapter non-authority, SDK conformance boundaries, Assembly sovereignty, and transport identity/provenance independence.
+The sole theorem source target is immutable release `v0.11.0`, exact commit `c953463724cdf218802e66e16f582ae8d600ca47`, exact tree `93f23cd7eda6dd92ae13b7bb96bee01935b80731`. The Lean files are later artifacts and do not rewrite that release.
 
-No unresolved `sorry`/`admit` is permitted in the graduation theorem set; assumptions must be named and theorem-to-contract traceability complete.
+- [x] Bind the theorem manifest to the immutable source release, invariant IDs, contracts, schemas, phase gates, attack corpus and exact merged-main MORIARTY report.
+- [x] Retain the exact source MORIARTY report bytes after GitHub artifact verification.
+- [x] Pin Lean 4.33.1 and the downloaded archive SHA-256.
+- [x] Formalize all 13 initial theorem families named by the frozen roadmap.
+- [x] Provide 47 theorem-to-contract-traceable graduation theorems.
+- [x] Reject unresolved `sorry`/`admit` and custom `axiom` declarations.
+- [x] Audit all 47 graduation theorems with `#print axioms`; current candidate has zero kernel axiom dependencies.
+- [x] Preserve the Phase 8 capability surface and Phase 9 adversarial-assurance boundary unchanged.
+- [ ] Merge the reviewed formalization PR and require the exact merged `main` commit to pass the same pinned Lean workflow before recording Phase 10 complete/`LEAN_VERIFIED` externally.
+
+The formal model covers Prime Directive admission, signature/trust/authority separation, peering/capability separation, import non-authority, lifecycle monotonicity, partition sovereignty, provenance preservation, canonical identity determinism, Holodeck separation/safeguards, adapter non-authority, SDK conformance boundaries, Assembly sovereignty, and transport identity/provenance independence.
 
 ### Phase 10 gate
 
-The theorem manifest must compile from a clean checkout of the exact Moriarty-surviving lineage on a pinned Lean toolchain.
+From a clean post-tag checkout, the gate must verify immutable `v0.11.0` source identity, frozen source blobs, retained MORIARTY report bytes, complete theorem-to-contract traceability and the pinned Lean archive; then compile all 47 graduation theorems with no unresolved placeholders, custom axioms or kernel axiom dependencies. Final completion additionally requires the reviewed formalization merge and exact merged-main workflow success.
 
 ```text
 LEAN THEOREM != DEPLOYMENT SECURITY PROOF
 FORMAL MODEL != UNSTATED REAL-WORLD ASSUMPTION
+TARGET_BOUND SOURCE RELEASE != POST-TAG FORMALIZATION LAYER
 ```
 
 ---

@@ -6,7 +6,7 @@ QSOL-FED is a security-sensitive federation boundary. Protocol convenience never
 
 ### Read first
 
-Read `README4AI.md`, `CHARTER.md`, `PRIME_DIRECTIVE.md`, all historical/current `claims/*.json`, `invariants/fed-v1.json`, `wire/phase1.json`, `crypto/phase2.json`, `api/phase3.json`, `state/phase4.json`, `state/phase5a-holodeck.json`, `state/phase5.json`, `state/phase5c.json`, `state/phase6.json`, `state/phase7.json`, `state/phase8.json`, `state/phase9.json`, `CANONICAL_JSON.md`, `CRYPTOGRAPHY.md`, `API.md`, `TLS_PROFILE.md`, `FEDERATION_STATE.md`, `HOLODECK.md`, `QSOL_ADAPTERS.md`, `SDK.md`, `docs/THIRD_PARTY_INTEGRATION.md`, `ASSEMBLY.md`, `TRANSPORTS.md`, `MORIARTY.md`, `fixtures/phase9/attack-corpus.json`, `fixtures/phase9/accepted-counterexamples.json`, `src/invariants.rs`, `src/claims.rs`, `src/store.rs`, `src/peering.rs`, `src/bundle.rs`, `src/holodeck.rs`, `src/qsol_adapters.rs`, `src/oracle_live.rs`, `src/sdk.rs`, `src/assembly.rs`, `src/transport.rs`, `tools/run_moriarty.py`, `tools/validate_phase9_gate.py`, and `THREAT_MODEL.md` before changing security, state, simulation, adapter, SDK, governance, transport, archive, relay, NAT, resilience, adversarial-graduation, or assurance semantics.
+Read `README4AI.md`, `CHARTER.md`, `PRIME_DIRECTIVE.md`, all historical/current `claims/*.json`, `invariants/fed-v1.json`, `wire/phase1.json`, `crypto/phase2.json`, `api/phase3.json`, `state/phase4.json`, `state/phase5a-holodeck.json`, `state/phase5.json`, `state/phase5c.json`, `state/phase6.json`, `state/phase7.json`, `state/phase8.json`, `state/phase9.json`, `state/phase10.json`, `claims/phase10.json`, `machine/lean-phase10-manifest.json`, `schemas/lean-phase10-manifest-v1.schema.json`, `FORMALIZATION.md`, `QSOLFed/Model.lean`, `QSOLFed/Theorems.lean`, `QSOLFed/AxiomAudit.lean`, `tools/validate_phase10_gate.py`, `CANONICAL_JSON.md`, `CRYPTOGRAPHY.md`, `API.md`, `TLS_PROFILE.md`, `FEDERATION_STATE.md`, `HOLODECK.md`, `QSOL_ADAPTERS.md`, `SDK.md`, `docs/THIRD_PARTY_INTEGRATION.md`, `ASSEMBLY.md`, `TRANSPORTS.md`, `MORIARTY.md`, `fixtures/phase9/attack-corpus.json`, `fixtures/phase9/accepted-counterexamples.json`, `src/invariants.rs`, `src/claims.rs`, `src/store.rs`, `src/peering.rs`, `src/bundle.rs`, `src/holodeck.rs`, `src/qsol_adapters.rs`, `src/oracle_live.rs`, `src/sdk.rs`, `src/assembly.rs`, `src/transport.rs`, `tools/run_moriarty.py`, `tools/validate_phase9_gate.py`, and `THREAT_MODEL.md` before changing security, state, simulation, adapter, SDK, governance, transport, archive, relay, NAT, resilience, adversarial-graduation, or assurance semantics.
 
 ### Core constitutional rules
 
@@ -131,9 +131,31 @@ NO COUNTEREXAMPLE FOUND != NO COUNTEREXAMPLE EXISTS
 
 Run `python3 tools/validate_phase9_gate.py --target-commit "$(git rev-parse HEAD)"` after adversarial-contract/corpus/registry/report/gate/CI changes.
 
+### Current Phase 10 Lean 4 formalization rules
+
+`state/phase10.json`, `claims/phase10.json`, `machine/lean-phase10-manifest.json`, `schemas/lean-phase10-manifest-v1.schema.json`, `FORMALIZATION.md`, `QSOLFed/*.lean`, `lean-toolchain`, `lakefile.toml`, `tools/validate_phase10_gate.py`, and `.github/workflows/phase10-lean.yml` define the post-tag formalization layer.
+
+- The sole source target is immutable `v0.11.0` at commit `c953463724cdf218802e66e16f582ae8d600ca47` / tree `93f23cd7eda6dd92ae13b7bb96bee01935b80731`.
+- Never move the source target to current `main`; formalization files are later artifacts and do not rewrite the source release.
+- The retained Phase 9 MORIARTY report must match its recorded SHA-256 and exact source identity.
+- `claims/phase10.json` must preserve the Phase 9/Phase 8 capability map exactly. Lean adds assurance only.
+- Every graduation theorem must appear in the theorem manifest with frozen source refs and contract/boundary IDs.
+- No unresolved `sorry`/`admit`, custom `axiom`, or kernel axiom dependency is permitted in the 47-theorem graduation set.
+- Named scope assumptions live in the manifest; do not disguise implementation/deployment assumptions as theorems.
+- `canonical_identity_deterministic` does not prove production canonicalizer correctness or SHA-256 collision resistance.
+- Do not claim whole-Rust verification, deployment security proof, host-sandbox proof, or real-world principal uniqueness.
+
+```text
+LEAN THEOREM != DEPLOYMENT SECURITY PROOF
+FORMAL MODEL != UNSTATED REAL-WORLD ASSUMPTION
+TARGET_BOUND SOURCE RELEASE != POST-TAG FORMALIZATION LAYER
+```
+
+Run `python3 tools/validate_phase10_gate.py`, `lake build`, and `lake env lean QSOLFed/AxiomAudit.lean` after formalization/manifest/contract/claim/documentation changes.
+
 ### Claim discipline
 
-Historical capability manifests: `claims/phase0.json`, `claims/phase2.json`, `claims/phase3.json`, `claims/phase4.json`, `claims/phase5a.json`, `claims/phase5.json`, `claims/phase5c.json`, `claims/phase6.json`, `claims/phase7.json`. Current capability manifest: `claims/phase8.json`. Current adversarial-assurance manifest: `claims/phase9.json`.
+Historical capability manifests: `claims/phase0.json`, `claims/phase2.json`, `claims/phase3.json`, `claims/phase4.json`, `claims/phase5a.json`, `claims/phase5.json`, `claims/phase5c.json`, `claims/phase6.json`, `claims/phase7.json`. Current capability manifest: `claims/phase8.json`. Current adversarial-assurance manifest: `claims/phase9.json`. Current formalization-assurance manifest: `claims/phase10.json`.
 
 Current hard-false capability claims include `oracle_holodeck_synthetic_admission`, `host_level_sandbox`, `production_networking`, `remote_execution`, and deployed `interoperable_federation`.
 
@@ -160,6 +182,9 @@ python3 tools/validate_phase6_gate.py
 python3 tools/validate_phase7_gate.py
 python3 tools/validate_phase8_gate.py
 python3 tools/validate_phase9_gate.py --target-commit "$(git rev-parse HEAD)"
+python3 tools/validate_phase10_gate.py
+lake build
+lake env lean QSOLFed/AxiomAudit.lean
 ```
 
 ### Architecture rule
