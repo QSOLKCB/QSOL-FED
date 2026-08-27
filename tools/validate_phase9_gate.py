@@ -731,9 +731,14 @@ def validate_probe_map() -> None:
     require(all(path.is_file() and not path.is_dir() for path in system_reads), "MORIARTY system read allowlist contains a directory")
     system_exec_reads = moriarty._system_read_exec_paths()
     require(Path("/usr") not in system_exec_reads, "MORIARTY recursive /usr read/exec access reintroduced")
+    require(all(path != Path("/usr/local") for path in system_exec_reads), "MORIARTY /usr/local read/exec root reintroduced")
     for path in system_exec_reads:
         resolved = path.resolve(strict=True)
         require(resolved != Path("/usr/local") and Path("/usr/local") not in resolved.parents, "MORIARTY /usr/local read/exec exposure reintroduced")
+    probe_env = moriarty._probe_environment(Path("/tmp/h"), Path("/tmp/c"), Path("/tmp/t"), Path("/tmp/x"), [Path("/usr/bin")])
+    require(probe_env.get("CARGO_BUILD_JOBS") == "2", "MORIARTY Cargo build-job cap missing")
+    require(moriarty._classify_rust_failure(b"error: linking with `cc` failed; rustc --sysroot /private") == "linker", "Rust linker diagnostic masked by sysroot token")
+    require(moriarty._classify_rust_failure(b"permission denied while invoking helper; rustc --sysroot /private") == "filesystem_permission", "Rust permission diagnostic masked by sysroot token")
 
     bad_exit = {
         "schema": moriarty.COUNTEREXAMPLE_SCHEMA,

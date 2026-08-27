@@ -1196,6 +1196,7 @@ def _probe_environment(
         "CARGO_HOME": str(cargo_home),
         "CARGO_TARGET_DIR": str(target_dir),
         "CARGO_NET_OFFLINE": "true",
+        "CARGO_BUILD_JOBS": "2",
         "CARGO_TERM_COLOR": "never",
         "RUST_BACKTRACE": "0",
         "PYTHONNOUSERSITE": "1",
@@ -1217,7 +1218,7 @@ def _probe_environment(
 
 def _system_read_exec_paths() -> tuple[Path, ...]:
     # Closed runtime roots only. Never grant recursive /usr or /usr/local access.
-    candidates = (Path("/usr/bin"), Path("/usr/lib"), Path("/bin"), Path("/lib"), Path("/lib64"))
+    candidates = (Path("/usr/bin"), Path("/usr/lib"), Path("/usr/libexec"), Path("/bin"), Path("/lib"), Path("/lib64"))
     return tuple(path for path in candidates if path.exists())
 
 
@@ -1544,8 +1545,8 @@ def _classify_rust_failure(stderr: bytes) -> str:
     not_permitted = "operation not permitted" in text or "os error 1" in text
     if "/proc/" in text and (denied or not_permitted):
         return "proc_access_denied"
-    if "can't find crate for `std`" in text or "couldn't find crate" in text or "sysroot" in text:
-        return "rust_sysroot"
+    # Prefer causal diagnostics before the generic `--sysroot` token that Cargo
+    # includes in ordinary rustc command lines.
     if "failed to run custom build command" in text:
         return "build_script"
     if "linking with" in text or "linker" in text:
@@ -1554,12 +1555,14 @@ def _classify_rust_failure(stderr: bytes) -> str:
         return "offline_dependency"
     if "could not execute process" in text or "failed to run rustc" in text:
         return "rustc_spawn"
+    if "read-only file system" in text or "os error 30" in text:
+        return "read_only_filesystem"
     if denied:
         return "filesystem_permission"
     if not_permitted:
         return "seccomp_or_permission"
-    if "read-only file system" in text or "os error 30" in text:
-        return "read_only_filesystem"
+    if "can't find crate for `std`" in text or "couldn't find crate" in text:
+        return "rust_sysroot"
     return "rust_exit_other"
 
 
