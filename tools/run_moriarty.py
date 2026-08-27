@@ -237,6 +237,16 @@ if os.name != "posix" or sys.platform != "linux":
 enable_child_subreaper()
 
 REAL_HOME = Path(pwd.getpwuid(os.getuid()).pw_dir).resolve()
+_cache_value = os.environ.get("MORIARTY_CARGO_CACHE_ROOT")
+if _cache_value:
+    try:
+        CARGO_CACHE_HOME = Path(_cache_value).resolve(strict=True)
+    except OSError:
+        raise SystemExit("moriarty_cargo_cache_root_unavailable")
+    if not CARGO_CACHE_HOME.is_dir() or CARGO_CACHE_HOME == ROOT or ROOT in CARGO_CACHE_HOME.parents:
+        raise SystemExit("moriarty_cargo_cache_root_invalid")
+else:
+    CARGO_CACHE_HOME = REAL_HOME / ".cargo"
 _ACTIVE_PROBE_WRITABLE_ROOT: Path | None = None
 
 
@@ -1076,9 +1086,15 @@ def _system_writable_files() -> tuple[Path, ...]:
     return tuple(path for path in (Path("/dev/null"),) if path.exists())
 
 
-def _fresh_cargo_home(probe_id: str, template: Path, workspace: Path, label: str) -> Path:
+def _fresh_cargo_home(
+    probe_id: str,
+    template: Path,
+    workspace: Path,
+    label: str,
+    rust_runtime: Path | None = None,
+) -> Path:
     if probe_id == "rust_all":
-        return create_isolated_cargo_home(template, workspace, label)
+        return create_isolated_cargo_home(template, workspace, label, rust_runtime)
     return create_empty_cargo_home(workspace, label)
 
 
@@ -1746,7 +1762,7 @@ def _run_counterexample_replay_probe(
         fail(f"moriarty_replay_{phase}_cargo_lock_missing")
     template = (
         create_verified_cargo_template(
-            REAL_HOME / ".cargo",
+            CARGO_CACHE_HOME,
             workspace,
             source / "Cargo.lock",
             f"{label}-template",
@@ -1755,7 +1771,7 @@ def _run_counterexample_replay_probe(
         else workspace
     )
     writable_root = _probe_writable_root()
-    cargo_home = _fresh_cargo_home(probe_id, template, writable_root, label)
+    cargo_home = _fresh_cargo_home(probe_id, template, writable_root, label, rust_runtime)
     return run_probe(
         probe_id,
         writable_root / f"{label}-home",
@@ -1904,7 +1920,7 @@ def main() -> int:
         if not (control_source / "Cargo.lock").is_file():
             fail("moriarty_committed_cargo_lock_missing")
         cargo_template = create_verified_cargo_template(
-            REAL_HOME / ".cargo", workspace, control_source / "Cargo.lock"
+            CARGO_CACHE_HOME, workspace, control_source / "Cargo.lock"
         )
         python_exec = stage_executable_from_fd(
             PYTHON_TRUSTED.fd, workspace / "python-runtime" / "python3"
@@ -1962,7 +1978,7 @@ def main() -> int:
             label = f"probe-{probe_index}-{probe_id}"
             probe_source = create_exact_export(target, workspace, git_archive_bytes, label)
             writable_root = _probe_writable_root()
-            probe_cargo_home = _fresh_cargo_home(probe_id, cargo_template, writable_root, label)
+            probe_cargo_home = _fresh_cargo_home(probe_id, cargo_template, writable_root, label, rust_runtime)
             results[probe_id] = run_probe(
                 probe_id,
                 writable_root / f"home-{probe_index}-{probe_id}",

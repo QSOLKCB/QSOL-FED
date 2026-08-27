@@ -722,7 +722,7 @@ def validate_runner_source() -> None:
         "security_proof", "no_counterexample_found_implies_none_exist", "stdout_truncated", "stderr_truncated",
         "_bootstrap_verified_blob", "compile(expected", "ALLOWED_OWNER_PHASES", "_RUNTIME_NORMALIZATIONS", "close_fds=True",
         "probe_writable_tree_within_limits", "probe_quota_root", "MORIARTY_RUST_TOOLCHAIN_ROOT",
-        "MORIARTY_PROBE_WRITABLE_ROOT", "allow_abbrev=False",
+        "MORIARTY_CARGO_CACHE_ROOT", "MORIARTY_PROBE_WRITABLE_ROOT", "allow_abbrev=False",
     ):
         require(marker in source, f"MORIARTY runner marker missing: {marker}")
     require("accepted_external" not in source, "MORIARTY runner still admits accepted_external")
@@ -791,16 +791,19 @@ def validate_docs_and_ci() -> None:
     require("persist-credentials: false" in workflow, "CI exact target checkout persists credentials")
     require("MORIARTY_TARGET_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}" in workflow, "CI MORIARTY target commit binding missing")
     snapshot_marker = "Snapshot trusted CI toolchains before repository execution"
+    cache_marker = "Prepare authenticated Cargo archives without repository execution"
     phase9_marker = "Phase 9 MORIARTY/1 exact-commit graduation gate"
     rust_test_marker = "Rust tests, state, Holodeck, adapters, SDKs, Assembly, transports, and fuzz smoke"
     require(
         snapshot_marker in workflow
+        and cache_marker in workflow
         and phase9_marker in workflow
         and rust_test_marker in workflow
-        and workflow.index(snapshot_marker) < workflow.index(phase9_marker) < workflow.index(rust_test_marker),
-        "CI MORIARTY gate does not run immediately before target-controlled repository execution",
+        and workflow.index(snapshot_marker) < workflow.index(cache_marker) < workflow.index(phase9_marker) < workflow.index(rust_test_marker),
+        "CI authenticated cache/MORIARTY order does not precede target-controlled repository execution",
     )
     require("sudo mount -t tmpfs" in workflow and "size=2147483648" in workflow, "CI MORIARTY hard writable tmpfs quota missing")
+    require("MORIARTY_CARGO_CACHE_ROOT: ${{ runner.temp }}/moriarty-cargo-source" in workflow, "CI MORIARTY authenticated Cargo cache binding missing")
     require("MORIARTY_PROBE_WRITABLE_ROOT: /mnt/qsol-moriarty-probe-writable" in workflow, "CI MORIARTY writable quota binding missing")
     require('rustc 1.97.1 (8bab26f4f 2026-07-14)' in workflow, "CI rustc replay version is not pinned")
     require('cargo 1.97.1 (c980f4866 2026-06-30)' in workflow, "CI Cargo replay version is not pinned")
@@ -1418,6 +1421,7 @@ _RUNNER_BINDING_KEYS = (
     "MORIARTY_EXPECTED_PYTHON_VERSION",
     "MORIARTY_EXPECTED_RUSTC_VERSION",
     "MORIARTY_EXPECTED_CARGO_VERSION",
+    "MORIARTY_CARGO_CACHE_ROOT",
     "MORIARTY_PROBE_WRITABLE_ROOT",
 )
 

@@ -825,19 +825,18 @@ def create_verified_cargo_template(
     return template
 
 
-def _owned_cargo_config(workspace: Path) -> bytes:
+def _owned_cargo_config(workspace: Path, rust_runtime: Path | None = None) -> bytes:
     """Return harness-owned Cargo settings without importing user configuration.
 
-    The real runner stages Rust under `workspace/rust-runtime` before creating
-    per-probe homes. When that runtime is present, explicitly pass its sysroot so
-    rustc descendants do not need `/proc/self/exe` for toolchain discovery. The
-    validator also exercises this helper before staging Rust, so the sysroot
-    stanza is conditional while the offline policy remains unconditional.
+    Probe writable state may live on a separate quota filesystem, so the staged
+    Rust runtime is passed explicitly when available. The workspace-relative
+    fallback is retained for validator/helper tests that exercise this function
+    before a runtime is staged.
     """
     lines = []
-    rust_runtime = workspace / "rust-runtime"
-    if rust_runtime.is_dir():
-        sysroot = rust_runtime.resolve(strict=True)
+    runtime = rust_runtime if rust_runtime is not None else workspace / "rust-runtime"
+    if runtime.is_dir():
+        sysroot = runtime.resolve(strict=True)
         lines.extend([
             "[build]\n",
             f"rustflags = [\"--sysroot\", {json.dumps(str(sysroot))}]\n",
@@ -846,7 +845,12 @@ def _owned_cargo_config(workspace: Path) -> bytes:
     return "".join(lines).encode("utf-8")
 
 
-def create_isolated_cargo_home(template: Path, workspace: Path, label: str) -> Path:
+def create_isolated_cargo_home(
+    template: Path,
+    workspace: Path,
+    label: str,
+    rust_runtime: Path | None = None,
+) -> Path:
     cargo_home = workspace / f"cargo-home-{label}"
     cargo_home.mkdir(mode=0o700, parents=False, exist_ok=False)
     _copy_regular_tree(template, cargo_home)
@@ -857,7 +861,7 @@ def create_isolated_cargo_home(template: Path, workspace: Path, label: str) -> P
         fail("moriarty_cargo_home_ambient_config_or_credentials")
     if (cargo_home / "registry" / "src").exists():
         fail("moriarty_cargo_home_preunpacked_source_forbidden")
-    config = _owned_cargo_config(workspace)
+    config = _owned_cargo_config(workspace, rust_runtime)
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
     fd = os.open(legacy_config, flags, 0o600)
     try:
