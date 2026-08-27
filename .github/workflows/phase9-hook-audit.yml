@@ -1,9 +1,8 @@
 name: phase9-hook-audit
 
 on:
-  push:
-    branches:
-      - agent/phase9-moriarty-graduation
+  pull_request:
+    types: [synchronize]
 
 permissions:
   contents: read
@@ -15,12 +14,13 @@ concurrency:
 jobs:
   audit:
     runs-on: ubuntu-24.04
+    if: github.event.pull_request.head.repo.full_name == github.repository
     env:
       CARGO_HOME: ${{ runner.temp }}/phase9-hook-audit-cargo
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
       - name: Fetch exact locked archives only
         run: |
@@ -81,8 +81,7 @@ jobs:
               if not isinstance(package_table, dict):
                   raise SystemExit(f"invalid package table: {filename}")
               declared = package_table.get("build")
-              has_hook = root_build_rs or declared not in (None, False)
-              if has_hook:
+              if root_build_rs or declared not in (None, False):
                   hooks.append([name, version, checksum])
           print("PHASE9_REGISTRY_BUILD_HOOK_ALLOWLIST=" + json.dumps(sorted(hooks), separators=(",", ":")))
           print("PHASE9_REGISTRY_ARCHIVES_MISSING=" + json.dumps(sorted(missing), separators=(",", ":")))
