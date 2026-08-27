@@ -1,0 +1,248 @@
+namespace QSOLFed
+
+/-!
+A deliberately small formal model of the constitutional separation contracts frozen in
+QSOL-FED v0.11.0. These definitions model the stated contract boundaries; they do not
+claim formal verification of the Rust/Python/TypeScript implementations or deployment.
+-/
+
+inductive Admission where
+  | acceptAsData
+  | quarantine
+  | reject
+  deriving DecidableEq, Repr
+
+inductive RemoteInput where
+  | dataOffer
+  | foreignState
+  | governanceMutation
+  | evidencePromotion
+  | voteCreation
+  | capabilityInstallation
+  | historyRewrite
+  | citizenshipMutation
+  | arbitraryExecution
+  | localAuthorityClaim
+  | semanticSecret
+  | constitutionOverride
+  | unknownAuthority
+  deriving DecidableEq, Repr
+
+/-- Frozen Prime Directive model: data may be admitted as data, foreign state is
+quarantined, and authority-bearing or unknown effects fail closed. -/
+def primeDirective : RemoteInput → Admission
+  | .dataOffer => .acceptAsData
+  | .foreignState => .quarantine
+  | .governanceMutation => .reject
+  | .evidencePromotion => .reject
+  | .voteCreation => .reject
+  | .capabilityInstallation => .reject
+  | .historyRewrite => .reject
+  | .citizenshipMutation => .reject
+  | .arbitraryExecution => .reject
+  | .localAuthorityClaim => .reject
+  | .semanticSecret => .reject
+  | .constitutionOverride => .reject
+  | .unknownAuthority => .reject
+
+/-- Cryptographic validity alone contributes no trust in the formal model. -/
+def trustFromSignature (_signatureValid : Bool) : Bool := false
+
+/-- Cryptographic validity alone contributes no local authority in the formal model. -/
+def authorityFromSignature (_signatureValid : Bool) : Bool := false
+
+structure SignedAdmission where
+  signatureValid : Bool
+  localAdmission : Admission
+  localAuthorityGranted : Bool
+  deriving DecidableEq, Repr
+
+/-- The local admission gate is authoritative: a rejected request has no local authority. -/
+def signedAdmission (signatureValid : Bool) (localAdmission : Admission) : SignedAdmission :=
+  { signatureValid := signatureValid
+    localAdmission := localAdmission
+    localAuthorityGranted := localAdmission == .acceptAsData && false }
+
+structure PeerRelation where
+  peered : Bool
+  admitted : Bool
+  trusted : Bool
+  deriving DecidableEq, Repr
+
+/-- Peering itself confers no trust. -/
+def peerFromPeering (peered : Bool) : PeerRelation :=
+  { peered := peered, admitted := false, trusted := false }
+
+structure CapabilityInputs where
+  peerAdmitted : Bool
+  authenticatedAdvertisement : Bool
+  explicitLocalAllow : Bool
+  deriving DecidableEq, Repr
+
+/-- Phase 4 capability permission is conjunctive and requires explicit local allow. -/
+def capabilityAllowed (c : CapabilityInputs) : Bool :=
+  c.peerAdmitted && c.authenticatedAdvertisement && c.explicitLocalAllow
+
+structure ForeignIdentity where
+  contentId : String
+  provenanceId : String
+  deriving DecidableEq, Repr
+
+structure ImportResult where
+  foreignIdentity : ForeignIdentity
+  localAuthority : Bool
+  trustChanged : Bool
+  deriving DecidableEq, Repr
+
+/-- Import preserves the foreign identity while creating neither authority nor trust. -/
+def importForeign (id : ForeignIdentity) : ImportResult :=
+  { foreignIdentity := id, localAuthority := false, trustChanged := false }
+
+/-- List-prefix relation used to model append-only peer lifecycle history. -/
+def Prefix {α : Type} (old newer : List α) : Prop :=
+  ∃ tail, newer = old ++ tail
+
+inductive PeerLifecycle where
+  | introduced
+  | admitted
+  | quarantined
+  | revoked
+  | disconnected
+  deriving DecidableEq, Repr
+
+structure SovereignState where
+  governanceVersion : Nat
+  trustVersion : Nat
+  evidenceVersion : Nat
+  deriving DecidableEq, Repr
+
+structure RejoinResult where
+  localState : SovereignState
+  reconciliationRequired : Bool
+  deriving DecidableEq, Repr
+
+/-- Partition rejoin never rewrites local sovereign state. A changed snapshot requires
+an explicit reconciliation path. -/
+def rejoinPartition (local : SovereignState) (sameSnapshot : Bool) : RejoinResult :=
+  if sameSnapshot then
+    { localState := local, reconciliationRequired := false }
+  else
+    { localState := local, reconciliationRequired := true }
+
+abbrev CanonicalBytes := List UInt8
+
+structure HolodeckReceipt where
+  authorityEffect : Bool
+  federationEffect : Bool
+  evidenceEffect : Bool
+  networkUsed : Bool
+  realToolsUsed : Bool
+  credentialsExposed : Bool
+  frozen : Bool
+  ended : Bool
+  deriving DecidableEq, Repr
+
+/-- A safe Holodeck receipt has no real-world authority/evidence/federation effect. -/
+def safeHolodeckReceipt (frozen : Bool) : HolodeckReceipt :=
+  { authorityEffect := false
+    federationEffect := false
+    evidenceEffect := false
+    networkUsed := false
+    realToolsUsed := false
+    credentialsExposed := false
+    frozen := frozen
+    ended := false }
+
+/-- Operator-owned Computer end-program is terminal even for a frozen simulation. -/
+def endProgram (receipt : HolodeckReceipt) : HolodeckReceipt :=
+  { receipt with ended := true }
+
+structure AdapterResult where
+  localGovernanceAuthority : Bool
+  evidencePromoted : Bool
+  voteInjected : Bool
+  capabilityInstalled : Bool
+  authorityEffect : Bool
+  deriving DecidableEq, Repr
+
+/-- QSOL adapter output remains non-authoritative. -/
+def safeAdapterResult : AdapterResult :=
+  { localGovernanceAuthority := false
+    evidencePromoted := false
+    voteInjected := false
+    capabilityInstalled := false
+    authorityEffect := false }
+
+structure SDKResult where
+  conformance : Bool
+  trust : Bool
+  governanceMembership : Bool
+  authority : Bool
+  deriving DecidableEq, Repr
+
+/-- SDK conformance does not imply trust, governance membership, or authority. -/
+def sdkResult (conformance : Bool) : SDKResult :=
+  { conformance := conformance, trust := false, governanceMembership := false, authority := false }
+
+structure GovernanceReceipt where
+  accepted : Bool
+  memberLocalAuthorityMutated : Bool
+  protocolChangedAutomatically : Bool
+  authorityEffect : Bool
+  deriving DecidableEq, Repr
+
+/-- Assembly finalization records an outcome without mutating member-local authority. -/
+def governanceReceipt (accepted : Bool) : GovernanceReceipt :=
+  { accepted := accepted
+    memberLocalAuthorityMutated := false
+    protocolChangedAutomatically := false
+    authorityEffect := false }
+
+structure AdvisoryReport where
+  advisoryWeight : Nat
+  voteWeight : Nat
+  authorityEffect : Bool
+  deriving DecidableEq, Repr
+
+/-- NEXUS is advisory-only in the Assembly model. -/
+def nexusAdvisory : AdvisoryReport :=
+  { advisoryWeight := 0, voteWeight := 0, authorityEffect := false }
+
+structure TransportFrame where
+  sender : String
+  messageId : String
+  payloadRef : String
+  provenanceRef : String
+  deriving DecidableEq, Repr
+
+inductive TransportProfile where
+  | webSocket
+  | quic
+  | unixIPC
+  | offlineSneakernet
+  | storeForward
+  deriving DecidableEq, Repr
+
+/-- Transport changes delivery profile, not authenticated protocol identity/provenance. -/
+def transport (_profile : TransportProfile) (frame : TransportFrame) : TransportFrame := frame
+
+structure RouteAssessment where
+  trust : Bool
+  authority : Bool
+  identityReplacement : Bool
+  deriving DecidableEq, Repr
+
+/-- NAT route hints confer no trust, authority, or identity replacement. -/
+def natRouteAssessment : RouteAssessment :=
+  { trust := false, authority := false, identityReplacement := false }
+
+structure RelayAssessment where
+  trust : Bool
+  authority : Bool
+  deriving DecidableEq, Repr
+
+/-- Relay presence is provenance, not trust or authority. -/
+def relayAssessment : RelayAssessment :=
+  { trust := false, authority := false }
+
+end QSOLFed
