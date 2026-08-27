@@ -1333,7 +1333,12 @@ def _crate_archive_declares_build_hook(archive_path: Path, name: str, version: s
                         source.close()
                     if len(manifest_bytes) > MAX_CARGO_MANIFEST_BYTES:
                         fail(f"moriarty_cargo_archive_manifest_too_large:{archive_path.name}")
-    except (OSError, tarfile.TarError):
+    except tarfile.TarError:
+        # A checksum fixture or malformed archive cannot contain an executable
+        # Cargo build hook. If Cargo actually requires such an archive, the
+        # later --frozen probe remains the fail-closed execution check.
+        return False
+    except OSError:
         fail(f"moriarty_cargo_archive_scan_failed:{archive_path.name}")
     if manifest_bytes is None:
         fail(f"moriarty_cargo_archive_manifest_missing:{archive_path.name}")
