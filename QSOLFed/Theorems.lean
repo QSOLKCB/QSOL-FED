@@ -4,8 +4,9 @@ namespace QSOLFed
 
 /-! Prime Directive admission -/
 
-theorem prime_directive_accepts_data_only :
-    primeDirective .dataOffer = .acceptAsData := rfl
+theorem prime_directive_accepts_data_only (input : RemoteInput) :
+    primeDirective input = .acceptAsData → input = .dataOffer := by
+  cases input <;> intro h <;> cases h <;> rfl
 
 theorem prime_directive_quarantines_foreign_state :
     primeDirective .foreignState = .quarantine := rfl
