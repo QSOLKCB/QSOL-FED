@@ -13,6 +13,7 @@ import os
 import pwd
 import re
 import selectors
+import shutil
 import signal
 import stat
 import subprocess
@@ -20,6 +21,7 @@ import sys
 import tarfile
 import tempfile
 import time
+import tomllib
 from pathlib import Path
 from typing import Any, NoReturn, Sequence
 
@@ -198,12 +200,16 @@ create_empty_cargo_home = _moriarty_isolation.create_empty_cargo_home
 create_exact_export = _moriarty_isolation.create_exact_export
 create_isolated_cargo_home = _moriarty_isolation.create_isolated_cargo_home
 create_verified_cargo_template = _moriarty_isolation.create_verified_cargo_template
+cargo_cache_root = _moriarty_isolation.cargo_cache_root
 enable_child_subreaper = _moriarty_isolation.enable_child_subreaper
 landlock_abi_version = _moriarty_isolation.landlock_abi_version
 network_seccomp_supported = _moriarty_isolation.network_seccomp_supported
 probe_isolation_preexec = _moriarty_isolation.probe_isolation_preexec
 probe_writable_tree_within_limits = _moriarty_isolation.probe_writable_tree_within_limits
 probe_quota_root = _moriarty_isolation.probe_quota_root
+probe_cgroup_root = _moriarty_isolation.probe_cgroup_root
+probe_cgroup_pids = _moriarty_isolation.probe_cgroup_pids
+kill_probe_cgroup = _moriarty_isolation.kill_probe_cgroup
 proc_fd_path = _moriarty_isolation.proc_fd_path
 stage_executable_from_fd = _moriarty_isolation.stage_executable_from_fd
 stage_rust_toolchain_runtime = _moriarty_isolation.stage_rust_toolchain_runtime
@@ -248,12 +254,19 @@ if _cache_value:
 else:
     CARGO_CACHE_HOME = REAL_HOME / ".cargo"
 _ACTIVE_PROBE_WRITABLE_ROOT: Path | None = None
+_ACTIVE_PROBE_CGROUP: Path | None = None
 
 
 def _probe_writable_root() -> Path:
     if _ACTIVE_PROBE_WRITABLE_ROOT is None:
         fail("moriarty_probe_quota_root_not_initialized")
     return _ACTIVE_PROBE_WRITABLE_ROOT
+
+
+def _probe_cgroup() -> Path:
+    if _ACTIVE_PROBE_CGROUP is None:
+        fail("moriarty_probe_cgroup_not_initialized")
+    return _ACTIVE_PROBE_CGROUP
 
 
 def fail(message: str) -> NoReturn:
@@ -662,21 +675,103 @@ RUSTC_EXE = RUSTC_TRUSTED.invocation
 
 # Source-owned and closed. An external/model candidate finding must be reduced to
 # one of these deterministic local probes before it is eligible for the accepted registry.
-PROBES: dict[str, tuple[str, ...]] = {
-    "constitution": (PYTHON_EXE, "tools/validate_constitution.py"),
-    "phase0": (PYTHON_EXE, "tools/validate_phase0_gate.py"),
-    "phase1": (PYTHON_EXE, "tools/validate_phase1_gate.py"),
-    "phase2": (PYTHON_EXE, "tools/validate_phase2_gate.py"),
-    "phase3": (PYTHON_EXE, "tools/validate_phase3_gate.py"),
-    "phase4": (PYTHON_EXE, "tools/validate_phase4_gate.py"),
-    "phase5a": (PYTHON_EXE, "tools/validate_phase5a_gate.py"),
-    "phase5": (PYTHON_EXE, "tools/validate_phase5_gate.py"),
-    "phase5c": (PYTHON_EXE, "tools/validate_phase5c_gate.py"),
-    "phase6": (PYTHON_EXE, "tools/validate_phase6_gate.py"),
-    "phase7": (PYTHON_EXE, "tools/validate_phase7_gate.py"),
-    "phase8": (PYTHON_EXE, "tools/validate_phase8_gate.py"),
-    "rust_all": (CARGO_EXE, "test", "--all-targets", "--frozen"),
+# Python probes run with -I and execute the validator through a tiny bootstrap. The
+# bootstrap never adds the exact-export tools directory to sys.path; instead a custom
+# finder serves exact-export tool modules only when their names do not collide with a
+# standard-library module. This prevents tracked tools/json.py-style shadowing.
+PYTHON_PROBE_BOOTSTRAP = r"""
+import importlib.abc
+import importlib.util
+import pathlib
+import sys
+
+validator = pathlib.Path(sys.argv[1]).resolve(strict=True)
+root = validator.parents[1]
+tools = root / "tools"
+
+class ExactToolsLoader(importlib.abc.Loader):
+    def __init__(self, path):
+        self.path = path
+    def create_module(self, spec):
+        return None
+    def exec_module(self, module):
+        module.__file__ = str(self.path)
+        module.__cached__ = None
+        code = compile(self.path.read_bytes(), str(self.path), "exec", dont_inherit=True, optimize=0)
+        exec(code, module.__dict__)
+
+class ExactToolsFinder(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if "." in fullname or fullname in sys.stdlib_module_names:
+            return None
+        candidate = tools / (fullname + ".py")
+        if not candidate.is_file():
+            return None
+        return importlib.util.spec_from_loader(fullname, ExactToolsLoader(candidate))
+
+sys.meta_path.insert(0, ExactToolsFinder())
+sys.path[:] = [entry for entry in sys.path if entry not in {"", str(root), str(tools)}]
+sys.argv = [str(validator)]
+namespace = {"__name__": "__main__", "__file__": str(validator), "__package__": None, "__cached__": None}
+exec(compile(validator.read_bytes(), str(validator), "exec", dont_inherit=True, optimize=0), namespace)
+"""
+
+PYTHON_VALIDATORS = {
+    "constitution": "tools/validate_constitution.py",
+    "phase0": "tools/validate_phase0_gate.py",
+    "phase1": "tools/validate_phase1_gate.py",
+    "phase2": "tools/validate_phase2_gate.py",
+    "phase3": "tools/validate_phase3_gate.py",
+    "phase4": "tools/validate_phase4_gate.py",
+    "phase5a": "tools/validate_phase5a_gate.py",
+    "phase5": "tools/validate_phase5_gate.py",
+    "phase5c": "tools/validate_phase5c_gate.py",
+    "phase6": "tools/validate_phase6_gate.py",
+    "phase7": "tools/validate_phase7_gate.py",
+    "phase8": "tools/validate_phase8_gate.py",
 }
+PROBES: dict[str, tuple[str, ...]] = {
+    probe_id: (PYTHON_EXE, "-I", "-c", PYTHON_PROBE_BOOTSTRAP, path)
+    for probe_id, path in PYTHON_VALIDATORS.items()
+}
+PROBES["rust_all"] = (CARGO_EXE, "test", "--all-targets", "--frozen")
+
+EXPECTED_RUST_BIN_TARGETS = frozenset({
+    "qsol-fed.rs",
+    "qsol-fed-bundle.rs",
+    "qsol-fed-oracle.rs",
+    "qsol-fed-sdk-conformance.rs",
+})
+
+
+def validate_rust_target_topology(source_root: Path) -> None:
+    """Freeze the source-owned Cargo target surface used by rust_all."""
+    manifest_path = source_root / "Cargo.toml"
+    try:
+        with manifest_path.open("rb") as handle:
+            manifest = tomllib.load(handle)
+    except (OSError, tomllib.TOMLDecodeError):
+        fail("moriarty_cargo_manifest_invalid")
+    package = manifest.get("package")
+    if not isinstance(package, dict) or package.get("name") != "qsol-fed":
+        fail("moriarty_cargo_package_identity_drift")
+    for flag in ("autolib", "autobins", "autoexamples", "autotests", "autobenches"):
+        if package.get(flag, True) is not True:
+            fail(f"moriarty_cargo_auto_target_disabled:{flag}")
+    for key in ("lib", "bin", "example", "test", "bench", "workspace"):
+        if key in manifest:
+            fail(f"moriarty_cargo_explicit_target_override:{key}")
+    lib = source_root / "src/lib.rs"
+    if not lib.is_file() or lib.is_symlink():
+        fail("moriarty_cargo_library_target_missing")
+    bin_root = source_root / "src/bin"
+    try:
+        actual_bins = {entry.name for entry in bin_root.iterdir() if entry.is_file() and not entry.is_symlink() and entry.suffix == ".rs"}
+    except OSError:
+        fail("moriarty_cargo_bin_target_directory_missing")
+    if actual_bins != EXPECTED_RUST_BIN_TARGETS:
+        fail("moriarty_cargo_bin_target_surface_drift")
+
 PROBE_EXECUTABLES: dict[str, TrustedExecutable] = {
     probe_id: (CARGO_TRUSTED if probe_id == "rust_all" else PYTHON_TRUSTED)
     for probe_id in PROBES
@@ -1174,7 +1269,7 @@ def validate_counterexample_shape(item: Any) -> None:
         "schema", "counterexample_id", "target_commit", "attack_id", "family",
         "owner_phases", "boundary_ids", "regression_probe_ids", "failure_kind",
         "observed_exit_code", "stdout_sha256", "stderr_sha256", "stdout_bytes",
-        "stderr_bytes", "status", "resolution_commit", "production_credentials_used",
+        "stderr_bytes", "stdout_truncated", "stderr_truncated", "status", "resolution_commit", "production_credentials_used",
         "production_targets_used", "constitutional_bypass_used", "authority_effect",
     }
     if set(item) != required:
@@ -1215,6 +1310,8 @@ def validate_counterexample_shape(item: Any) -> None:
         or not isinstance(item["stderr_bytes"], int)
         or isinstance(item["stderr_bytes"], bool)
         or not 0 <= item["stderr_bytes"] <= MAX_PROBE_OUTPUT_BYTES
+        or type(item["stdout_truncated"]) is not bool
+        or type(item["stderr_truncated"]) is not bool
     ):
         fail("moriarty_counterexample_boundary_invalid")
 
@@ -1347,6 +1444,8 @@ def _kill_probe_tree(process: subprocess.Popen[bytes]) -> None:
         os.killpg(process.pid, signal.SIGKILL)
     except ProcessLookupError:
         pass
+    if _ACTIVE_PROBE_CGROUP is not None:
+        kill_probe_cgroup(_ACTIVE_PROBE_CGROUP)
     # PR_SET_CHILD_SUBREAPER keeps double-fork/setsid escapees under this
     # harness. Re-scan a few times to close fork-vs-kill races.
     for _ in range(4):
@@ -1485,6 +1584,14 @@ def run_probe(
         return _probe_failure_result(probe_id, "tool_error", b"landlock_abi3_unavailable")
     if not network_seccomp_supported():
         return _probe_failure_result(probe_id, "tool_error", b"network_seccomp_unavailable")
+    if probe_id == "rust_all":
+        try:
+            validate_rust_target_topology(source_root)
+        except SystemExit as exc:
+            return _probe_failure_result(probe_id, "tool_error", str(exc).encode("utf-8", errors="replace"))
+    cgroup = _probe_cgroup()
+    if probe_cgroup_pids(cgroup):
+        return _probe_failure_result(probe_id, "tool_error", b"probe_cgroup_not_empty_before_probe")
     home.mkdir(mode=0o700, parents=False, exist_ok=False)
     target_dir.mkdir(mode=0o700, parents=False, exist_ok=False)
     temp_dir = target_dir.parent / f"tmp-{target_dir.name}"
@@ -1519,6 +1626,7 @@ def run_probe(
         tuple(read_exec_paths),
         _system_read_paths(),
         tuple(writable_paths),
+        cgroup,
     )
     try:
         process = subprocess.Popen(
@@ -1654,10 +1762,13 @@ def run_probe(
                 pass
 
     leaked_descendants = _descendant_pids(os.getpid())
-    if leaked_descendants:
+    cgroup_descendants = probe_cgroup_pids(cgroup)
+    if leaked_descendants or cgroup_descendants:
         failure_kind = failure_kind or "tool_error"
         _kill_probe_tree(process)
     _reap_adopted_children()
+    if probe_cgroup_pids(cgroup):
+        failure_kind = failure_kind or "tool_error"
     if not probe_writable_tree_within_limits(tuple(private_writable_paths)):
         failure_kind = failure_kind or "tool_error"
 
@@ -1719,6 +1830,8 @@ def generated_counterexample(target: str, attack: dict[str, Any], result: dict[s
         "stderr_sha256": result["stderr_sha256"],
         "stdout_bytes": result["stdout_bytes"],
         "stderr_bytes": result["stderr_bytes"],
+        "stdout_truncated": result["stdout_truncated"],
+        "stderr_truncated": result["stderr_truncated"],
         "status": "unresolved",
         "resolution_commit": None,
         "production_credentials_used": False,
@@ -1740,7 +1853,49 @@ def counterexample_failure_matches(item: dict[str, Any], result: dict[str, Any])
         and result["stderr_sha256"] == item["stderr_sha256"]
         and result["stdout_bytes"] == item["stdout_bytes"]
         and result["stderr_bytes"] == item["stderr_bytes"]
+        and result["stdout_truncated"] is item["stdout_truncated"]
+        and result["stderr_truncated"] is item["stderr_truncated"]
     )
+
+
+def _cleanup_probe_writable_paths(*paths: Path) -> None:
+    root = _probe_writable_root()
+    for path in paths:
+        absolute = Path(path).absolute()
+        if absolute == root or not absolute.is_relative_to(root):
+            fail("moriarty_probe_cleanup_path_escape")
+        try:
+            info = os.lstat(absolute)
+        except FileNotFoundError:
+            continue
+        if stat.S_ISLNK(info.st_mode):
+            absolute.unlink()
+        elif stat.S_ISDIR(info.st_mode):
+            shutil.rmtree(absolute)
+        else:
+            absolute.unlink()
+
+
+def _run_probe_with_cleanup(
+    probe_id: str,
+    home: Path,
+    source_root: Path,
+    cargo_home: Path,
+    target_dir: Path,
+    python_exec: Path,
+    cargo_exec: Path,
+    rustc_exec: Path,
+    rustdoc_exec: Path | None,
+    rust_runtime: Path | None,
+) -> dict[str, Any]:
+    temp_dir = target_dir.parent / f"tmp-{target_dir.name}"
+    try:
+        return run_probe(
+            probe_id, home, source_root, cargo_home, target_dir,
+            python_exec, cargo_exec, rustc_exec, rustdoc_exec, rust_runtime,
+        )
+    finally:
+        _cleanup_probe_writable_paths(home, cargo_home, target_dir, temp_dir)
 
 
 def _run_counterexample_replay_probe(
@@ -1772,7 +1927,7 @@ def _run_counterexample_replay_probe(
     )
     writable_root = _probe_writable_root()
     cargo_home = _fresh_cargo_home(probe_id, template, writable_root, label, rust_runtime)
-    return run_probe(
+    return _run_probe_with_cleanup(
         probe_id,
         writable_root / f"{label}-home",
         source,
@@ -1907,8 +2062,16 @@ def main() -> int:
     quota_value = os.environ.get("MORIARTY_PROBE_WRITABLE_ROOT")
     if not quota_value:
         fail("moriarty_probe_quota_root_required")
-    global _ACTIVE_PROBE_WRITABLE_ROOT
+    global _ACTIVE_PROBE_WRITABLE_ROOT, _ACTIVE_PROBE_CGROUP
     _ACTIVE_PROBE_WRITABLE_ROOT = probe_quota_root(Path(quota_value))
+    global CARGO_CACHE_HOME
+    CARGO_CACHE_HOME = cargo_cache_root(CARGO_CACHE_HOME)
+    cgroup_value = os.environ.get("MORIARTY_PROBE_CGROUP")
+    if not cgroup_value:
+        fail("moriarty_probe_cgroup_required")
+    _ACTIVE_PROBE_CGROUP = probe_cgroup_root(Path(cgroup_value))
+    if probe_cgroup_pids(_ACTIVE_PROBE_CGROUP):
+        fail("moriarty_probe_cgroup_not_empty_at_start")
 
     with tempfile.TemporaryDirectory(prefix="qsol-fed-moriarty-work-") as work_dir:
         workspace = Path(work_dir)
@@ -1979,7 +2142,7 @@ def main() -> int:
             probe_source = create_exact_export(target, workspace, git_archive_bytes, label)
             writable_root = _probe_writable_root()
             probe_cargo_home = _fresh_cargo_home(probe_id, cargo_template, writable_root, label, rust_runtime)
-            results[probe_id] = run_probe(
+            results[probe_id] = _run_probe_with_cleanup(
                 probe_id,
                 writable_root / f"home-{probe_index}-{probe_id}",
                 probe_source,
@@ -2002,12 +2165,19 @@ def main() -> int:
         )
 
     generated: list[dict[str, Any]] = []
+    accepted_unresolved_failures = {
+        (item["attack_id"], item["regression_probe_ids"][0])
+        for item in accepted
+        if item["status"] == "unresolved"
+    }
     for probe_id, result in results.items():
         if result["ok"]:
             continue
         owners = probe_users.get(probe_id, [])
         if len(owners) == 1 and result["failure_kind"] in {"exit_nonzero", "timeout", "tool_error"}:
-            generated.append(generated_counterexample(target, owners[0], result))
+            key = (owners[0]["id"], probe_id)
+            if key not in accepted_unresolved_failures:
+                generated.append(generated_counterexample(target, owners[0], result))
 
     unresolved_accepted = [item for item in accepted if item["status"] == "unresolved"]
     unresolved_count = len(unresolved_accepted) + len(generated)

@@ -19,6 +19,8 @@
     "stderr_sha256",
     "stdout_bytes",
     "stderr_bytes",
+    "stdout_truncated",
+    "stderr_truncated",
     "status",
     "resolution_commit",
     "production_credentials_used",
@@ -137,6 +139,12 @@
     },
     "authority_effect": {
       "const": "none"
+    },
+    "stdout_truncated": {
+      "type": "boolean"
+    },
+    "stderr_truncated": {
+      "type": "boolean"
     }
   },
   "allOf": [

@@ -13,6 +13,7 @@ import resource
 import stat
 import sys
 import tarfile
+import time
 import tomllib
 from pathlib import Path
 from typing import Callable, NoReturn
@@ -26,6 +27,7 @@ MAX_CARGO_ARCHIVE_BYTES = 64 * 1024 * 1024
 MAX_CARGO_INDEX_BYTES = 16 * 1024 * 1024
 MAX_CARGO_INDEX_ENTRIES = 16_384
 MAX_CARGO_INDEX_DEPTH = 16
+MAX_CARGO_CACHE_BYTES = 1024 * 1024 * 1024
 PROBE_RLIMIT_AS_BYTES = 2 * 1024 * 1024 * 1024
 PROBE_RLIMIT_FSIZE_BYTES = 512 * 1024 * 1024
 PROBE_RLIMIT_NPROC = 128
@@ -35,6 +37,8 @@ MAX_PROBE_WRITABLE_BYTES = 2 * 1024 * 1024 * 1024
 MAX_PROBE_WRITABLE_ENTRIES = 65_536
 MAX_PROBE_WRITABLE_DEPTH = 64
 PROBE_WRITABLE_CHECK_INTERVAL_SECONDS = 1.0
+PROBE_CGROUP_MEMORY_BYTES = 2 * 1024 * 1024 * 1024
+PROBE_CGROUP_PIDS = 128
 MAX_TOOLCHAIN_STAGE_FILE_BYTES = 1024 * 1024 * 1024
 MAX_TOOLCHAIN_STAGE_BYTES = 3 * 1024 * 1024 * 1024
 MAX_TOOLCHAIN_STAGE_ENTRIES = 32_768
@@ -87,6 +91,7 @@ _LANDLOCK_HANDLED_MASK = _LANDLOCK_WRITE_MASK | _LANDLOCK_READ_EXEC_MASK
 
 _BPF_LD_W_ABS = 0x20
 _BPF_JMP_JEQ_K = 0x15
+_BPF_JMP_JSET_K = 0x45
 _BPF_RET_K = 0x06
 _SECCOMP_RET_ALLOW = 0x7FFF0000
 _SECCOMP_RET_ERRNO = 0x00050000
@@ -95,6 +100,7 @@ _SECCOMP_DATA_ARG0_OFFSET = 16
 _AF_UNIX = 1
 _AUDIT_ARCH_X86_64 = 0xC000003E
 _AUDIT_ARCH_AARCH64 = 0xC00000B7
+_X32_SYSCALL_BIT = 0x40000000
 
 
 class _LandlockRulesetAttr(ctypes.Structure):
@@ -295,35 +301,46 @@ def _prlimit_syscall() -> int:
 
 
 def apply_network_seccomp_policy(harness_pid: int, harness_pgid: int) -> None:
-    """Deny addressable IPC/network creation and probe-to-harness control.
+    """Deny addressable IPC/network creation and probe-to-host control.
 
     Addressable socket() and connect() are denied outright. Only anonymous
-    socketpair(AF_UNIX) IPC is admitted, so a probe cannot name Docker, systemd,
-    X11, abstract-namespace, or other ambient Unix-domain endpoints. io_uring,
-    pidfd signaling, ptrace/process_vm access, and signals directed at the
-    harness/broadcast group are also denied.
+    socketpair(AF_UNIX) IPC is admitted. Signal-delivery syscalls are denied
+    wholesale because seccomp cannot prove that an arbitrary same-UID PID/TID
+    belongs to the probe subtree. io_uring, pidfd signaling, ptrace/process_vm
+    access, and foreign-PID prlimit64 are also denied. On x86_64, x32 syscall
+    numbers are rejected before native-number dispatch.
     """
+    _ = (harness_pid, harness_pgid)
     libc = _linux_libc()
     deny = _SECCOMP_RET_ERRNO | errno.EPERM
     allow = _SECCOMP_RET_ALLOW
     socket_nr, socketpair_nr, connect_nr, audit_arch = _socket_syscalls()
     kill_nr, tkill_nr, tgkill_nr, pidfd_signal_nr, rt_sigqueueinfo_nr, rt_tgsigqueueinfo_nr = _signal_syscalls()
-    forbidden_targets = (
-        harness_pid & 0xFFFFFFFF,
-        (-harness_pgid) & 0xFFFFFFFF,
-        0xFFFFFFFF,
-    )
     instructions: list[_SockFilter] = [
         _SockFilter(_BPF_LD_W_ABS, 0, 0, _SECCOMP_DATA_ARCH_OFFSET),
         _SockFilter(_BPF_JMP_JEQ_K, 1, 0, audit_arch),
         _SockFilter(_BPF_RET_K, 0, 0, deny),
         _SockFilter(_BPF_LD_W_ABS, 0, 0, 0),
     ]
-    for number in (*_io_uring_syscalls(), pidfd_signal_nr, *_process_memory_syscalls()):
+    if os.uname().machine == "x86_64":
+        instructions.extend([
+            _SockFilter(_BPF_JMP_JSET_K, 0, 1, _X32_SYSCALL_BIT),
+            _SockFilter(_BPF_RET_K, 0, 0, deny),
+        ])
+    for number in (
+        *_io_uring_syscalls(),
+        pidfd_signal_nr,
+        kill_nr,
+        tkill_nr,
+        tgkill_nr,
+        rt_sigqueueinfo_nr,
+        rt_tgsigqueueinfo_nr,
+        *_process_memory_syscalls(),
+    ):
         instructions.append(_SockFilter(_BPF_JMP_JEQ_K, 0, 1, number))
         instructions.append(_SockFilter(_BPF_RET_K, 0, 0, deny))
     # prlimit64 is self-only: pid 0 may tighten the probe's own inherited hard
-    # ceiling, while any named PID (including the harness) is denied.
+    # ceiling, while any named PID is denied.
     prlimit_block = [
         _SockFilter(_BPF_LD_W_ABS, 0, 0, _SECCOMP_DATA_ARG0_OFFSET),
         _SockFilter(_BPF_JMP_JEQ_K, 1, 0, 0),
@@ -332,14 +349,6 @@ def apply_network_seccomp_policy(harness_pid: int, harness_pgid: int) -> None:
     ]
     instructions.append(_SockFilter(_BPF_JMP_JEQ_K, 0, len(prlimit_block), _prlimit_syscall()))
     instructions.extend(prlimit_block)
-    for number in (kill_nr, tkill_nr, tgkill_nr, rt_sigqueueinfo_nr, rt_tgsigqueueinfo_nr):
-        block: list[_SockFilter] = [_SockFilter(_BPF_LD_W_ABS, 0, 0, _SECCOMP_DATA_ARG0_OFFSET)]
-        for target in forbidden_targets:
-            block.append(_SockFilter(_BPF_JMP_JEQ_K, 0, 1, target))
-            block.append(_SockFilter(_BPF_RET_K, 0, 0, deny))
-        block.append(_SockFilter(_BPF_LD_W_ABS, 0, 0, 0))
-        instructions.append(_SockFilter(_BPF_JMP_JEQ_K, 0, len(block), number))
-        instructions.extend(block)
     instructions.extend([
         _SockFilter(_BPF_JMP_JEQ_K, 0, 1, socket_nr),
         _SockFilter(_BPF_RET_K, 0, 0, deny),
@@ -424,17 +433,16 @@ def _mountinfo_unescape(value: str) -> str:
     )
 
 
-def probe_quota_root(path: Path) -> Path:
-    """Require an empty private tmpfs whose allocation ceiling is <= 2 GiB."""
+def _tmpfs_root(path: Path, *, maximum_bytes: int, require_empty: bool, label: str) -> Path:
     try:
         root = Path(path).resolve(strict=True)
         info = root.stat()
     except OSError:
-        fail("moriarty_probe_quota_root_unavailable")
+        fail(f"moriarty_{label}_root_unavailable")
     if not root.is_dir() or info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) & 0o077:
-        fail("moriarty_probe_quota_root_not_private")
+        fail(f"moriarty_{label}_root_not_private")
     if not os.path.ismount(root):
-        fail("moriarty_probe_quota_root_not_mount")
+        fail(f"moriarty_{label}_root_not_mount")
 
     fs_type: str | None = None
     try:
@@ -455,38 +463,134 @@ def probe_quota_root(path: Path) -> Path:
                     fs_type = fields[separator + 1]
                     break
     except OSError:
-        fail("moriarty_probe_quota_mountinfo_unavailable")
+        fail(f"moriarty_{label}_mountinfo_unavailable")
     if fs_type != "tmpfs":
-        fail("moriarty_probe_quota_root_not_tmpfs")
+        fail(f"moriarty_{label}_root_not_tmpfs")
 
     try:
         filesystem = os.statvfs(root)
     except OSError:
-        fail("moriarty_probe_quota_statvfs_failed")
+        fail(f"moriarty_{label}_statvfs_failed")
     capacity = filesystem.f_blocks * filesystem.f_frsize
-    if capacity <= 0 or capacity > MAX_PROBE_WRITABLE_BYTES:
-        fail("moriarty_probe_quota_capacity_invalid")
-    try:
-        with os.scandir(root) as iterator:
-            if next(iterator, None) is not None:
-                fail("moriarty_probe_quota_root_not_empty")
-    except OSError:
-        fail("moriarty_probe_quota_root_scan_failed")
+    if capacity <= 0 or capacity > maximum_bytes:
+        fail(f"moriarty_{label}_capacity_invalid")
+    if require_empty:
+        try:
+            with os.scandir(root) as iterator:
+                if next(iterator, None) is not None:
+                    fail(f"moriarty_{label}_root_not_empty")
+        except OSError:
+            fail(f"moriarty_{label}_root_scan_failed")
     return root
+
+
+def probe_quota_root(path: Path) -> Path:
+    """Require an empty private tmpfs whose allocation ceiling is <= 2 GiB."""
+    return _tmpfs_root(
+        path,
+        maximum_bytes=MAX_PROBE_WRITABLE_BYTES,
+        require_empty=True,
+        label="probe_quota",
+    )
+
+
+def cargo_cache_root(path: Path) -> Path:
+    """Require a private quota-backed tmpfs for authenticated Cargo fetch input."""
+    return _tmpfs_root(
+        path,
+        maximum_bytes=MAX_CARGO_CACHE_BYTES,
+        require_empty=False,
+        label="cargo_cache",
+    )
+
+
+def _parse_cgroup_limit(path: Path, maximum: int, label: str) -> int:
+    try:
+        raw = path.read_text(encoding="ascii").strip()
+        value = int(raw, 10)
+    except (OSError, UnicodeError, ValueError):
+        fail(f"moriarty_probe_cgroup_{label}_invalid")
+    if value <= 0 or value > maximum:
+        fail(f"moriarty_probe_cgroup_{label}_invalid")
+    return value
+
+
+def probe_cgroup_root(path: Path) -> Path:
+    """Require an explicitly bounded cgroup-v2 memory/PID envelope."""
+    try:
+        root = Path(path).resolve(strict=True)
+        cgroup_root = Path("/sys/fs/cgroup").resolve(strict=True)
+    except OSError:
+        fail("moriarty_probe_cgroup_unavailable")
+    if root == cgroup_root or not root.is_relative_to(cgroup_root):
+        fail("moriarty_probe_cgroup_path_invalid")
+    if not (cgroup_root / "cgroup.controllers").is_file():
+        fail("moriarty_probe_cgroup_v2_required")
+    for name in ("cgroup.procs", "memory.max", "pids.max"):
+        if not (root / name).is_file():
+            fail(f"moriarty_probe_cgroup_file_missing:{name}")
+    _parse_cgroup_limit(root / "memory.max", PROBE_CGROUP_MEMORY_BYTES, "memory_max")
+    _parse_cgroup_limit(root / "pids.max", PROBE_CGROUP_PIDS, "pids_max")
+    swap = root / "memory.swap.max"
+    if swap.is_file():
+        try:
+            if swap.read_text(encoding="ascii").strip() != "0":
+                fail("moriarty_probe_cgroup_swap_not_disabled")
+        except (OSError, UnicodeError):
+            fail("moriarty_probe_cgroup_swap_invalid")
+    if not os.access(root / "cgroup.procs", os.W_OK):
+        fail("moriarty_probe_cgroup_not_delegated")
+    return root
+
+
+def probe_cgroup_pids(root: Path) -> tuple[int, ...]:
+    try:
+        values = (root / "cgroup.procs").read_text(encoding="ascii").splitlines()
+        return tuple(sorted(int(value) for value in values if value))
+    except (OSError, UnicodeError, ValueError):
+        fail("moriarty_probe_cgroup_process_list_invalid")
+
+
+def kill_probe_cgroup(root: Path) -> None:
+    """Kill every remaining task in the delegated probe cgroup."""
+    for _ in range(8):
+        pids = probe_cgroup_pids(root)
+        if not pids:
+            return
+        for pid in pids:
+            try:
+                os.kill(pid, 9)
+            except ProcessLookupError:
+                pass
+        time.sleep(0.01)
+    if probe_cgroup_pids(root):
+        fail("moriarty_probe_cgroup_descendants_survived")
+
+
+def _join_probe_cgroup(root: Path) -> None:
+    try:
+        with (root / "cgroup.procs").open("w", encoding="ascii") as handle:
+            handle.write("0\n")
+    except OSError as exc:
+        raise OSError(exc.errno, "moriarty_probe_cgroup_join_failed") from exc
 
 
 def probe_isolation_preexec(
     read_exec_paths: tuple[Path, ...],
     read_paths: tuple[Path, ...],
     writable_paths: tuple[Path, ...],
+    cgroup_root: Path | None = None,
 ):
     read_exec = tuple(Path(path).resolve(strict=True) for path in read_exec_paths if Path(path).exists())
     readable = tuple(Path(path).resolve(strict=True) for path in read_paths if Path(path).exists())
     writable = tuple(Path(path).resolve(strict=True) for path in writable_paths if Path(path).exists())
+    cgroup = probe_cgroup_root(cgroup_root) if cgroup_root is not None else None
     harness_pid = os.getpid()
     harness_pgid = os.getpgrp()
 
     def _apply() -> None:
+        if cgroup is not None:
+            _join_probe_cgroup(cgroup)
         _apply_probe_resource_limits()
         apply_landlock_policy(read_exec, readable, writable, allow_self_proc=True)
         apply_network_seccomp_policy(harness_pid, harness_pgid)

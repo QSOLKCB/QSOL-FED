@@ -172,28 +172,58 @@ This is an executable regression graduation claim, not a universal security theo
 
 ## Running locally
 
-From a clean checkout with the required toolchains and local dependency cache, bind the run to the actual commit:
+Local execution requires the same kernel-backed writable and process-resource boundaries as CI. The following example uses two private tmpfs mounts and a delegated cgroup-v2 child. It also uses an explicit Cargo cache root; populate that cache with the exact pinned toolchain before invoking MORIARTY.
 
 ```bash
+set -euo pipefail
 TARGET="$(git rev-parse HEAD)"
 REPORT_DIR="$(mktemp -d)"
 chmod 700 "$REPORT_DIR"
-python3 tools/validate_phase9_gate.py --target-commit "$TARGET" --report-dir "$REPORT_DIR"
+
+PROBE_QUOTA=/mnt/qsol-moriarty-probe-writable
+CARGO_CACHE=/mnt/qsol-moriarty-cargo-source
+sudo install -d -m 0700 "$PROBE_QUOTA" "$CARGO_CACHE"
+sudo mount -t tmpfs -o "size=2147483648,nosuid,nodev,mode=0700,uid=$(id -u),gid=$(id -g)" tmpfs "$PROBE_QUOTA"
+sudo mount -t tmpfs -o "size=1073741824,nosuid,nodev,mode=0700,uid=$(id -u),gid=$(id -g)" tmpfs "$CARGO_CACHE"
+
+CURRENT_CGROUP="$(awk -F: '$1 == "0" {print $3}' /proc/self/cgroup)"
+CGROUP="/sys/fs/cgroup${CURRENT_CGROUP}/qsol-moriarty-probe"
+sudo mkdir "$CGROUP"
+echo 2147483648 | sudo tee "$CGROUP/memory.max" >/dev/null
+echo 128 | sudo tee "$CGROUP/pids.max" >/dev/null
+if test -f "$CGROUP/memory.swap.max"; then echo 0 | sudo tee "$CGROUP/memory.swap.max" >/dev/null; fi
+sudo chown "$(id -u):$(id -g)" "$CGROUP/cgroup.procs"
+
+export MORIARTY_PROBE_WRITABLE_ROOT="$PROBE_QUOTA"
+export MORIARTY_CARGO_CACHE_ROOT="$CARGO_CACHE"
+export MORIARTY_PROBE_CGROUP="$CGROUP"
+# Also export MORIARTY_RUST_TOOLCHAIN_ROOT and the three MORIARTY_EXPECTED_*
+# version bindings to the exact trusted toolchain snapshot used for the run.
+
+python3 -I tools/validate_phase9_gate.py --target-commit "$TARGET" --report-dir "$REPORT_DIR"
 ```
 
-To emit the canonical report directly:
+Direct runner invocation uses the same required environment bindings:
 
 ```bash
-TARGET="$(git rev-parse HEAD)"
-python3 tools/run_moriarty.py \
+python3 -I tools/run_moriarty.py \
   --target-commit "$TARGET" \
   --output "$REPORT_DIR/moriarty-report.json"
 ```
 
+Cleanup after the run:
+
+```bash
+sudo rmdir "$CGROUP"
+sudo umount "$PROBE_QUOTA" "$CARGO_CACHE"
+sudo rmdir "$PROBE_QUOTA" "$CARGO_CACHE"
+```
+
+
 The report is intentionally ephemeral. Phase 11 may archive the report associated with the final frozen release, but repository source does not pre-claim that an unexecuted future commit has passed.
 
 
-Runtime hardening notes: Phase 9 bootstrap modules are loaded only from source files whose bytes match hash-verified target Git blobs; probe stdin is harness-owned `/dev/null` and inherited descriptors are closed; reproducibility digests normalize per-probe source/target/HOME/Cargo/TMP paths plus a closed set of Rust timing/PID fields; Git commit/tree/blob bytes are rehashed before export; repository-local fsmonitor/hooks are neutralized; non-system Python and non-self-contained direct Rust installations fail closed rather than importing mutable runtime trees. Cargo package archives are hashed through bounded streaming descriptors and Cargo index projection has independent entry/byte/depth ceilings. Probe seccomp permits only anonymous `AF_UNIX` `socketpair()` IPC, denies addressable `socket()`/`connect()`, io_uring networking, harness-directed signals, pidfd signaling, ptrace, and process-memory syscalls.
+Runtime hardening notes: Phase 9 bootstrap modules are loaded only from source files whose bytes match hash-verified target Git blobs; probe stdin is harness-owned `/dev/null` and inherited descriptors are closed; reproducibility digests normalize per-probe source/target/HOME/Cargo/TMP paths plus a closed set of Rust timing/PID fields; Git commit/tree/blob bytes are rehashed before export; repository-local fsmonitor/hooks are neutralized; non-system Python and non-self-contained direct Rust installations fail closed rather than importing mutable runtime trees. Cargo package archives are hashed through bounded streaming descriptors and Cargo index projection has independent entry/byte/depth ceilings. Probe seccomp permits only anonymous `AF_UNIX` `socketpair()` IPC, denies addressable `socket()`/`connect()`, io_uring networking, every probe-originated signal-delivery syscall, pidfd signaling, ptrace/process-memory syscalls, and x32 syscall numbers on x86_64. Aggregate probe memory/PIDs are bounded by cgroup v2; per-process rlimits remain defense-in-depth. `diagnostic_class` is advisory classification only and never affects graduation.
 
 
 ### Accepted-counterexample replay evidence

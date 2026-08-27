@@ -189,19 +189,11 @@ serialize = _qsol_canonical.serialize
 
 EXPECTED_FAMILIES = set(moriarty.EXPECTED_FAMILIES)
 EXPECTED_PROBES = {
-    "constitution": ("tools/validate_constitution.py",),
-    "phase0": ("tools/validate_phase0_gate.py",),
-    "phase1": ("tools/validate_phase1_gate.py",),
-    "phase2": ("tools/validate_phase2_gate.py",),
-    "phase3": ("tools/validate_phase3_gate.py",),
-    "phase4": ("tools/validate_phase4_gate.py",),
-    "phase5a": ("tools/validate_phase5a_gate.py",),
-    "phase5": ("tools/validate_phase5_gate.py",),
-    "phase5c": ("tools/validate_phase5c_gate.py",),
-    "phase6": ("tools/validate_phase6_gate.py",),
-    "phase7": ("tools/validate_phase7_gate.py",),
-    "phase8": ("tools/validate_phase8_gate.py",),
-    "rust_all": ("test", "--all-targets", "--frozen"),
+    probe_id: ("-I", "-c", moriarty.PYTHON_PROBE_BOOTSTRAP, path)
+    for probe_id, path in moriarty.PYTHON_VALIDATORS.items()
+}
+EXPECTED_PROBES["rust_all"] = ("test", "--all-targets", "--frozen")
+HARD_FALSE_CLAIMS = {
 }
 HARD_FALSE_CLAIMS = {
     "oracle_holodeck_synthetic_admission",
@@ -259,6 +251,10 @@ def _validate_claim_document(previous: dict[str, Any], current: dict[str, Any]) 
     }
     require(set(current) == expected_top, "Phase 9 claim manifest field set is not closed")
     require(current.get("document_type") == "qsol-fed-phase9-moriarty-claims", "Phase 9 claim id drift")
+    require(current.get("schema_version") == 1, "Phase 9 claim schema version drift")
+    require(current.get("protocol") == "qsol-fed/0", "Phase 9 constitutional protocol drift")
+    require(current.get("wire_protocol") == "qsol-fed/1", "Phase 9 wire protocol drift")
+    require(current.get("phase") == "9", "Phase 9 phase label drift")
     require(current.get("gate_id") == "qsol-fed-phase9-moriarty-gate/1", "Phase 9 gate id drift")
     require(current.get("gate_status") == "enforced", "Phase 9 gate not enforced")
     require(current.get("historical_baseline") == "claims/phase8.json", "Phase 9 claim baseline drift")
@@ -269,6 +265,7 @@ def _validate_claim_document(previous: dict[str, Any], current: dict[str, Any]) 
         require(current["capabilities"].get(key) is False, f"Phase 9 overclaim enabled: {key}")
     assurance = current.get("assurance")
     require(isinstance(assurance, dict) and set(assurance) == expected_assurance, "Phase 9 assurance field set is not closed")
+    require(assurance.get("moriarty_protocol") == "MORIARTY/1", "Phase 9 MORIARTY protocol drift")
     for key in (
         "provider_neutral", "exact_commit_binding", "reproducible_counterexample_contract",
         "accepted_counterexample_registry", "fixed_repository_probe_map", "cross_phase_regression_sweep",
@@ -304,6 +301,13 @@ def validate_claims() -> None:
     claim_drift = copy.deepcopy(current)
     claim_drift["claim_rule"] = "Phase 9 grants authority"
     _expect_reject(lambda: _validate_claim_document(previous, claim_drift), "claim rule drift")
+    for field, bad_value in (("schema_version", 2), ("protocol", "qsol-fed/9"), ("wire_protocol", "qsol-fed/9"), ("phase", "10")):
+        header_drift = copy.deepcopy(current)
+        header_drift[field] = bad_value
+        _expect_reject(lambda value=header_drift: _validate_claim_document(previous, value), f"claim header drift: {field}")
+    moriarty_drift = copy.deepcopy(current)
+    moriarty_drift["assurance"]["moriarty_protocol"] = "MORIARTY/2"
+    _expect_reject(lambda: _validate_claim_document(previous, moriarty_drift), "MORIARTY protocol drift")
 
 
 def validate_contract() -> None:
@@ -436,8 +440,8 @@ def validate_schemas_and_fixtures() -> None:
     counterexample_fields = {
         "schema", "counterexample_id", "target_commit", "attack_id", "family", "owner_phases",
         "boundary_ids", "regression_probe_ids", "failure_kind", "observed_exit_code",
-        "stdout_sha256", "stderr_sha256", "stdout_bytes", "stderr_bytes", "status",
-        "resolution_commit", "production_credentials_used", "production_targets_used",
+        "stdout_sha256", "stderr_sha256", "stdout_bytes", "stderr_bytes", "stdout_truncated",
+        "stderr_truncated", "status", "resolution_commit", "production_credentials_used", "production_targets_used",
         "constitutional_bypass_used", "authority_effect",
     }
     report_fields = {
@@ -477,6 +481,7 @@ def validate_schemas_and_fixtures() -> None:
     require(counter_props["regression_probe_ids"].get("maxItems") == 1, "MORIARTY counterexample must bind one observed regression probe")
     require(counter_props["stdout_bytes"].get("maximum") == moriarty.MAX_PROBE_OUTPUT_BYTES, "counterexample stdout bound schema drift")
     require(counter_props["stderr_bytes"].get("maximum") == moriarty.MAX_PROBE_OUTPUT_BYTES, "counterexample stderr bound schema drift")
+    require(counter_props["stdout_truncated"].get("type") == "boolean" and counter_props["stderr_truncated"].get("type") == "boolean", "counterexample truncation schema drift")
     all_of = counterexample_schema.get("allOf")
     require(isinstance(all_of, list) and len(all_of) == 2, "MORIARTY counterexample conditional set drift")
     require(set(all_of[0].get("if", {}).get("required", [])) == {"failure_kind"}, "counterexample failure conditional drift")
@@ -510,6 +515,7 @@ def validate_schemas_and_fixtures() -> None:
         "regression_probe_ids": ["p" * 64], "failure_kind": "exit_nonzero", "observed_exit_code": -2147483648,
         "stdout_sha256": "sha256:" + "f" * 64, "stderr_sha256": "sha256:" + "f" * 64,
         "stdout_bytes": moriarty.MAX_PROBE_OUTPUT_BYTES, "stderr_bytes": moriarty.MAX_PROBE_OUTPUT_BYTES,
+        "stdout_truncated": True, "stderr_truncated": True,
         "status": "resolved", "resolution_commit": "e" * 40, "production_credentials_used": False,
         "production_targets_used": False, "constitutional_bypass_used": False, "authority_effect": "none",
     }
@@ -631,6 +637,29 @@ def validate_probe_map() -> None:
     require(0 < moriarty.MAX_GIT_TREE_ENTRIES <= 65536, "MORIARTY Git tree entry bound invalid")
     require(0 < moriarty.MAX_GIT_TREE_METADATA_BYTES <= moriarty.MAX_GIT_ARCHIVE_BYTES, "MORIARTY Git tree metadata bound invalid")
     require(0 < moriarty.MAX_GIT_PATH_BYTES <= 4096, "MORIARTY Git path bound invalid")
+    moriarty.validate_rust_target_topology(ROOT)
+    with tempfile.TemporaryDirectory(prefix="moriarty-topology-negative-") as temp_dir:
+        fake = Path(temp_dir)
+        (fake / "src").mkdir()
+        (fake / "src/lib.rs").write_text("", encoding="utf-8")
+        (fake / "src/bin").mkdir()
+        for name in moriarty.EXPECTED_RUST_BIN_TARGETS:
+            (fake / "src/bin" / name).write_text("", encoding="utf-8")
+        (fake / "Cargo.toml").write_text('[package]\nname="qsol-fed"\nversion="0.0.0"\nedition="2024"\n\n[lib]\npath="/dev/null"\n', encoding="utf-8")
+        _expect_reject(lambda: moriarty.validate_rust_target_topology(fake), "Cargo target topology override")
+    with tempfile.TemporaryDirectory(prefix="moriarty-python-shadow-") as temp_dir:
+        fake = Path(temp_dir)
+        (fake / "tools").mkdir()
+        (fake / "tools/json.py").write_text("import os; os._exit(97)\n", encoding="utf-8")
+        validator = fake / "tools/validator.py"
+        validator.write_text("import json, pathlib\np=pathlib.Path(json.__file__).resolve()\nassert p != pathlib.Path(__file__).with_name('json.py').resolve()\n", encoding="utf-8")
+        completed = subprocess.run(
+            [sys.executable, "-I", "-c", moriarty.PYTHON_PROBE_BOOTSTRAP, str(validator)],
+            cwd=fake,
+            env={"PATH": "/usr/bin:/bin", "HOME": str(fake), "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"},
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=10,
+        )
+        require(completed.returncode == 0, "MORIARTY isolated Python bootstrap admitted stdlib shadow")
     isolation = moriarty._moriarty_isolation
     require(0 < isolation.PROBE_RLIMIT_NPROC <= 256, "MORIARTY process-count ceiling invalid")
     require(0 < isolation.PROBE_RLIMIT_NOFILE <= 512, "MORIARTY descriptor ceiling invalid")
@@ -658,6 +687,8 @@ def validate_probe_map() -> None:
         "stderr_sha256": "sha256:" + "0" * 64,
         "stdout_bytes": 0,
         "stderr_bytes": 0,
+        "stdout_truncated": False,
+        "stderr_truncated": False,
         "status": "unresolved",
         "resolution_commit": None,
         "production_credentials_used": False,
@@ -803,7 +834,10 @@ def validate_docs_and_ci() -> None:
         "CI authenticated cache/MORIARTY order does not precede target-controlled repository execution",
     )
     require("sudo mount -t tmpfs" in workflow and "size=2147483648" in workflow, "CI MORIARTY hard writable tmpfs quota missing")
-    require("MORIARTY_CARGO_CACHE_ROOT: ${{ runner.temp }}/moriarty-cargo-source" in workflow, "CI MORIARTY authenticated Cargo cache binding missing")
+    require("size=1073741824" in workflow and "/mnt/qsol-moriarty-cargo-source" in workflow, "CI MORIARTY Cargo fetch quota missing")
+    require("timeout --kill-after=5s 120s" in workflow, "CI MORIARTY Cargo fetch timeout missing")
+    require("rustup toolchain install 1.97.1" in workflow, "CI MORIARTY exact Rust toolchain acquisition missing")
+    require("memory.max" in workflow and "pids.max" in workflow and "MORIARTY_PROBE_CGROUP" in workflow, "CI MORIARTY cgroup aggregate resource envelope missing")
     require("MORIARTY_PROBE_WRITABLE_ROOT: /mnt/qsol-moriarty-probe-writable" in workflow, "CI MORIARTY writable quota binding missing")
     require('rustc 1.97.1 (8bab26f4f 2026-07-14)' in workflow, "CI rustc replay version is not pinned")
     require('cargo 1.97.1 (c980f4866 2026-06-30)' in workflow, "CI Cargo replay version is not pinned")
@@ -1172,6 +1206,11 @@ ctypes.set_errno(0)
 result = libc.syscall(425, 1, ctypes.c_void_p(0))
 if result != -1 or ctypes.get_errno() != errno.EPERM:
     raise SystemExit(11)
+if machine == "x86_64":
+    ctypes.set_errno(0)
+    result = libc.syscall(0x40000000 | 41, 2, 1, 0)
+    if result != -1 or ctypes.get_errno() != errno.EPERM:
+        raise SystemExit(12)
 raise SystemExit(0)
 """
         preexec = moriarty.probe_isolation_preexec(
@@ -1423,6 +1462,7 @@ _RUNNER_BINDING_KEYS = (
     "MORIARTY_EXPECTED_CARGO_VERSION",
     "MORIARTY_CARGO_CACHE_ROOT",
     "MORIARTY_PROBE_WRITABLE_ROOT",
+    "MORIARTY_PROBE_CGROUP",
 )
 
 
@@ -1551,6 +1591,12 @@ def main() -> None:
     quota_value = os.environ.get("MORIARTY_PROBE_WRITABLE_ROOT")
     require(quota_value is not None, "MORIARTY writable quota binding missing")
     moriarty.probe_quota_root(Path(quota_value))
+    cache_value = os.environ.get("MORIARTY_CARGO_CACHE_ROOT")
+    require(cache_value is not None, "MORIARTY Cargo cache binding missing")
+    moriarty.cargo_cache_root(Path(cache_value))
+    cgroup_value = os.environ.get("MORIARTY_PROBE_CGROUP")
+    require(cgroup_value is not None, "MORIARTY cgroup binding missing")
+    moriarty.probe_cgroup_root(Path(cgroup_value))
     validate_runner_toolchain_binding_negative(target)
     execute_exact_commit_gate(target, Path(args.report_dir).resolve() if args.report_dir else None)
     print(
