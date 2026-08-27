@@ -68,6 +68,8 @@ _BPF_JMP_JEQ_K = 0x15
 _BPF_RET_K = 0x06
 _SECCOMP_RET_ALLOW = 0x7FFF0000
 _SECCOMP_RET_ERRNO = 0x00050000
+_SECCOMP_DATA_ARG0_OFFSET = 16
+_AF_UNIX = 1
 
 
 class _LandlockRulesetAttr(ctypes.Structure):
@@ -225,24 +227,38 @@ def apply_landlock_write_policy(writable_paths: tuple[Path, ...]) -> None:
         os.close(ruleset_fd)
 
 
-def _network_syscalls() -> tuple[int, ...]:
+def _socket_syscalls() -> tuple[int, int]:
     machine = os.uname().machine
     if machine == "x86_64":
-        return (41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 288, 299, 307)
+        return (41, 53)
     if machine == "aarch64":
-        return (198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 242, 243, 269)
+        return (198, 199)
     fail("moriarty_network_seccomp_arch_unsupported")
 
 
 def apply_network_seccomp_policy() -> None:
-    """Deny socket creation and all socket I/O syscalls with EPERM."""
+    """Allow Unix-domain IPC while denying creation of every other socket family.
+
+    The child receives no ambient network descriptors. By filtering both socket()
+    and socketpair() on argument zero, descendants may use AF_UNIX for compiler
+    and Cargo-local IPC, while AF_INET, AF_INET6, AF_NETLINK, AF_PACKET, and every
+    other non-local family fail at creation with EPERM. Socket I/O syscalls stay
+    available only for descriptors that survived this creation boundary.
+    """
     libc = _linux_libc()
-    instructions: list[_SockFilter] = [_SockFilter(_BPF_LD_W_ABS, 0, 0, 0)]
     deny = _SECCOMP_RET_ERRNO | errno.EPERM
-    for number in _network_syscalls():
-        instructions.append(_SockFilter(_BPF_JMP_JEQ_K, 0, 1, number))
-        instructions.append(_SockFilter(_BPF_RET_K, 0, 0, deny))
-    instructions.append(_SockFilter(_BPF_RET_K, 0, 0, _SECCOMP_RET_ALLOW))
+    allow = _SECCOMP_RET_ALLOW
+    socket_nr, socketpair_nr = _socket_syscalls()
+    instructions = [
+        _SockFilter(_BPF_LD_W_ABS, 0, 0, 0),
+        _SockFilter(_BPF_JMP_JEQ_K, 0, 1, socket_nr),
+        _SockFilter(_BPF_JMP_JEQ_K, 0, 3, socketpair_nr),
+        _SockFilter(_BPF_RET_K, 0, 0, allow),
+        _SockFilter(_BPF_LD_W_ABS, 0, 0, _SECCOMP_DATA_ARG0_OFFSET),
+        _SockFilter(_BPF_JMP_JEQ_K, 0, 1, _AF_UNIX),
+        _SockFilter(_BPF_RET_K, 0, 0, allow),
+        _SockFilter(_BPF_RET_K, 0, 0, deny),
+    ]
     array_type = _SockFilter * len(instructions)
     array = array_type(*instructions)
     program = _SockFprog(len(instructions), array)
