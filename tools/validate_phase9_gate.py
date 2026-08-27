@@ -22,6 +22,13 @@ TOOLS = ROOT / "tools"
 sys.dont_write_bytecode = True
 _BOOTSTRAP_GIT = Path("/usr/bin/git")
 _BOOTSTRAP_TARGET_RE = re.compile(r"^[0-9a-f]{40}$")
+try:
+    _BOOTSTRAP_GIT_FD = os.open(_BOOTSTRAP_GIT, os.O_RDONLY | os.O_CLOEXEC)
+    _BOOTSTRAP_GIT_INFO = os.fstat(_BOOTSTRAP_GIT_FD)
+except OSError:
+    raise SystemExit("moriarty_bootstrap_system_git_unavailable")
+if not stat.S_ISREG(_BOOTSTRAP_GIT_INFO.st_mode) or not (_BOOTSTRAP_GIT_INFO.st_mode & 0o111):
+    raise SystemExit("moriarty_bootstrap_system_git_invalid")
 
 
 def _bootstrap_git_env() -> dict[str, str]:
@@ -45,10 +52,22 @@ def _bootstrap_git_env() -> dict[str, str]:
 
 
 def _bootstrap_git(*args: str) -> subprocess.CompletedProcess[bytes]:
-    if not _BOOTSTRAP_GIT.is_file():
+    try:
+        current = os.fstat(_BOOTSTRAP_GIT_FD)
+    except OSError:
         raise SystemExit("moriarty_bootstrap_system_git_unavailable")
+    if (
+        current.st_dev != _BOOTSTRAP_GIT_INFO.st_dev
+        or current.st_ino != _BOOTSTRAP_GIT_INFO.st_ino
+        or current.st_size != _BOOTSTRAP_GIT_INFO.st_size
+        or current.st_mtime_ns != _BOOTSTRAP_GIT_INFO.st_mtime_ns
+        or stat.S_IMODE(current.st_mode) != stat.S_IMODE(_BOOTSTRAP_GIT_INFO.st_mode)
+    ):
+        raise SystemExit("moriarty_bootstrap_system_git_changed")
     return subprocess.run(
         [str(_BOOTSTRAP_GIT), *args],
+        executable=f"/proc/self/fd/{_BOOTSTRAP_GIT_FD}",
+        pass_fds=(_BOOTSTRAP_GIT_FD,),
         cwd=ROOT,
         env=_bootstrap_git_env(),
         stdin=subprocess.DEVNULL,
@@ -60,11 +79,22 @@ def _bootstrap_git(*args: str) -> subprocess.CompletedProcess[bytes]:
 
 
 def _bootstrap_target() -> str:
-    target: str | None = None
-    if "--target-commit" in sys.argv:
-        index = sys.argv.index("--target-commit")
-        if index + 1 < len(sys.argv):
-            target = sys.argv[index + 1]
+    values: list[str] = []
+    index = 1
+    while index < len(sys.argv):
+        argument = sys.argv[index]
+        if argument == "--target-commit":
+            if index + 1 >= len(sys.argv) or sys.argv[index + 1].startswith("--"):
+                raise SystemExit("moriarty_bootstrap_target_missing")
+            values.append(sys.argv[index + 1])
+            index += 2
+            continue
+        if argument.startswith("--target-commit="):
+            values.append(argument.split("=", 1)[1])
+        index += 1
+    if len(values) > 1:
+        raise SystemExit("moriarty_bootstrap_target_duplicate")
+    target: str | None = values[0] if values else None
     if target is None:
         completed = _bootstrap_git("rev-parse", "HEAD")
         if completed.returncode != 0:
@@ -601,6 +631,14 @@ def validate_probe_map() -> None:
     require(0 < moriarty.MAX_GIT_TREE_ENTRIES <= 65536, "MORIARTY Git tree entry bound invalid")
     require(0 < moriarty.MAX_GIT_TREE_METADATA_BYTES <= moriarty.MAX_GIT_ARCHIVE_BYTES, "MORIARTY Git tree metadata bound invalid")
     require(0 < moriarty.MAX_GIT_PATH_BYTES <= 4096, "MORIARTY Git path bound invalid")
+    isolation = moriarty._moriarty_isolation
+    require(0 < isolation.PROBE_RLIMIT_NPROC <= 256, "MORIARTY process-count ceiling invalid")
+    require(0 < isolation.PROBE_RLIMIT_NOFILE <= 512, "MORIARTY descriptor ceiling invalid")
+    require(0 < isolation.PROBE_RLIMIT_AS_BYTES <= 2 * 1024 * 1024 * 1024, "MORIARTY address-space ceiling invalid")
+    require(0 < isolation.PROBE_RLIMIT_FSIZE_BYTES <= 512 * 1024 * 1024, "MORIARTY file-size ceiling invalid")
+    require(0 < isolation.MAX_PROBE_WRITABLE_BYTES <= 2 * 1024 * 1024 * 1024, "MORIARTY aggregate writable-byte ceiling invalid")
+    require(0 < isolation.MAX_TOOLCHAIN_STAGE_BYTES <= 3 * 1024 * 1024 * 1024, "MORIARTY toolchain stage byte ceiling invalid")
+    require(0 < isolation.MAX_TOOLCHAIN_STAGE_ENTRIES <= 32768, "MORIARTY toolchain stage entry ceiling invalid")
     system_reads = moriarty._system_read_paths()
     require(Path("/etc") not in system_reads, "MORIARTY recursive /etc read access reintroduced")
     require(all(path.is_file() and not path.is_dir() for path in system_reads), "MORIARTY system read allowlist contains a directory")
@@ -643,12 +681,29 @@ def validate_probe_map() -> None:
     )
     require(not moriarty.trusted_executable_matches(stale), "MORIARTY executable identity negative regression failed")
 
+    saved_argv = list(sys.argv)
+    try:
+        sys.argv = ["run_moriarty.py", "--target-commit", git_head(), "--target-commit", git_head()]
+        _expect_reject(moriarty._bootstrap_target, "duplicate bootstrap target arguments")
+        sys.argv = ["run_moriarty.py", f"--target-commit={git_head()}"]
+        require(moriarty._bootstrap_target() == git_head(), "bootstrap target equals-form drift")
+    finally:
+        sys.argv = saved_argv
+
 
 def validate_runner_source() -> None:
     source = (ROOT / "tools/run_moriarty.py").read_text(encoding="utf-8")
-    validator_bootstrap = "\n".join((ROOT / "tools/validate_phase9_gate.py").read_text(encoding="utf-8").splitlines()[:180])
+    validator_source = (ROOT / "tools/validate_phase9_gate.py").read_text(encoding="utf-8")
+    validator_bootstrap = "\n".join(validator_source.splitlines()[:220])
+    bootstrap_start = '_BOOTSTRAP_GIT = Path("/usr/bin/git")'
+    runner_block = source[source.index(bootstrap_start):source.index("_BOOTSTRAP_TARGET =", source.index(bootstrap_start))]
+    validator_block = validator_source[validator_source.index(bootstrap_start):validator_source.index("_BOOTSTRAP_TARGET =", validator_source.index(bootstrap_start))]
+    require(runner_block == validator_block, "Phase 9 runner/validator bootstrap blocks diverged")
     require("sys.path.insert" not in validator_bootstrap, "Phase 9 validator bootstrap reintroduced checkout import search")
     require("_bootstrap_verified_blob" in validator_bootstrap and "compile(expected" in validator_bootstrap and "SourceFileLoader" not in validator_bootstrap, "Phase 9 validator bootstrap does not execute verified target bytes directly")
+    # These string checks are defense-in-depth maintenance tripwires only.
+    # Enforcement comes from verified target bytes, the closed probe map, and the
+    # Landlock/seccomp/resource boundary; marker presence is not a security proof.
     for marker in (
         "provider-neutral-fixed-probe/1", "moriarty-counterexample/1", "moriarty-report/1",
         "PROBES: dict[str, tuple[str, ...]]", "PROBE_EXECUTABLES", "TrustedExecutable",
@@ -666,6 +721,7 @@ def validate_runner_source() -> None:
         "production_credentials_used", "production_targets_used", "constitutional_bypass_used",
         "security_proof", "no_counterexample_found_implies_none_exist", "stdout_truncated", "stderr_truncated",
         "_bootstrap_verified_blob", "compile(expected", "ALLOWED_OWNER_PHASES", "_RUNTIME_NORMALIZATIONS", "close_fds=True",
+        "probe_writable_tree_within_limits", "MORIARTY_RUST_TOOLCHAIN_ROOT", "allow_abbrev=False",
     ):
         require(marker in source, f"MORIARTY runner marker missing: {marker}")
     require("accepted_external" not in source, "MORIARTY runner still admits accepted_external")
@@ -728,14 +784,25 @@ def validate_docs_and_ci() -> None:
     require(phase9.get("security_proof") is False, "README4AI MORIARTY security-proof overclaim")
 
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    require("runs-on: ubuntu-24.04" in workflow, "CI runner OS is not pinned to ubuntu-24.04")
     require("ref: ${{ github.event.pull_request.head.sha || github.sha }}" in workflow, "CI does not checkout the exact PR-head/push commit")
     require("fetch-depth: 0" in workflow, "CI does not provide full Git history for remediation validation")
     require("persist-credentials: false" in workflow, "CI exact target checkout persists credentials")
     require("MORIARTY_TARGET_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}" in workflow, "CI MORIARTY target commit binding missing")
-    require("cargo test --all-targets --locked" in workflow, "CI Rust suite is not lockfile-bound")
+    snapshot_marker = "Snapshot trusted CI toolchains before repository execution"
+    rust_test_marker = "Rust tests, state, Holodeck, adapters, SDKs, Assembly, transports, and fuzz smoke"
+    require(snapshot_marker in workflow and workflow.index(snapshot_marker) < workflow.index(rust_test_marker), "CI toolchain snapshot does not precede repository execution")
+    require('rustc 1.97.1 (8bab26f4f 2026-07-14)' in workflow, "CI rustc replay version is not pinned")
+    require('cargo 1.97.1 (c980f4866 2026-06-30)' in workflow, "CI Cargo replay version is not pinned")
+    require('Python 3.12.3' in workflow, "CI Python replay version is not pinned")
+    require('$RUNNER_TEMP/moriarty-rust-toolchain/bin/cargo" test --all-targets --locked' in workflow, "CI Rust suite does not use the pre-execution snapshot")
+    require("MORIARTY_RUST_TOOLCHAIN_ROOT: ${{ runner.temp }}/moriarty-rust-toolchain" in workflow, "CI MORIARTY Rust snapshot binding missing")
+    require("MORIARTY_EXPECTED_PYTHON_VERSION: Python 3.12.3" in workflow, "CI MORIARTY Python version binding missing")
+    require("MORIARTY_EXPECTED_RUSTC_VERSION: rustc 1.97.1 (8bab26f4f 2026-07-14)" in workflow, "CI MORIARTY rustc version binding missing")
+    require("MORIARTY_EXPECTED_CARGO_VERSION: cargo 1.97.1 (c980f4866 2026-06-30)" in workflow, "CI MORIARTY Cargo version binding missing")
     require("MORIARTY_REPORT_DIR" in workflow, "CI MORIARTY persistent report directory missing")
     require("actions/upload-artifact@v4" in workflow and "Preserve Phase 9 MORIARTY report" in workflow, "CI MORIARTY report artifact preservation missing")
-    require("python3 -I tools/validate_phase9_gate.py --target-commit \"$MORIARTY_TARGET_COMMIT\" --report-dir \"$MORIARTY_REPORT_DIR\"" in workflow, "CI missing isolated exact-commit Phase 9 gate")
+    require("/usr/bin/python3 -I tools/validate_phase9_gate.py --target-commit \"$MORIARTY_TARGET_COMMIT\" --report-dir \"$MORIARTY_REPORT_DIR\"" in workflow, "CI missing isolated exact-commit Phase 9 gate")
 
 
 def _counterexample_for_test(target: str, attack: dict[str, Any]) -> dict[str, Any]:
@@ -892,6 +959,33 @@ def validate_isolation_negative_tests(target: str) -> None:
         (first / "config.toml").write_text("[build]\nrustc-wrapper='evil'\n", encoding="utf-8")
         require(not (second / "config.toml").exists(), "per-probe Cargo homes contaminated each other")
 
+        writable_bound = root / "writable-bound"
+        writable_bound.mkdir()
+        oversized_writable = writable_bound / "oversized"
+        oversized_writable.write_bytes(b"")
+        os.truncate(oversized_writable, moriarty._moriarty_isolation.MAX_PROBE_WRITABLE_BYTES + 1)
+        require(
+            not moriarty.probe_writable_tree_within_limits((writable_bound,)),
+            "aggregate writable storage bound regression failed",
+        )
+
+        fake_toolchain = root / "fake-toolchain"
+        (fake_toolchain / "bin").mkdir(parents=True)
+        (fake_toolchain / "lib" / "rustlib").mkdir(parents=True)
+        (fake_toolchain / "bin" / "rustdoc").write_bytes(b"rustdoc")
+        huge_runtime = fake_toolchain / "lib" / "oversized.so"
+        huge_runtime.write_bytes(b"")
+        os.truncate(huge_runtime, moriarty._moriarty_isolation.MAX_TOOLCHAIN_STAGE_FILE_BYTES + 1)
+        _expect_reject(
+            lambda: moriarty.stage_rust_toolchain_runtime(
+                fake_toolchain,
+                root / "fake-toolchain-stage",
+                moriarty.CARGO_TRUSTED.fd,
+                moriarty.RUSTC_TRUSTED.fd,
+            ),
+            "oversized Rust toolchain staging input",
+        )
+
     cargo_dir = ROOT / ".cargo"
     config = cargo_dir / "config.toml"
     require(not config.exists(), "negative test requires no tracked repository Cargo config")
@@ -1044,6 +1138,15 @@ for number, args in (
     result = libc.syscall(number, *args)
     if result != -1 or ctypes.get_errno() != errno.EPERM:
         raise SystemExit(8)
+import resource
+class RLimit(ctypes.Structure):
+    _fields_ = [("cur", ctypes.c_ulong), ("maximum", ctypes.c_ulong)]
+prlimit_nr = 302 if machine == "x86_64" else 261
+new_limit = RLimit(1, 1)
+ctypes.set_errno(0)
+result = libc.syscall(prlimit_nr, int(parent_pid), resource.RLIMIT_NOFILE, ctypes.byref(new_limit), ctypes.c_void_p(0))
+if result != -1 or ctypes.get_errno() != errno.EPERM:
+    raise SystemExit(9)
 forbidden_etc = Path("/etc/hostname")
 if forbidden_etc.exists():
     try:
@@ -1051,11 +1154,11 @@ if forbidden_etc.exists():
     except PermissionError:
         pass
     else:
-        raise SystemExit(9)
+        raise SystemExit(10)
 ctypes.set_errno(0)
 result = libc.syscall(425, 1, ctypes.c_void_p(0))
 if result != -1 or ctypes.get_errno() != errno.EPERM:
-    raise SystemExit(10)
+    raise SystemExit(11)
 raise SystemExit(0)
 """
         preexec = moriarty.probe_isolation_preexec(
@@ -1361,11 +1464,12 @@ def execute_exact_commit_gate(target: str, report_dir: Path | None) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Validate the Phase 9 MORIARTY/1 graduation gate")
+    parser = argparse.ArgumentParser(description="Validate the Phase 9 MORIARTY/1 graduation gate", allow_abbrev=False)
     parser.add_argument("--target-commit", help="exact checked-out commit; defaults to Git HEAD")
     parser.add_argument("--report-dir", help="private external directory for persistent MORIARTY report")
     args = parser.parse_args()
     target = args.target_commit or git_head()
+    require(target == _BOOTSTRAP_TARGET, "Phase 9 target commit differs from bootstrap target")
     require(bool(TARGET_RE.fullmatch(target)), "Phase 9 target commit format invalid")
 
     validate_claims()

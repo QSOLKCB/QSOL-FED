@@ -28,6 +28,13 @@ TOOLS = ROOT / "tools"
 sys.dont_write_bytecode = True
 _BOOTSTRAP_GIT = Path("/usr/bin/git")
 _BOOTSTRAP_TARGET_RE = re.compile(r"^[0-9a-f]{40}$")
+try:
+    _BOOTSTRAP_GIT_FD = os.open(_BOOTSTRAP_GIT, os.O_RDONLY | os.O_CLOEXEC)
+    _BOOTSTRAP_GIT_INFO = os.fstat(_BOOTSTRAP_GIT_FD)
+except OSError:
+    raise SystemExit("moriarty_bootstrap_system_git_unavailable")
+if not stat.S_ISREG(_BOOTSTRAP_GIT_INFO.st_mode) or not (_BOOTSTRAP_GIT_INFO.st_mode & 0o111):
+    raise SystemExit("moriarty_bootstrap_system_git_invalid")
 
 
 def _bootstrap_git_env() -> dict[str, str]:
@@ -51,10 +58,22 @@ def _bootstrap_git_env() -> dict[str, str]:
 
 
 def _bootstrap_git(*args: str) -> subprocess.CompletedProcess[bytes]:
-    if not _BOOTSTRAP_GIT.is_file():
+    try:
+        current = os.fstat(_BOOTSTRAP_GIT_FD)
+    except OSError:
         raise SystemExit("moriarty_bootstrap_system_git_unavailable")
+    if (
+        current.st_dev != _BOOTSTRAP_GIT_INFO.st_dev
+        or current.st_ino != _BOOTSTRAP_GIT_INFO.st_ino
+        or current.st_size != _BOOTSTRAP_GIT_INFO.st_size
+        or current.st_mtime_ns != _BOOTSTRAP_GIT_INFO.st_mtime_ns
+        or stat.S_IMODE(current.st_mode) != stat.S_IMODE(_BOOTSTRAP_GIT_INFO.st_mode)
+    ):
+        raise SystemExit("moriarty_bootstrap_system_git_changed")
     return subprocess.run(
         [str(_BOOTSTRAP_GIT), *args],
+        executable=f"/proc/self/fd/{_BOOTSTRAP_GIT_FD}",
+        pass_fds=(_BOOTSTRAP_GIT_FD,),
         cwd=ROOT,
         env=_bootstrap_git_env(),
         stdin=subprocess.DEVNULL,
@@ -66,11 +85,22 @@ def _bootstrap_git(*args: str) -> subprocess.CompletedProcess[bytes]:
 
 
 def _bootstrap_target() -> str:
-    target: str | None = None
-    if "--target-commit" in sys.argv:
-        index = sys.argv.index("--target-commit")
-        if index + 1 < len(sys.argv):
-            target = sys.argv[index + 1]
+    values: list[str] = []
+    index = 1
+    while index < len(sys.argv):
+        argument = sys.argv[index]
+        if argument == "--target-commit":
+            if index + 1 >= len(sys.argv) or sys.argv[index + 1].startswith("--"):
+                raise SystemExit("moriarty_bootstrap_target_missing")
+            values.append(sys.argv[index + 1])
+            index += 2
+            continue
+        if argument.startswith("--target-commit="):
+            values.append(argument.split("=", 1)[1])
+        index += 1
+    if len(values) > 1:
+        raise SystemExit("moriarty_bootstrap_target_duplicate")
+    target: str | None = values[0] if values else None
     if target is None:
         completed = _bootstrap_git("rev-parse", "HEAD")
         if completed.returncode != 0:
@@ -172,6 +202,7 @@ enable_child_subreaper = _moriarty_isolation.enable_child_subreaper
 landlock_abi_version = _moriarty_isolation.landlock_abi_version
 network_seccomp_supported = _moriarty_isolation.network_seccomp_supported
 probe_isolation_preexec = _moriarty_isolation.probe_isolation_preexec
+probe_writable_tree_within_limits = _moriarty_isolation.probe_writable_tree_within_limits
 proc_fd_path = _moriarty_isolation.proc_fd_path
 stage_executable_from_fd = _moriarty_isolation.stage_executable_from_fd
 stage_rust_toolchain_runtime = _moriarty_isolation.stage_rust_toolchain_runtime
@@ -525,32 +556,86 @@ PYTHON_TRUSTED = _trusted_executable("python3", preferred=_python_preferred)
 if Path("/usr") not in Path(PYTHON_TRUSTED.executable).resolve(strict=True).parents:
     fail("moriarty_python_runtime_outside_system_prefix")
 GIT_TRUSTED = _trusted_executable("git")
-CARGO_ENTRY_TRUSTED = _trusted_executable("cargo")
-RUSTC_ENTRY_TRUSTED = _trusted_executable("rustc")
-RUSTUP_TRUSTED = _trusted_executable_optional("rustup")
-RUSTUP_DISCOVERY_USED = False
-RUST_TOOLCHAIN_ID: str | None = None
-
-if RUSTUP_TRUSTED is not None and (
-    _same_trusted_inode(CARGO_ENTRY_TRUSTED, RUSTUP_TRUSTED)
-    or _same_trusted_inode(RUSTC_ENTRY_TRUSTED, RUSTUP_TRUSTED)
-):
-    if not (
-        _same_trusted_inode(CARGO_ENTRY_TRUSTED, RUSTUP_TRUSTED)
-        and _same_trusted_inode(RUSTC_ENTRY_TRUSTED, RUSTUP_TRUSTED)
+RUST_SNAPSHOT_ROOT: Path | None = None
+_snapshot_value = os.environ.get("MORIARTY_RUST_TOOLCHAIN_ROOT")
+if _snapshot_value:
+    try:
+        RUST_SNAPSHOT_ROOT = Path(_snapshot_value).resolve(strict=True)
+    except OSError:
+        fail("moriarty_ci_rust_snapshot_unavailable")
+    if (
+        not RUST_SNAPSHOT_ROOT.is_dir()
+        or RUST_SNAPSHOT_ROOT == ROOT
+        or ROOT in RUST_SNAPSHOT_ROOT.parents
     ):
-        fail("moriarty_mixed_rustup_toolchain_entrypoints")
-    RUST_TOOLCHAIN_ID = _rustup_active_toolchain(RUSTUP_TRUSTED)
-    CARGO_TRUSTED = _rustup_which(RUSTUP_TRUSTED, RUST_TOOLCHAIN_ID, "cargo")
-    RUSTC_TRUSTED = _rustup_which(RUSTUP_TRUSTED, RUST_TOOLCHAIN_ID, "rustc")
-    if _same_trusted_inode(CARGO_TRUSTED, RUSTUP_TRUSTED) or _same_trusted_inode(RUSTC_TRUSTED, RUSTUP_TRUSTED):
-        fail("moriarty_rustup_concrete_toolchain_not_pinned")
-    if Path(CARGO_TRUSTED.executable).parent != Path(RUSTC_TRUSTED.executable).parent:
-        fail("moriarty_rustup_toolchain_component_mismatch")
-    RUSTUP_DISCOVERY_USED = True
-else:
+        fail("moriarty_ci_rust_snapshot_invalid")
+    CARGO_ENTRY_TRUSTED = _trusted_exact_path("cargo", RUST_SNAPSHOT_ROOT / "bin" / "cargo")
+    RUSTC_ENTRY_TRUSTED = _trusted_exact_path("rustc", RUST_SNAPSHOT_ROOT / "bin" / "rustc")
+    RUSTUP_TRUSTED = None
+    RUSTUP_DISCOVERY_USED = False
+    RUST_TOOLCHAIN_ID: str | None = "ci-snapshot"
     CARGO_TRUSTED = CARGO_ENTRY_TRUSTED
     RUSTC_TRUSTED = RUSTC_ENTRY_TRUSTED
+else:
+    CARGO_ENTRY_TRUSTED = _trusted_executable("cargo")
+    RUSTC_ENTRY_TRUSTED = _trusted_executable("rustc")
+    RUSTUP_TRUSTED = _trusted_executable_optional("rustup")
+    RUSTUP_DISCOVERY_USED = False
+    RUST_TOOLCHAIN_ID = None
+    if RUSTUP_TRUSTED is not None and (
+        _same_trusted_inode(CARGO_ENTRY_TRUSTED, RUSTUP_TRUSTED)
+        or _same_trusted_inode(RUSTC_ENTRY_TRUSTED, RUSTUP_TRUSTED)
+    ):
+        if not (
+            _same_trusted_inode(CARGO_ENTRY_TRUSTED, RUSTUP_TRUSTED)
+            and _same_trusted_inode(RUSTC_ENTRY_TRUSTED, RUSTUP_TRUSTED)
+        ):
+            fail("moriarty_mixed_rustup_toolchain_entrypoints")
+        RUST_TOOLCHAIN_ID = _rustup_active_toolchain(RUSTUP_TRUSTED)
+        CARGO_TRUSTED = _rustup_which(RUSTUP_TRUSTED, RUST_TOOLCHAIN_ID, "cargo")
+        RUSTC_TRUSTED = _rustup_which(RUSTUP_TRUSTED, RUST_TOOLCHAIN_ID, "rustc")
+        if _same_trusted_inode(CARGO_TRUSTED, RUSTUP_TRUSTED) or _same_trusted_inode(RUSTC_TRUSTED, RUSTUP_TRUSTED):
+            fail("moriarty_rustup_concrete_toolchain_not_pinned")
+        if Path(CARGO_TRUSTED.executable).parent != Path(RUSTC_TRUSTED.executable).parent:
+            fail("moriarty_rustup_toolchain_component_mismatch")
+        RUSTUP_DISCOVERY_USED = True
+    else:
+        CARGO_TRUSTED = CARGO_ENTRY_TRUSTED
+        RUSTC_TRUSTED = RUSTC_ENTRY_TRUSTED
+
+
+def _trusted_version(trusted: TrustedExecutable) -> str:
+    completed = trusted_run(
+        trusted,
+        ("--version",),
+        cwd=REAL_HOME,
+        env={"PATH": "/usr/bin:/bin", "HOME": str(REAL_HOME), "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"},
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if completed.returncode != 0:
+        fail(f"moriarty_toolchain_version_unavailable:{trusted.name}")
+    payload = completed.stdout or completed.stderr
+    try:
+        return payload.decode("utf-8", errors="strict").strip()
+    except UnicodeError:
+        fail(f"moriarty_toolchain_version_invalid:{trusted.name}")
+
+
+def _require_expected_toolchain_versions() -> None:
+    bindings = (
+        (PYTHON_TRUSTED, "MORIARTY_EXPECTED_PYTHON_VERSION"),
+        (RUSTC_TRUSTED, "MORIARTY_EXPECTED_RUSTC_VERSION"),
+        (CARGO_TRUSTED, "MORIARTY_EXPECTED_CARGO_VERSION"),
+    )
+    for trusted, variable in bindings:
+        expected = os.environ.get(variable)
+        if expected is not None and _trusted_version(trusted) != expected:
+            fail(f"moriarty_toolchain_version_drift:{trusted.name}")
+
+
+_require_expected_toolchain_versions()
 
 PYTHON_EXE = PYTHON_TRUSTED.invocation
 GIT_EXE = GIT_TRUSTED.invocation
@@ -1402,7 +1487,10 @@ def run_probe(
         read_exec_paths.append(rust_runtime)
     elif probe_id == "rust_all":
         read_exec_paths.extend([cargo_exec.parent, rustc_exec.parent])
-    writable_paths = [home, cargo_home, target_dir, temp_dir, *_system_writable_files()]
+    private_writable_paths = [home, cargo_home, target_dir, temp_dir]
+    writable_paths = [*private_writable_paths, *_system_writable_files()]
+    if not probe_writable_tree_within_limits(tuple(private_writable_paths)):
+        return _probe_failure_result(probe_id, "tool_error", b"writable_resource_limit_exceeded_before_probe")
     preexec = probe_isolation_preexec(
         tuple(read_exec_paths),
         _system_read_paths(),
@@ -1447,10 +1535,17 @@ def run_probe(
     post_exit_deadline: float | None = None
     termination_deadline: float | None = None
     failure_kind: str | None = None
+    next_writable_check = time.monotonic() + _moriarty_isolation.PROBE_WRITABLE_CHECK_INTERVAL_SECONDS
 
     try:
         while selector.get_map():
             now = time.monotonic()
+            if failure_kind is None and now >= next_writable_check:
+                if not probe_writable_tree_within_limits(tuple(private_writable_paths)):
+                    failure_kind = "tool_error"
+                    _kill_probe_tree(process)
+                    termination_deadline = now + TERMINATION_DRAIN_SECONDS
+                next_writable_check = now + _moriarty_isolation.PROBE_WRITABLE_CHECK_INTERVAL_SECONDS
             remaining = deadline - now
             direct_exited = process.poll() is not None
             if remaining <= 0 and failure_kind is None:
@@ -1539,6 +1634,8 @@ def run_probe(
         failure_kind = failure_kind or "tool_error"
         _kill_probe_tree(process)
     _reap_adopted_children()
+    if not probe_writable_tree_within_limits(tuple(private_writable_paths)):
+        failure_kind = failure_kind or "tool_error"
 
     if not tracked_tree_clean():
         return _probe_failure_result(probe_id, "tool_error", b"tracked_tree_or_index_flags_dirty_after_probe")
@@ -1765,12 +1862,14 @@ def report_probe_result(result: dict[str, Any]) -> dict[str, Any]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run the MORIARTY/1 exact-commit graduation harness")
+    parser = argparse.ArgumentParser(description="Run the MORIARTY/1 exact-commit graduation harness", allow_abbrev=False)
     parser.add_argument("--target-commit", required=True, help="exact 40-character lowercase Git commit")
     parser.add_argument("--output", required=True, help="path for canonical moriarty-report/1 output")
     args = parser.parse_args()
 
     target = args.target_commit
+    if target != _BOOTSTRAP_TARGET:
+        fail("moriarty_target_commit_bootstrap_mismatch")
     if not TARGET_RE.fullmatch(target):
         fail("moriarty_target_commit_invalid")
     if git_head() != target:
@@ -1797,10 +1896,16 @@ def main() -> int:
         )
 
         rust_source_root = (
-            Path(CARGO_TRUSTED.executable).parent.parent
-            if RUSTUP_DISCOVERY_USED
-            else _direct_toolchain_root(CARGO_TRUSTED, RUSTC_TRUSTED)
+            RUST_SNAPSHOT_ROOT
+            if RUST_SNAPSHOT_ROOT is not None
+            else (
+                Path(CARGO_TRUSTED.executable).parent.parent
+                if RUSTUP_DISCOVERY_USED
+                else _direct_toolchain_root(CARGO_TRUSTED, RUSTC_TRUSTED)
+            )
         )
+        if rust_source_root is None:
+            fail("moriarty_rust_toolchain_root_unavailable")
         rust_runtime = stage_rust_toolchain_runtime(
             rust_source_root,
             workspace / "rust-runtime",

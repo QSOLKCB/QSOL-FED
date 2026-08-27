@@ -9,6 +9,7 @@ import io
 import json
 import os
 import re
+import resource
 import stat
 import sys
 import tarfile
@@ -25,6 +26,19 @@ MAX_CARGO_ARCHIVE_BYTES = 64 * 1024 * 1024
 MAX_CARGO_INDEX_BYTES = 16 * 1024 * 1024
 MAX_CARGO_INDEX_ENTRIES = 16_384
 MAX_CARGO_INDEX_DEPTH = 16
+PROBE_RLIMIT_AS_BYTES = 2 * 1024 * 1024 * 1024
+PROBE_RLIMIT_FSIZE_BYTES = 512 * 1024 * 1024
+PROBE_RLIMIT_NPROC = 128
+PROBE_RLIMIT_NOFILE = 256
+PROBE_RLIMIT_CPU_SECONDS = 330
+MAX_PROBE_WRITABLE_BYTES = 2 * 1024 * 1024 * 1024
+MAX_PROBE_WRITABLE_ENTRIES = 65_536
+MAX_PROBE_WRITABLE_DEPTH = 64
+PROBE_WRITABLE_CHECK_INTERVAL_SECONDS = 1.0
+MAX_TOOLCHAIN_STAGE_FILE_BYTES = 1024 * 1024 * 1024
+MAX_TOOLCHAIN_STAGE_BYTES = 3 * 1024 * 1024 * 1024
+MAX_TOOLCHAIN_STAGE_ENTRIES = 32_768
+MAX_TOOLCHAIN_STAGE_DEPTH = 32
 _CARGO_PACKAGE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
 _CARGO_PACKAGE_VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$")
 
@@ -271,6 +285,15 @@ def _io_uring_syscalls() -> tuple[int, int, int]:
     return (425, 426, 427)
 
 
+def _prlimit_syscall() -> int:
+    machine = os.uname().machine
+    if machine == "x86_64":
+        return 302
+    if machine == "aarch64":
+        return 261
+    fail("moriarty_prlimit_seccomp_arch_unsupported")
+
+
 def apply_network_seccomp_policy(harness_pid: int, harness_pgid: int) -> None:
     """Deny addressable IPC/network creation and probe-to-harness control.
 
@@ -299,6 +322,16 @@ def apply_network_seccomp_policy(harness_pid: int, harness_pgid: int) -> None:
     for number in (*_io_uring_syscalls(), pidfd_signal_nr, *_process_memory_syscalls()):
         instructions.append(_SockFilter(_BPF_JMP_JEQ_K, 0, 1, number))
         instructions.append(_SockFilter(_BPF_RET_K, 0, 0, deny))
+    # prlimit64 is self-only: pid 0 may tighten the probe's own inherited hard
+    # ceiling, while any named PID (including the harness) is denied.
+    prlimit_block = [
+        _SockFilter(_BPF_LD_W_ABS, 0, 0, _SECCOMP_DATA_ARG0_OFFSET),
+        _SockFilter(_BPF_JMP_JEQ_K, 1, 0, 0),
+        _SockFilter(_BPF_RET_K, 0, 0, deny),
+        _SockFilter(_BPF_LD_W_ABS, 0, 0, 0),
+    ]
+    instructions.append(_SockFilter(_BPF_JMP_JEQ_K, 0, len(prlimit_block), _prlimit_syscall()))
+    instructions.extend(prlimit_block)
     for number in (kill_nr, tkill_nr, tgkill_nr, rt_sigqueueinfo_nr, rt_tgsigqueueinfo_nr):
         block: list[_SockFilter] = [_SockFilter(_BPF_LD_W_ABS, 0, 0, _SECCOMP_DATA_ARG0_OFFSET)]
         for target in forbidden_targets:
@@ -328,6 +361,61 @@ def apply_network_seccomp_policy(harness_pid: int, harness_pgid: int) -> None:
         raise OSError(ctypes.get_errno(), "prctl_seccomp_network_filter")
 
 
+def _apply_probe_resource_limits() -> None:
+    def set_ceiling(kind: int, ceiling: int) -> None:
+        _soft, hard = resource.getrlimit(kind)
+        target = ceiling if hard == resource.RLIM_INFINITY else min(ceiling, hard)
+        if target <= 0:
+            fail("moriarty_probe_resource_limit_unavailable")
+        resource.setrlimit(kind, (target, target))
+
+    set_ceiling(resource.RLIMIT_AS, PROBE_RLIMIT_AS_BYTES)
+    set_ceiling(resource.RLIMIT_FSIZE, PROBE_RLIMIT_FSIZE_BYTES)
+    set_ceiling(resource.RLIMIT_NPROC, PROBE_RLIMIT_NPROC)
+    set_ceiling(resource.RLIMIT_NOFILE, PROBE_RLIMIT_NOFILE)
+    set_ceiling(resource.RLIMIT_CPU, PROBE_RLIMIT_CPU_SECONDS)
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+
+
+def probe_writable_tree_within_limits(paths: tuple[Path, ...]) -> bool:
+    total_bytes = 0
+    total_entries = 0
+    for supplied in paths:
+        try:
+            root = Path(supplied).resolve(strict=True)
+        except OSError:
+            return False
+        if not root.is_dir():
+            return False
+        stack: list[tuple[Path, int]] = [(root, 0)]
+        while stack:
+            current, depth = stack.pop()
+            if depth > MAX_PROBE_WRITABLE_DEPTH:
+                return False
+            try:
+                with os.scandir(current) as iterator:
+                    entries = list(iterator)
+            except OSError:
+                return False
+            for entry in entries:
+                total_entries += 1
+                if total_entries > MAX_PROBE_WRITABLE_ENTRIES:
+                    return False
+                try:
+                    info = entry.stat(follow_symlinks=False)
+                except OSError:
+                    return False
+                if stat.S_ISDIR(info.st_mode):
+                    stack.append((Path(entry.path), depth + 1))
+                elif stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode):
+                    total_bytes += info.st_size
+                    if total_bytes > MAX_PROBE_WRITABLE_BYTES:
+                        return False
+                else:
+                    return False
+    return True
+
+
 def probe_isolation_preexec(
     read_exec_paths: tuple[Path, ...],
     read_paths: tuple[Path, ...],
@@ -340,6 +428,7 @@ def probe_isolation_preexec(
     harness_pgid = os.getpgrp()
 
     def _apply() -> None:
+        _apply_probe_resource_limits()
         apply_landlock_policy(read_exec, readable, writable, allow_self_proc=True)
         apply_network_seccomp_policy(harness_pid, harness_pgid)
 
@@ -767,7 +856,9 @@ def stage_executable_from_fd(source_fd: int, destination: Path) -> Path:
     return destination
 
 
-def _stable_stage_source(source: Path, destination: Path, toolchain_root: Path) -> None:
+def _stable_stage_source(source: Path, destination: Path, toolchain_root: Path, max_bytes: int) -> int:
+    if max_bytes < 0:
+        fail("moriarty_toolchain_stage_bytes_exceeded")
     try:
         resolved = source.resolve(strict=True)
     except OSError:
@@ -778,16 +869,23 @@ def _stable_stage_source(source: Path, destination: Path, toolchain_root: Path) 
     if not resolved.is_file():
         fail("moriarty_toolchain_nonregular_file")
     first = resolved.stat()
+    file_ceiling = min(MAX_TOOLCHAIN_STAGE_FILE_BYTES, max_bytes)
+    if first.st_size < 0 or first.st_size > file_ceiling:
+        fail("moriarty_toolchain_stage_file_too_large")
     fd = os.open(resolved, os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0))
     first_hash = hashlib.sha256()
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
     destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     out = os.open(destination, flags, 0o700)
+    copied = 0
     try:
         while True:
             chunk = os.read(fd, 65536)
             if not chunk:
                 break
+            copied += len(chunk)
+            if copied > file_ceiling:
+                fail("moriarty_toolchain_stage_file_too_large")
             first_hash.update(chunk)
             view = memoryview(chunk)
             while view:
@@ -805,7 +903,7 @@ def _stable_stage_source(source: Path, destination: Path, toolchain_root: Path) 
     finally:
         os.close(out)
         os.close(fd)
-    if first_hash.digest() != second_hash.digest():
+    if copied != first.st_size or first_hash.digest() != second_hash.digest():
         fail("moriarty_toolchain_source_changed_during_stage")
     if (
         first.st_dev != last.st_dev
@@ -814,9 +912,10 @@ def _stable_stage_source(source: Path, destination: Path, toolchain_root: Path) 
         or first.st_mtime_ns != last.st_mtime_ns
     ):
         fail("moriarty_toolchain_source_identity_changed_during_stage")
-    if bytes.fromhex(_sha256_regular_file(destination)) != first_hash.digest():
+    if bytes.fromhex(_sha256_regular_file(destination, max_bytes=file_ceiling, too_large_error="moriarty_toolchain_stage_file_too_large")) != first_hash.digest():
         fail("moriarty_toolchain_stage_digest_mismatch")
     os.chmod(destination, 0o500 if first.st_mode & 0o111 else 0o400)
+    return copied
 
 
 def stage_rust_toolchain_runtime(
@@ -825,9 +924,11 @@ def stage_rust_toolchain_runtime(
     pinned_cargo_fd: int,
     pinned_rustc_fd: int,
 ) -> Path:
-    """Privately snapshot the Rustup toolchain `bin` + complete runtime `lib` tree."""
+    """Privately snapshot a bounded Rust toolchain `bin` + runtime `lib` tree."""
     root = toolchain_root.resolve(strict=True)
     destination.mkdir(mode=0o700, parents=False, exist_ok=False)
+    total_bytes = 0
+    total_entries = 0
     for subdir in ("bin", "lib"):
         source_root = root / subdir
         if not source_root.is_dir():
@@ -835,6 +936,11 @@ def stage_rust_toolchain_runtime(
         for current, dirs, files in os.walk(source_root, followlinks=False):
             current_path = Path(current)
             rel = current_path.relative_to(root)
+            if len(rel.parts) > MAX_TOOLCHAIN_STAGE_DEPTH:
+                fail("moriarty_toolchain_stage_depth_exceeded")
+            total_entries += len(dirs) + len(files)
+            if total_entries > MAX_TOOLCHAIN_STAGE_ENTRIES:
+                fail("moriarty_toolchain_stage_entries_exceeded")
             output_dir = destination / rel
             output_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
             for directory in list(dirs):
@@ -843,9 +949,24 @@ def stage_rust_toolchain_runtime(
             for name in sorted(files):
                 if subdir == "bin" and name in {"cargo", "rustc"} and current_path == source_root:
                     continue
-                _stable_stage_source(current_path / name, output_dir / name, root)
-    _copy_fd_to_path(pinned_cargo_fd, destination / "bin" / "cargo", 0o500)
-    _copy_fd_to_path(pinned_rustc_fd, destination / "bin" / "rustc", 0o500)
+                remaining = MAX_TOOLCHAIN_STAGE_BYTES - total_bytes
+                copied = _stable_stage_source(current_path / name, output_dir / name, root, remaining)
+                total_bytes += copied
+                if total_bytes > MAX_TOOLCHAIN_STAGE_BYTES:
+                    fail("moriarty_toolchain_stage_bytes_exceeded")
+    for fd, name in ((pinned_cargo_fd, "cargo"), (pinned_rustc_fd, "rustc")):
+        info = os.fstat(fd)
+        total_entries += 1
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or info.st_size < 0
+            or info.st_size > MAX_TOOLCHAIN_STAGE_FILE_BYTES
+            or total_entries > MAX_TOOLCHAIN_STAGE_ENTRIES
+            or total_bytes + info.st_size > MAX_TOOLCHAIN_STAGE_BYTES
+        ):
+            fail("moriarty_toolchain_pinned_component_bound_exceeded")
+        _copy_fd_to_path(fd, destination / "bin" / name, 0o500)
+        total_bytes += info.st_size
     if not (destination / "bin" / "cargo").is_file() or not (destination / "bin" / "rustc").is_file():
         fail("moriarty_staged_rust_toolchain_incomplete")
     seal_read_only_tree(destination)
