@@ -26,6 +26,70 @@ PLACEHOLDER_RE = re.compile(r"\b(?:sorry|admit)\b")
 DECL_RE_TEMPLATE = r"\btheorem\s+{name}\b"
 AXIOM_PRINT_RE = re.compile(r"(?m)^[ \t]*#print[ \t]+axioms[ \t]+QSOLFed\.([a-z][a-z0-9_]*)[ \t]*$")
 
+# Every theorem-facing contract label is resolved to an exact location in one of the
+# theorem's immutable v0.11.0 source refs. Labels are therefore aliases only; the
+# authority for the binding remains the frozen source bytes at TARGET_TAG.
+SOURCE_BOUND_CONTRACT_REGISTRY = {
+    "prime_directive_local_admission": ("invariants/fed-v1.json", "/default_policies/foreign_semantic_material", "equals", "accept_as_data_only"),
+    "foreign_state_is_not_local_state": ("invariants/fed-v1.json", "/invariants/6/id", "equals", "foreign_state_is_not_local_state"),
+    "remote_governance_mutation_forbidden": ("invariants/fed-v1.json", "/invariants/9/id", "equals", "remote_governance_mutation_forbidden"),
+    "remote_evidence_promotion_forbidden": ("invariants/fed-v1.json", "/invariants/10/id", "equals", "remote_evidence_promotion_forbidden"),
+    "remote_arbitrary_execution_forbidden": ("invariants/fed-v1.json", "/invariants/15/id", "equals", "remote_arbitrary_execution_forbidden"),
+    "runtime_constitution_override_forbidden": ("invariants/fed-v1.json", "/invariants/18/id", "equals", "runtime_constitution_override_forbidden"),
+    "unknown_authority_action_rejected": ("invariants/fed-v1.json", "/invariants/19/id", "equals", "unknown_authority_action_rejected"),
+    "signature_validity_is_trust=false": ("crypto/phase2.json", "/signature_validity_is_trust", "equals", False),
+    "signature_validity_is_authority=false": ("crypto/phase2.json", "/signature_validity_is_authority", "equals", False),
+    "signature_is_not_authority": ("crypto/phase2.json", "/signature_validity_is_authority", "equals", False),
+    "prime_directive_admission": ("crypto/phase2.json", "/gate", "contains", "valid signature never bypasses Prime Directive admission"),
+    "peering_is_not_trust": ("invariants/fed-v1.json", "/invariants/0/id", "equals", "peering_is_not_trust"),
+    "local_sovereignty_over_federation_convenience": ("invariants/fed-v1.json", "/invariants/8/id", "equals", "local_sovereignty_over_federation_convenience"),
+    "capability_is_not_entitlement": ("invariants/fed-v1.json", "/invariants/4/id", "equals", "capability_is_not_entitlement"),
+    "explicit_local_allow": ("state/phase4.json", "/local_capability_policy/effective_allow_requires", "contains", "explicit local allow"),
+    "peer_lifecycle_admitted": ("state/phase4.json", "/local_capability_policy/effective_allow_requires", "contains", "peer lifecycle state admitted"),
+    "authenticated_advertisement": ("state/phase4.json", "/local_capability_policy/effective_allow_requires", "contains", "active authenticated advertisement"),
+    "provenance_preserved": ("state/phase4.json", "/portable_bundle/preserves", "contains", "every independent foreign provenance attribution"),
+    "import_is_not_authority": ("invariants/fed-v1.json", "/invariants/1/id", "equals", "import_is_not_authority"),
+    "import_changes_trust=false": ("state/phase4.json", "/trust_registry/import_changes_trust", "equals", False),
+    "identity_lifecycle_monotonic": ("state/phase4.json", "/peer_registry/identity_lifecycle_monotonic", "equals", True),
+    "existing_lifecycle_must_be_exact_prefix": ("state/phase4.json", "/peer_registry/existing_lifecycle_must_be_exact_prefix", "equals", True),
+    "partition_sovereignty": ("state/phase4.json", "/partition_rejoin/silent_reconciliation", "equals", False),
+    "bundle_import_preserves_existing_local_state": ("state/phase4.json", "/peer_registry/bundle_import_preserves_existing_local_state", "equals", True),
+    "partition_requires_explicit_reconciliation": ("state/phase4.json", "/partition_rejoin/changed_snapshot_rejoin", "equals", "explicit_reconciliation_required"),
+    "same_snapshot_rejoin_explicit_confirm": ("state/phase4.json", "/partition_rejoin/same_snapshot_rejoin", "equals", "clean only after explicit confirm call"),
+    "canonical_json_identity": ("wire/phase1.json", "/canonical_profile", "equals", "qsol-fed-canonical-json/1"),
+    "object_identity_determinism": ("wire/phase1.json", "/object_identity", "contains", "sha256"),
+    "simulation_output_authority=none": ("state/phase5a-holodeck.json", "/sandbox/simulation_output_authority", "equals", "none"),
+    "simulation_output_evidence_effect=none": ("state/phase5a-holodeck.json", "/sandbox/simulation_output_evidence_effect", "equals", "none"),
+    "simulation_output_federation_effect=none": ("state/phase5a-holodeck.json", "/sandbox/simulation_output_federation_effect", "equals", "none"),
+    "transport_does_not_enter_holodeck_sandbox": ("state/phase5a-holodeck.json", "/sandbox/network_client_exposed", "equals", False),
+    "computer_end_program_terminal": ("state/phase5a-holodeck.json", "/computer_safeguards/end_program_available_while_frozen", "equals", True),
+    "adapter_data_is_not_local_authority": ("state/phase5.json", "/prime_directive/adapter_may_create_local_governance_authority", "equals", False),
+    "vote_injection=false": ("state/phase5.json", "/nexus/vote_injection", "equals", False),
+    "evidence_promotion=false": ("state/phase5.json", "/nexus/evidence_promotion", "equals", False),
+    "sdk_conformance_is_not_trust": ("state/phase6.json", "/authority_boundary/sdk_creates_trust", "equals", False),
+    "wire_compatibility_is_not_governance_membership": ("state/phase6.json", "/third_party_node/wire_namespace_implies_governance", "equals", False),
+    "sdk_creates_authority=false": ("state/phase6.json", "/authority_boundary/sdk_creates_authority", "equals", False),
+    "assembly_vote_is_not_member_command": ("state/phase7.json", "/authority_boundary/assembly_may_mutate_member_local_governance", "equals", False),
+    "member_local_authority_mutated=false": ("state/phase7.json", "/governance_receipts/member_local_authority_mutated", "equals", False),
+    "assembly_acceptance_is_not_deployment": ("state/phase7.json", "/proposal_lifecycle/accepted_proposal_changes_running_protocol", "equals", False),
+    "protocol_changed_automatically=false": ("state/phase7.json", "/governance_receipts/protocol_changed_automatically", "equals", False),
+    "assembly_consensus_is_not_member_local_authority": ("state/phase7.json", "/authority_boundary/assembly_consensus_is_member_local_authority", "equals", False),
+    "nexus_advice_is_not_vote_weight": ("state/phase7.json", "/nexus_advisory/vote_weight", "equals", 0),
+    "transport_is_not_identity": ("state/phase8.json", "/identity_boundary/transport_profile_may_replace_sender_identity", "equals", False),
+    "message_id_preserved_across_transports": ("state/phase8.json", "/identity_boundary/message_id_preserved_across_transports", "equals", True),
+    "payload_ref_preserved_across_transports": ("state/phase8.json", "/identity_boundary/payload_ref_preserved_across_transports", "equals", True),
+    "provenance_ref_preserved_across_transports": ("state/phase8.json", "/identity_boundary/provenance_ref_preserved_across_transports", "equals", True),
+    "route_is_not_trust": ("state/phase8.json", "/identity_boundary/transport_route_may_create_trust", "equals", False),
+    "nat_ticket_may_replace_identity=false": ("state/phase8.json", "/authority_boundary/nat_ticket_may_replace_identity", "equals", False),
+    "relay_is_not_authority": ("state/phase8.json", "/multi_relay_provenance/relay_presence_is_authority", "equals", False),
+    "relay_presence_is_trust=false": ("state/phase8.json", "/multi_relay_provenance/relay_presence_is_trust", "equals", False),
+}
+
+SUPPORTED_SCHEMA_KEYWORDS = {
+    "$schema", "$id", "title", "type", "additionalProperties", "required", "properties",
+    "const", "enum", "minLength", "maxLength", "pattern", "minItems", "maxItems", "items",
+}
+
 
 class GateError(RuntimeError):
     pass
@@ -51,6 +115,155 @@ def git(*args: str) -> str:
 
 def load_json(path: Path):
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _json_equal(left, right) -> bool:
+    return json.dumps(left, sort_keys=True, separators=(",", ":"), ensure_ascii=False) == json.dumps(
+        right, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    )
+
+
+def _schema_type_matches(value, type_name: str) -> bool:
+    if type_name == "object":
+        return isinstance(value, dict)
+    if type_name == "array":
+        return isinstance(value, list)
+    if type_name == "string":
+        return isinstance(value, str)
+    if type_name == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if type_name == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if type_name == "boolean":
+        return isinstance(value, bool)
+    if type_name == "null":
+        return value is None
+    raise GateError(f"unsupported JSON Schema type: {type_name}")
+
+
+def validate_schema_instance(value, schema: dict, path: str = "$") -> None:
+    require(isinstance(schema, dict), f"schema node at {path} is not an object")
+    unknown = set(schema) - SUPPORTED_SCHEMA_KEYWORDS
+    require(not unknown, f"unsupported JSON Schema keyword(s) at {path}: {sorted(unknown)}")
+
+    if "const" in schema:
+        require(_json_equal(value, schema["const"]), f"schema const mismatch at {path}")
+    if "enum" in schema:
+        enum = schema["enum"]
+        require(isinstance(enum, list) and enum, f"schema enum invalid at {path}")
+        require(any(_json_equal(value, item) for item in enum), f"schema enum mismatch at {path}")
+
+    type_name = schema.get("type")
+    if type_name is not None:
+        require(isinstance(type_name, str), f"schema type invalid at {path}")
+        require(_schema_type_matches(value, type_name), f"schema type mismatch at {path}: expected {type_name}")
+
+    if isinstance(value, dict):
+        required = schema.get("required", [])
+        require(isinstance(required, list) and all(isinstance(item, str) for item in required), f"schema required invalid at {path}")
+        require(len(required) == len(set(required)), f"schema required duplicates at {path}")
+        for key in required:
+            require(key in value, f"schema required property missing at {path}.{key}")
+        properties = schema.get("properties", {})
+        require(isinstance(properties, dict), f"schema properties invalid at {path}")
+        additional = schema.get("additionalProperties", True)
+        require(isinstance(additional, (bool, dict)), f"schema additionalProperties invalid at {path}")
+        extras = set(value) - set(properties)
+        if additional is False:
+            require(not extras, f"schema additional properties forbidden at {path}: {sorted(extras)}")
+        elif isinstance(additional, dict):
+            for key in extras:
+                validate_schema_instance(value[key], additional, f"{path}.{key}")
+        for key, child_schema in properties.items():
+            require(isinstance(key, str), f"schema property name invalid at {path}")
+            if key in value:
+                validate_schema_instance(value[key], child_schema, f"{path}.{key}")
+
+    if isinstance(value, list):
+        min_items = schema.get("minItems")
+        max_items = schema.get("maxItems")
+        if min_items is not None:
+            require(isinstance(min_items, int) and min_items >= 0 and len(value) >= min_items, f"schema minItems mismatch at {path}")
+        if max_items is not None:
+            require(isinstance(max_items, int) and max_items >= 0 and len(value) <= max_items, f"schema maxItems mismatch at {path}")
+        items = schema.get("items")
+        if items is not None:
+            require(isinstance(items, dict), f"schema items invalid at {path}")
+            for index, item in enumerate(value):
+                validate_schema_instance(item, items, f"{path}[{index}]")
+
+    if isinstance(value, str):
+        min_length = schema.get("minLength")
+        max_length = schema.get("maxLength")
+        if min_length is not None:
+            require(isinstance(min_length, int) and min_length >= 0 and len(value) >= min_length, f"schema minLength mismatch at {path}")
+        if max_length is not None:
+            require(isinstance(max_length, int) and max_length >= 0 and len(value) <= max_length, f"schema maxLength mismatch at {path}")
+        pattern = schema.get("pattern")
+        if pattern is not None:
+            require(isinstance(pattern, str), f"schema pattern invalid at {path}")
+            try:
+                matched = re.search(pattern, value) is not None
+            except re.error as exc:
+                raise GateError(f"invalid schema regex at {path}: {exc}") from exc
+            require(matched, f"schema pattern mismatch at {path}")
+
+
+def verify_manifest_schema(manifest: dict) -> dict:
+    schema = load_json(MANIFEST_SCHEMA_PATH)
+    require(schema.get("$schema") == "https://json-schema.org/draft/2020-12/schema", "Phase 10 manifest schema draft drift")
+    validate_schema_instance(manifest, schema)
+    return schema
+
+
+def _json_pointer_get(document, pointer: str):
+    require(isinstance(pointer, str) and pointer.startswith("/"), f"invalid JSON pointer: {pointer!r}")
+    current = document
+    for encoded in pointer.split("/")[1:]:
+        token = encoded.replace("~1", "/").replace("~0", "~")
+        if isinstance(current, dict):
+            require(token in current, f"JSON pointer key missing: {pointer}")
+            current = current[token]
+        elif isinstance(current, list):
+            require(re.fullmatch(r"0|[1-9][0-9]*", token) is not None, f"JSON pointer list index invalid: {pointer}")
+            index = int(token)
+            require(index < len(current), f"JSON pointer list index out of range: {pointer}")
+            current = current[index]
+        else:
+            raise GateError(f"JSON pointer traverses scalar: {pointer}")
+    return current
+
+
+def verify_contract_traceability(manifest: dict, frozen_inputs: set[str]) -> None:
+    used_ids = {
+        contract_id
+        for theorem in manifest.get("theorems", [])
+        for contract_id in theorem.get("contract_ids", [])
+    }
+    registry_ids = set(SOURCE_BOUND_CONTRACT_REGISTRY)
+    require(used_ids == registry_ids, f"contract registry coverage drift: missing={sorted(used_ids - registry_ids)}, stale={sorted(registry_ids - used_ids)}")
+
+    cache: dict[str, object] = {}
+    for theorem in manifest["theorems"]:
+        declaration = theorem["declaration"]
+        theorem_refs = set(theorem["source_refs"])
+        for contract_id in theorem["contract_ids"]:
+            source_ref, pointer, mode, expected = SOURCE_BOUND_CONTRACT_REGISTRY[contract_id]
+            require(source_ref in theorem_refs, f"theorem {declaration} contract {contract_id} resolves outside declared source_refs: {source_ref}")
+            require(source_ref in frozen_inputs, f"contract registry source is not frozen: {source_ref}")
+            if source_ref not in cache:
+                try:
+                    cache[source_ref] = json.loads(git("show", f"{TARGET_TAG}:{source_ref}"))
+                except json.JSONDecodeError as exc:
+                    raise GateError(f"contract registry source is not valid JSON: {source_ref}: {exc}") from exc
+            actual = _json_pointer_get(cache[source_ref], pointer)
+            if mode == "equals":
+                require(_json_equal(actual, expected), f"contract {contract_id} source binding mismatch at {source_ref}{pointer}")
+            elif mode == "contains":
+                require(isinstance(actual, (str, list)), f"contract {contract_id} contains binding targets non-container at {source_ref}{pointer}")
+                require(expected in actual, f"contract {contract_id} source evidence missing at {source_ref}{pointer}")
+            else:
+                raise GateError(f"contract registry mode invalid for {contract_id}: {mode}")
 
 
 def verify_frozen_target(manifest: dict) -> None:
@@ -176,6 +389,7 @@ def verify_theorems(manifest: dict, frozen_inputs: set[str]) -> None:
             require(ref in frozen_inputs, f"theorem {declaration} references unbound frozen input {ref}")
         contract_ids = theorem["contract_ids"]
         require(isinstance(contract_ids, list) and contract_ids and all(isinstance(x, str) and x for x in contract_ids), f"missing contract traceability for {declaration}")
+        require(len(contract_ids) == len(set(contract_ids)), f"duplicate contract IDs for {declaration}")
         require(theorem["proof_status"] == "IMPLEMENTED", f"unexpected proof status for {declaration}")
 
 
@@ -237,12 +451,11 @@ def verify_frozen_roadmap_contract() -> None:
         require(text in roadmap, f"frozen Phase 10 ROADMAP contract missing: {text}")
 
 
-def verify_phase10_contracts(manifest: dict) -> None:
+def verify_phase10_contracts(manifest: dict, schema: dict) -> None:
     state = load_json(STATE_PATH)
     claims = load_json(CLAIMS_PATH)
     phase9_claims = load_json(ROOT / "claims/phase9.json")
     phase8_claims = load_json(ROOT / "claims/phase8.json")
-    schema = load_json(MANIFEST_SCHEMA_PATH)
 
     require(state.get("document_type") == "qsol-fed-phase10-lean-contract" and state.get("phase") == "10", "Phase 10 state contract identity drift")
     source = state.get("source_release", {})
@@ -275,13 +488,15 @@ def verify_phase10_contracts(manifest: dict) -> None:
 
 def validate() -> dict:
     manifest = load_json(MANIFEST_PATH)
+    schema = verify_manifest_schema(manifest)
     verify_manifest_policy(manifest)
     verify_frozen_target(manifest)
     verify_moriarty_binding(manifest)
-    verify_phase10_contracts(manifest)
+    verify_phase10_contracts(manifest, schema)
     frozen_inputs = verify_frozen_inputs(manifest)
     verify_toolchain(manifest)
     verify_theorems(manifest, frozen_inputs)
+    verify_contract_traceability(manifest, frozen_inputs)
     verify_axiom_audit_coverage(manifest)
     verify_no_placeholders()
     verify_frozen_roadmap_contract()
