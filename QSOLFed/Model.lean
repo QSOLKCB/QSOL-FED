@@ -1,10 +1,6 @@
 namespace QSOLFed
 
-/-!
-A deliberately small formal model of the constitutional separation contracts frozen in
-QSOL-FED v0.11.0. These definitions model the stated contract boundaries; they do not
-claim formal verification of the Rust/Python/TypeScript implementations or deployment.
--/
+/-! Abstract Phase 10 model of selected immutable QSOL-FED v0.11.0 contracts. -/
 
 inductive Admission where
   | acceptAsData
@@ -28,8 +24,6 @@ inductive RemoteInput where
   | unknownAuthority
   deriving DecidableEq, Repr
 
-/-- Frozen Prime Directive model: data may be admitted as data, foreign state is
-quarantined, and authority-bearing or unknown effects fail closed. -/
 def primeDirective : RemoteInput → Admission
   | .dataOffer => .acceptAsData
   | .foreignState => .quarantine
@@ -45,10 +39,8 @@ def primeDirective : RemoteInput → Admission
   | .constitutionOverride => .reject
   | .unknownAuthority => .reject
 
-/-- Cryptographic validity alone contributes no trust in the formal model. -/
 def trustFromSignature (_signatureValid : Bool) : Bool := false
 
-/-- Cryptographic validity alone contributes no local authority in the formal model. -/
 def authorityFromSignature (_signatureValid : Bool) : Bool := false
 
 structure SignedAdmission where
@@ -57,7 +49,6 @@ structure SignedAdmission where
   localAuthorityGranted : Bool
   deriving DecidableEq, Repr
 
-/-- Accepting signed material as data still grants no local governance authority. -/
 def signedAdmission (signatureValid : Bool) (localAdmission : Admission) : SignedAdmission :=
   { signatureValid := signatureValid
     localAdmission := localAdmission
@@ -69,20 +60,14 @@ structure PeerRelation where
   trusted : Bool
   deriving DecidableEq, Repr
 
-/-- Peering itself confers no trust. -/
 def peerFromPeering (peered : Bool) : PeerRelation :=
   { peered := peered, admitted := false, trusted := false }
 
-/-- Explicit local peer admission changes admission state while preserving the separate
-trust decision. -/
 def admitPeer (relation : PeerRelation) : PeerRelation :=
   { relation with admitted := true }
 
 def maximumCapabilityLifetimeSeconds : Nat := 3600
 
-/-- Capability advertisements are active only when current time is inside the signed
-issued/expires interval and that declared interval itself does not exceed the frozen
-Phase 4 maximum lifetime. -/
 def capabilityAdvertisementActive
     (issuedAtSeconds expiresAtSeconds currentTimeSeconds : Nat) : Bool :=
   decide (
@@ -101,9 +86,6 @@ structure CapabilityInputs where
   explicitLocalAllow : Bool
   deriving DecidableEq, Repr
 
-/-- Phase 4 capability permission is conjunctive: admission, authentication, activity
-inside the signed advertisement interval, the maximum lifetime bound, and explicit local
-allow are all required. -/
 def capabilityAllowed (c : CapabilityInputs) : Bool :=
   c.peerAdmitted &&
     c.authenticatedAdvertisement &&
@@ -124,7 +106,6 @@ structure ImportResult where
   trustChanged : Bool
   deriving DecidableEq, Repr
 
-/-- Import preserves the foreign identity while creating neither authority nor trust. -/
 def importForeign (id : ForeignIdentity) : ImportResult :=
   { foreignIdentity := id, localAuthority := false, trustChanged := false }
 
@@ -136,11 +117,9 @@ inductive PeerLifecycle where
   | disconnected
   deriving DecidableEq, Repr
 
-/-- List-prefix relation used to model append-only peer lifecycle history. -/
 def Prefix {α : Type} (old newer : List α) : Prop :=
   ∃ tail, newer = old ++ tail
 
-/-- Revocation is terminal wherever it occurs: no lifecycle event may follow it. -/
 def RevocationTerminal : List PeerLifecycle → Prop
   | [] => True
   | .introduced :: tail => RevocationTerminal tail
@@ -149,22 +128,15 @@ def RevocationTerminal : List PeerLifecycle → Prop
   | .revoked :: tail => tail = []
   | .disconnected :: tail => RevocationTerminal tail
 
-/-- A lifecycle candidate is locally admissible only when it extends the exact stored
-history and the complete candidate keeps revocation terminal. -/
 def lifecycleUpdateAllowed
     (stored candidate : List PeerLifecycle) : Prop :=
-  Prefix stored candidate ∧
-  RevocationTerminal candidate
+  Prefix stored candidate ∧ RevocationTerminal candidate
 
 structure PeerRegistryEntry where
   nodeId : String
   lifecycle : List PeerLifecycle
   deriving DecidableEq, Repr
 
-/-- Member-local state includes the authority-bearing surfaces that federation import and
-Assembly voting are forbidden to mutate. Returning this object unchanged therefore covers
-peer/trust/evidence/governance state plus capability, history, citizenship, identity,
-execution, credential, tool, network, file, and process state. -/
 structure SovereignState where
   governanceVersion : Nat
   trustVersion : Nat
@@ -190,7 +162,6 @@ structure RejoinResult where
   reconciliationRequired : Bool
   deriving DecidableEq, Repr
 
-/-- One independent foreign provenance attribution carried by a portable bundle. -/
 structure BundleAttribution where
   foreignIdentity : ForeignIdentity
   sourceNode : String
@@ -208,17 +179,12 @@ structure BundleImportResult where
   trustChanged : Bool
   deriving DecidableEq, Repr
 
-/-- Bundle import preserves the complete bundle, every provenance attribution, and the
-complete pre-existing member-local state including its peer lifecycle registry. -/
 def importBundle (state : SovereignState) (bundle : PortableBundle) : BundleImportResult :=
   { localState := state
     importedBundle := bundle
     authorityEffect := false
     trustChanged := false }
 
-/-- Partition rejoin derives snapshot equality from the immutable disconnect snapshot and
-the proposed remote snapshot. Reconciliation clears only when those snapshots are equal
-and the member explicitly confirms the rejoin. -/
 def rejoinPartition
     (state : SovereignState) (disconnectSnapshot proposedSnapshot : String)
     (explicitLocalConfirm : Bool) : RejoinResult :=
@@ -242,7 +208,6 @@ structure HolodeckReceipt where
   ended : Bool
   deriving DecidableEq, Repr
 
-/-- A safe Holodeck receipt has no real-world authority/evidence/federation effect. -/
 def safeHolodeckReceipt (frozen : Bool) : HolodeckReceipt :=
   { authorityEffect := false
     federationEffect := false
@@ -253,7 +218,6 @@ def safeHolodeckReceipt (frozen : Bool) : HolodeckReceipt :=
     frozen := frozen
     ended := false }
 
-/-- Operator-owned Computer end-program is terminal even for a frozen simulation. -/
 def endProgram (receipt : HolodeckReceipt) : HolodeckReceipt :=
   { receipt with ended := true }
 
@@ -268,8 +232,6 @@ structure AdapterResult where
   authorityEffect : Bool
   deriving DecidableEq, Repr
 
-/-- QSOL adapter output remains non-authoritative and cannot perform any Prime Directive
-authority-bearing side effect. -/
 def safeAdapterResult : AdapterResult :=
   { localGovernanceAuthority := false
     evidencePromoted := false
@@ -291,8 +253,6 @@ structure SDKResult where
   governanceMutated : Bool
   deriving DecidableEq, Repr
 
-/-- SDK conformance creates no trust, governance membership, authority, evidence promotion,
-capability installation, vote, or governance mutation. -/
 def sdkResult (conformance : Bool) : SDKResult :=
   { conformance := conformance
     trust := false
@@ -320,8 +280,6 @@ structure VoteProcessResult where
   recordedVote : AssemblyVote
   deriving DecidableEq, Repr
 
-/-- Processing an Assembly vote records vote data but preserves the complete member-local
-state, including every authority-bearing surface represented by SovereignState. -/
 def processAssemblyVote (state : SovereignState) (vote : AssemblyVote) : VoteProcessResult :=
   { localState := state, recordedVote := vote }
 
@@ -332,7 +290,6 @@ structure GovernanceReceipt where
   authorityEffect : Bool
   deriving DecidableEq, Repr
 
-/-- Assembly finalization records an outcome without mutating member-local authority. -/
 def governanceReceipt (accepted : Bool) : GovernanceReceipt :=
   { accepted := accepted
     memberLocalAuthorityMutated := false
@@ -345,7 +302,6 @@ structure AdvisoryReport where
   authorityEffect : Bool
   deriving DecidableEq, Repr
 
-/-- NEXUS is advisory-only in the Assembly model. -/
 def nexusAdvisory : AdvisoryReport :=
   { advisoryWeight := 0, voteWeight := 0, authorityEffect := false }
 
@@ -366,11 +322,9 @@ structure TransportFrame where
   provenanceRef : String
   deriving DecidableEq, Repr
 
-/-- Transporting an existing Holodeck teardown receipt preserves the receipt itself. -/
 def transportHolodeckReceipt
     (_profile : TransportProfile) (receipt : HolodeckReceipt) : HolodeckReceipt := receipt
 
-/-- Transport changes delivery mechanics, not authenticated protocol identity/provenance. -/
 def transport (_profile : TransportProfile) (frame : TransportFrame) : TransportFrame := frame
 
 structure TransportAdmissionContext where
@@ -395,8 +349,19 @@ def routeLocallyAdmitted
   else
     forwardingProfile frame.profile && context.relayAdmitted
 
-/-- Identity, key-status, peer-admission and local recipient/relay checks are the
-pre-replay Phase 8 admission surface. -/
+/-- The complete frozen Phase 8 admission predicate. The recipient/relay decision is
+placed before replay freshness to mirror the frozen acceptance order. -/
+def transportAdmissionAllowed
+    (context : TransportAdmissionContext) (frame : TransportFrame) : Bool :=
+  context.signatureValid &&
+    context.identityCurrent &&
+    context.localPeerAdmitted &&
+    decide (frame.sender = context.verifiedSenderNodeId) &&
+    routeLocallyAdmitted frame context &&
+    context.replayFresh
+
+/-- Logical form of the complete admission prerequisites, retained for human-readable
+formal statements and correspondence documentation. -/
 def TransportRoutePrerequisitesSatisfied
     (context : TransportAdmissionContext) (frame : TransportFrame) : Prop :=
   context.signatureValid = true ∧
@@ -405,8 +370,6 @@ def TransportRoutePrerequisitesSatisfied
   frame.sender = context.verifiedSenderNodeId ∧
   routeLocallyAdmitted frame context = true
 
-/-- Full transport admission adds replay freshness only after the route/identity surface
-has succeeded, preserving the frozen Phase 8 check ordering. -/
 def TransportPrerequisitesSatisfied
     (context : TransportAdmissionContext) (frame : TransportFrame) : Prop :=
   TransportRoutePrerequisitesSatisfied context frame ∧
@@ -417,29 +380,13 @@ structure TransportAdmissionResult where
   frame : TransportFrame
   deriving DecidableEq, Repr
 
-/-- Transport admission checks each frozen prerequisite constructively and in the frozen
-Phase 8 order: identity/current-key/local-admission/sender/recipient-or-relay, then replay. -/
+/-- Admission exposes exactly the complete Boolean prerequisite predicate and transports
+only the already-bound frame. This form keeps the graduation proof definitional and
+kernel-axiom free. -/
 def admitTransport
     (context : TransportAdmissionContext) (frame : TransportFrame) : TransportAdmissionResult :=
-  if _signature : context.signatureValid = true then
-    if _identity : context.identityCurrent = true then
-      if _peer : context.localPeerAdmitted = true then
-        if _sender : frame.sender = context.verifiedSenderNodeId then
-          if _route : routeLocallyAdmitted frame context = true then
-            if _replay : context.replayFresh = true then
-              { accepted := true, frame := transport frame.profile frame }
-            else
-              { accepted := false, frame := frame }
-          else
-            { accepted := false, frame := frame }
-        else
-          { accepted := false, frame := frame }
-      else
-        { accepted := false, frame := frame }
-    else
-      { accepted := false, frame := frame }
-  else
-    { accepted := false, frame := frame }
+  { accepted := transportAdmissionAllowed context frame
+    frame := transport frame.profile frame }
 
 structure RouteAssessment where
   trust : Bool
@@ -448,9 +395,6 @@ structure RouteAssessment where
   senderBindingAccepted : Bool
   deriving DecidableEq, Repr
 
-/-- NAT route hints confer no trust, authority, or identity replacement. Sender binding is
-accepted only when both the ticket node and ticket identity reference match the independently
-authenticated Phase 2 node and verified identity reference. -/
 def natRouteAssessment
     (authenticatedSender ticketNode verifiedIdentityRef ticketIdentityRef : String) :
     RouteAssessment :=
@@ -476,7 +420,6 @@ structure RelayAssessment where
   authority : Bool
   deriving DecidableEq, Repr
 
-/-- Relay presence is provenance, not trust or authority. -/
 def relayAssessment : RelayAssessment :=
   { trust := false, authority := false }
 

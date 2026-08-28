@@ -307,73 +307,21 @@ theorem nexus_advisory_has_zero_vote_weight :
 
 /-! Transport identity and provenance independence -/
 
+/-- The accepted bit is definitionally equal to the complete frozen Phase 8 prerequisite
+conjunction. Thus signature validity, current identity, local peer admission, verified
+sender binding, recipient/relay admission, and replay freshness are all necessary, while
+the transported frame is preserved exactly. -/
 theorem transport_preserves_authenticated_identity
     (context : TransportAdmissionContext) (frame : TransportFrame) :
-    ((admitTransport context frame).accepted = true →
-      TransportPrerequisitesSatisfied context frame ∧
-      (admitTransport context frame).frame.sender = context.verifiedSenderNodeId) ∧
-    (frame.sender ≠ context.verifiedSenderNodeId →
-      (admitTransport context frame).accepted = false) ∧
-    (¬ TransportPrerequisitesSatisfied context frame →
-      (admitTransport context frame).accepted = false) := by
-  unfold admitTransport
-  split
-  · next signatureValid =>
-    split
-    · next identityCurrent =>
-      split
-      · next peerAdmitted =>
-        split
-        · next senderMatches =>
-          split
-          · next routeAdmitted =>
-            split
-            · next replayFresh =>
-              constructor
-              · intro _accepted
-                exact ⟨
-                  ⟨⟨signatureValid, identityCurrent, peerAdmitted, senderMatches, routeAdmitted⟩,
-                    replayFresh⟩,
-                  senderMatches
-                ⟩
-              · constructor
-                · intro senderMismatch
-                  exact False.elim (senderMismatch senderMatches)
-                · intro prerequisitesMissing
-                  exact False.elim (prerequisitesMissing ⟨
-                    ⟨signatureValid, identityCurrent, peerAdmitted, senderMatches, routeAdmitted⟩,
-                    replayFresh
-                  ⟩)
-            · next _replayStale =>
-              constructor
-              · intro accepted
-                cases accepted
-              · exact ⟨fun _ => rfl, fun _ => rfl⟩
-          · next _routeRejected =>
-            constructor
-            · intro accepted
-              cases accepted
-            · exact ⟨fun _ => rfl, fun _ => rfl⟩
-        · next _senderMismatch =>
-          constructor
-          · intro accepted
-            cases accepted
-          · exact ⟨fun _ => rfl, fun _ => rfl⟩
-      · next _peerRejected =>
-        constructor
-        · intro accepted
-          cases accepted
-        · exact ⟨fun _ => rfl, fun _ => rfl⟩
-    · next _identityStale =>
-      constructor
-      · intro accepted
-        cases accepted
-      · exact ⟨fun _ => rfl, fun _ => rfl⟩
-  · next _signatureInvalid =>
-    constructor
-    · intro accepted
-      cases accepted
-    · exact ⟨fun _ => rfl, fun _ => rfl⟩
+    (admitTransport context frame).accepted =
+      (context.signatureValid &&
+       context.identityCurrent &&
+       context.localPeerAdmitted &&
+       decide (frame.sender = context.verifiedSenderNodeId) &&
+       routeLocallyAdmitted frame context &&
+       context.replayFresh) ∧
+    (admitTransport context frame).frame = frame := by
+  exact ⟨rfl, rfl⟩
 
 theorem transport_preserves_message_identity
     (profile : TransportProfile) (frame : TransportFrame) :

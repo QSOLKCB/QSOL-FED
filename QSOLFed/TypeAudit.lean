@@ -244,13 +244,14 @@ not visible in the theorem's local declaration text.
 
 #check (@transport_preserves_authenticated_identity :
   (context : TransportAdmissionContext) → (frame : TransportFrame) →
-  ((admitTransport context frame).accepted = true →
-    TransportPrerequisitesSatisfied context frame ∧
-    (admitTransport context frame).frame.sender = context.verifiedSenderNodeId) ∧
-  (frame.sender ≠ context.verifiedSenderNodeId →
-    (admitTransport context frame).accepted = false) ∧
-  (¬ TransportPrerequisitesSatisfied context frame →
-    (admitTransport context frame).accepted = false))
+  (admitTransport context frame).accepted =
+    (context.signatureValid &&
+     context.identityCurrent &&
+     context.localPeerAdmitted &&
+     decide (frame.sender = context.verifiedSenderNodeId) &&
+     routeLocallyAdmitted frame context &&
+     context.replayFresh) ∧
+  (admitTransport context frame).frame = frame)
 
 #check (@transport_preserves_message_identity :
   (profile : TransportProfile) → (frame : TransportFrame) →
