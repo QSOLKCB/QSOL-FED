@@ -47,20 +47,3 @@ import QSOLFed.Theorems
 #print axioms QSOLFed.nat_route_does_not_replace_identity
 #print axioms QSOLFed.relay_does_not_create_authority
 #print axioms QSOLFed.relay_does_not_create_trust
-
-#print axioms QSOLFed.TransportProfile
-#print axioms QSOLFed.forwardingProfile
-
-def diagnostic_forwarding_explicit : QSOLFed.TransportProfile → Bool
-  | .webSocket => false
-  | .quic => false
-  | .unixIPC => false
-  | .offlineSneakernet => true
-  | .storeForward => true
-#print axioms diagnostic_forwarding_explicit
-
-def diagnostic_forwarding_wildcard : QSOLFed.TransportProfile → Bool
-  | .offlineSneakernet => true
-  | .storeForward => true
-  | _ => false
-#print axioms diagnostic_forwarding_wildcard

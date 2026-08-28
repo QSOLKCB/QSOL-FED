@@ -338,9 +338,11 @@ structure TransportAdmissionContext where
   deriving DecidableEq, Repr
 
 def forwardingProfile : TransportProfile → Bool
+  | .webSocket => false
+  | .quic => false
+  | .unixIPC => false
   | .offlineSneakernet => true
   | .storeForward => true
-  | _ => false
 
 def routeLocallyAdmitted
     (frame : TransportFrame) (context : TransportAdmissionContext) : Bool :=
