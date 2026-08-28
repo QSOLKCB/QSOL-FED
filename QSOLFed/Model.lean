@@ -405,15 +405,6 @@ def TransportRoutePrerequisitesSatisfied
   frame.sender = context.verifiedSenderNodeId ∧
   routeLocallyAdmitted frame context = true
 
-/-- The route prerequisite proposition is constructively decidable because all of its
-components are decidable equalities. Naming the instance lets admission use a dependent
-`if` without importing classical choice or weakening the zero-axiom theorem gate. -/
-instance transportRoutePrerequisitesSatisfiedDecidable
-    (context : TransportAdmissionContext) (frame : TransportFrame) :
-    Decidable (TransportRoutePrerequisitesSatisfied context frame) := by
-  unfold TransportRoutePrerequisitesSatisfied
-  infer_instance
-
 /-- Full transport admission adds replay freshness only after the route/identity surface
 has succeeded, preserving the frozen Phase 8 check ordering. -/
 def TransportPrerequisitesSatisfied
@@ -426,13 +417,25 @@ structure TransportAdmissionResult where
   frame : TransportFrame
   deriving DecidableEq, Repr
 
-/-- Transport admission first validates identity/current-key/local-admission/recipient-or-
-relay prerequisites, then replay freshness. Only the full conjunction admits the frame. -/
+/-- Transport admission checks each frozen prerequisite constructively and in the frozen
+Phase 8 order: identity/current-key/local-admission/sender/recipient-or-relay, then replay. -/
 def admitTransport
     (context : TransportAdmissionContext) (frame : TransportFrame) : TransportAdmissionResult :=
-  if route : TransportRoutePrerequisitesSatisfied context frame then
-    if context.replayFresh then
-      { accepted := true, frame := transport frame.profile frame }
+  if _signature : context.signatureValid = true then
+    if _identity : context.identityCurrent = true then
+      if _peer : context.localPeerAdmitted = true then
+        if _sender : frame.sender = context.verifiedSenderNodeId then
+          if _route : routeLocallyAdmitted frame context = true then
+            if _replay : context.replayFresh = true then
+              { accepted := true, frame := transport frame.profile frame }
+            else
+              { accepted := false, frame := frame }
+          else
+            { accepted := false, frame := frame }
+        else
+          { accepted := false, frame := frame }
+      else
+        { accepted := false, frame := frame }
     else
       { accepted := false, frame := frame }
   else

@@ -25,8 +25,8 @@ PREIMPORT_BLOBS = {
     "claims/phase10.json": "7e72230c93fc5ca27500fc41ed3f4523e734d52a",
     "README4AI.md": "e44ccc1e280a6ed69482ff661a0879edd57e02c8",
     "FORMALIZATION.md": "2c5418755af2124f7547b08fd85539d558bd0139",
-    "QSOLFed/Model.lean": "69eb57e4bf51d742324d0a725afdf5976a22ef06",
-    "QSOLFed/Theorems.lean": "3de2079b8045fdb64f054955e8a20868cc28055c",
+    "QSOLFed/Model.lean": "dbaf27c024a5f8a70e7f45b572de48c5aac166ae",
+    "QSOLFed/Theorems.lean": "92f5928adccc14f163ad71841769fcf7e1c47498",
     "QSOLFed/TypeAudit.lean": "f3f68fc57d4a73536a61d14dbf1a3c517655bba7",
 }
 

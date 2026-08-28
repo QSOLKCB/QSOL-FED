@@ -318,27 +318,62 @@ theorem transport_preserves_authenticated_identity
       (admitTransport context frame).accepted = false) := by
   unfold admitTransport
   split
-  · next route =>
+  · next signatureValid =>
+    split
+    · next identityCurrent =>
       split
-      · next replay =>
-          constructor
-          · intro _accepted
-            exact ⟨⟨route, replay⟩, route.2.2.2.1⟩
-          · constructor
-            · intro mismatch
-              exact False.elim (mismatch route.2.2.2.1)
-            · intro missing
-              exact False.elim (missing ⟨route, replay⟩)
-      · next _replayMissing =>
+      · next peerAdmitted =>
+        split
+        · next senderMatches =>
+          split
+          · next routeAdmitted =>
+            split
+            · next replayFresh =>
+              constructor
+              · intro _accepted
+                exact ⟨
+                  ⟨⟨signatureValid, identityCurrent, peerAdmitted, senderMatches, routeAdmitted⟩,
+                    replayFresh⟩,
+                  senderMatches
+                ⟩
+              · constructor
+                · intro senderMismatch
+                  exact False.elim (senderMismatch senderMatches)
+                · intro prerequisitesMissing
+                  exact False.elim (prerequisitesMissing ⟨
+                    ⟨signatureValid, identityCurrent, peerAdmitted, senderMatches, routeAdmitted⟩,
+                    replayFresh
+                  ⟩)
+            · next _replayStale =>
+              constructor
+              · intro accepted
+                cases accepted
+              · exact ⟨fun _ => rfl, fun _ => rfl⟩
+          · next _routeRejected =>
+            constructor
+            · intro accepted
+              cases accepted
+            · exact ⟨fun _ => rfl, fun _ => rfl⟩
+        · next _senderMismatch =>
           constructor
           · intro accepted
             cases accepted
           · exact ⟨fun _ => rfl, fun _ => rfl⟩
-  · next _routeMissing =>
+      · next _peerRejected =>
+        constructor
+        · intro accepted
+          cases accepted
+        · exact ⟨fun _ => rfl, fun _ => rfl⟩
+    · next _identityStale =>
       constructor
       · intro accepted
         cases accepted
       · exact ⟨fun _ => rfl, fun _ => rfl⟩
+  · next _signatureInvalid =>
+    constructor
+    · intro accepted
+      cases accepted
+    · exact ⟨fun _ => rfl, fun _ => rfl⟩
 
 theorem transport_preserves_message_identity
     (profile : TransportProfile) (frame : TransportFrame) :
