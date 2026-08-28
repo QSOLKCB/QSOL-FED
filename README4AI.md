@@ -22,8 +22,8 @@
   "phase5c_status": "historical_oracle_live_transport_gate_preserved",
   "phase6_status": "historical_third_party_sdk_gate_preserved",
   "phase7_status": "historical_federation_assembly_gate_preserved",
-  "phase8_status": "runtime_transport_resilience_capability_gate_complete",
-  "phase9_status": "moriarty_adversarial_graduation_complete",
+  "phase8_status": "transport_resilience_gate_enforced",
+  "phase9_status": "moriarty_adversarial_graduation_gate_enforced",
   "claim_boundary": "QSOL-FED is complete through Phase 10. Phase 8 remains the current runtime/protocol capability surface; Phase 9 adds provider-neutral MORIARTY/1 exact-commit adversarial graduation assurance; Phase 10 adds a post-tag Lean 4 formal model of selected invariants from immutable v0.11.0 without promoting runtime capability. The 47 graduation theorems compile on pinned Lean 4.33.1 with no sorry/admit, no custom axioms, and no kernel axiom dependencies. The reviewed formalization merged to main at 9bc0e33fc30ed14b5ca1a3bfbd2e7ecc5059452b and is published on Zenodo as v1.0.0 / DOI 10.5281/zenodo.22149263. LEAN THEOREM != DEPLOYMENT SECURITY PROOF.",
   "phase0_claims": {
     "constitutional_model": true,
