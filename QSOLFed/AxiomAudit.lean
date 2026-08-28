@@ -48,7 +48,13 @@ import QSOLFed.Theorems
 #print axioms QSOLFed.relay_does_not_create_authority
 #print axioms QSOLFed.relay_does_not_create_trust
 
--- Temporary diagnostic surface; remove before final exact-head evidence.
 #print axioms String.decEq
 #print axioms QSOLFed.routeLocallyAdmitted
 #print axioms QSOLFed.admitTransport
+
+theorem diagnostic_string_beq_implies_eq (a b : String) :
+    (a == b) = true → a = b := by
+  intro h
+  exact beq_iff_eq.mp h
+
+#print axioms diagnostic_string_beq_implies_eq
