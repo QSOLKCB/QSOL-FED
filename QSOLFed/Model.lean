@@ -344,9 +344,10 @@ def forwardingProfile : TransportProfile → Bool
 
 def routeLocallyAdmitted
     (frame : TransportFrame) (context : TransportAdmissionContext) : Bool :=
-  match frame.recipient == context.localNodeId with
-  | true => true
-  | false => forwardingProfile frame.profile && context.relayAdmitted
+  if frame.recipient = context.localNodeId then
+    true
+  else
+    forwardingProfile frame.profile && context.relayAdmitted
 
 structure TransportAdmissionResult where
   signatureValid : Bool
@@ -364,21 +365,36 @@ and route admission are derived inside this operation from the independently ver
 sender, local node, profile and explicit relay admission, never supplied by the caller. -/
 def admitTransport
     (context : TransportAdmissionContext) (frame : TransportFrame) : TransportAdmissionResult :=
-  let senderMatchesVerified := frame.sender == context.verifiedSenderNodeId
-  let routeAdmitted := routeLocallyAdmitted frame context
-  { signatureValid := context.signatureValid
-    identityCurrent := context.identityCurrent
-    replayFresh := context.replayFresh
-    localPeerAdmitted := context.localPeerAdmitted
-    senderMatchesVerified := senderMatchesVerified
-    routeAdmitted := routeAdmitted
-    accepted := context.signatureValid &&
-      context.identityCurrent &&
-      context.localPeerAdmitted &&
-      senderMatchesVerified &&
-      routeAdmitted &&
-      context.replayFresh
-    frame := transport frame.profile frame }
+  if frame.sender = context.verifiedSenderNodeId then
+    let routeAdmitted := routeLocallyAdmitted frame context
+    { signatureValid := context.signatureValid
+      identityCurrent := context.identityCurrent
+      replayFresh := context.replayFresh
+      localPeerAdmitted := context.localPeerAdmitted
+      senderMatchesVerified := true
+      routeAdmitted := routeAdmitted
+      accepted := context.signatureValid &&
+        context.identityCurrent &&
+        context.localPeerAdmitted &&
+        true &&
+        routeAdmitted &&
+        context.replayFresh
+      frame := transport frame.profile frame }
+  else
+    let routeAdmitted := routeLocallyAdmitted frame context
+    { signatureValid := context.signatureValid
+      identityCurrent := context.identityCurrent
+      replayFresh := context.replayFresh
+      localPeerAdmitted := context.localPeerAdmitted
+      senderMatchesVerified := false
+      routeAdmitted := routeAdmitted
+      accepted := context.signatureValid &&
+        context.identityCurrent &&
+        context.localPeerAdmitted &&
+        false &&
+        routeAdmitted &&
+        context.replayFresh
+      frame := transport frame.profile frame }
 
 structure RouteAssessment where
   trust : Bool
