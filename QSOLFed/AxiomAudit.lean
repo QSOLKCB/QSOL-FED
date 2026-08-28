@@ -49,24 +49,36 @@ import QSOLFed.Theorems
 #print axioms QSOLFed.relay_does_not_create_trust
 
 #print axioms String.decEq
+#print axioms QSOLFed.TransportFrame
+#print axioms QSOLFed.TransportAdmissionContext
+#print axioms QSOLFed.TransportAdmissionResult
+#print axioms QSOLFed.forwardingProfile
 #print axioms QSOLFed.routeLocallyAdmitted
 #print axioms QSOLFed.admitTransport
 
-theorem diagnostic_string_beq_implies_eq (a b : String) :
-    (a == b) = true → a = b := by
-  intro h
-  exact beq_iff_eq.mp h
+def diagnostic_and (a b : Bool) : Bool := a && b
+#print axioms diagnostic_and
 
-#print axioms diagnostic_string_beq_implies_eq
+def diagnostic_route_fields
+    (frame : QSOLFed.TransportFrame) (context : QSOLFed.TransportAdmissionContext) : Bool :=
+  frame.recipient == context.localNodeId
+#print axioms diagnostic_route_fields
 
-def diagnostic_string_beq_value (a b : String) : Bool := a == b
-#print axioms diagnostic_string_beq_value
+def diagnostic_route_fields_match
+    (frame : QSOLFed.TransportFrame) (context : QSOLFed.TransportAdmissionContext) : Bool :=
+  match frame.recipient == context.localNodeId with
+  | true => true
+  | false => false
+#print axioms diagnostic_route_fields_match
 
-def diagnostic_string_decide_value (a b : String) : Bool := decide (a = b)
-#print axioms diagnostic_string_decide_value
+def diagnostic_route_fallback
+    (profile : QSOLFed.TransportProfile) (relay : Bool) : Bool :=
+  QSOLFed.forwardingProfile profile && relay
+#print axioms diagnostic_route_fallback
 
-def diagnostic_nat_decide_value (a b : Nat) : Bool := decide (a = b)
-#print axioms diagnostic_nat_decide_value
-
-def diagnostic_bytes_decide_value (a b : List UInt8) : Bool := decide (a = b)
-#print axioms diagnostic_bytes_decide_value
+def diagnostic_route_like
+    (frame : QSOLFed.TransportFrame) (context : QSOLFed.TransportAdmissionContext) : Bool :=
+  match frame.recipient == context.localNodeId with
+  | true => true
+  | false => QSOLFed.forwardingProfile frame.profile && context.relayAdmitted
+#print axioms diagnostic_route_like
