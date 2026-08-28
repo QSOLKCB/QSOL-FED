@@ -80,30 +80,36 @@ def admitPeer (relation : PeerRelation) : PeerRelation :=
 
 def maximumCapabilityLifetimeSeconds : Nat := 3600
 
-/-- Capability advertisements are active only when their issue time is not in the future
-and their derived age is within the frozen Phase 4 maximum lifetime. -/
+/-- Capability advertisements are active only when current time is inside the signed
+issued/expires interval and that declared interval itself does not exceed the frozen
+Phase 4 maximum lifetime. -/
 def capabilityAdvertisementActive
-    (issuedAtSeconds currentTimeSeconds : Nat) : Bool :=
+    (issuedAtSeconds expiresAtSeconds currentTimeSeconds : Nat) : Bool :=
   decide (
+    issuedAtSeconds < expiresAtSeconds ∧
     issuedAtSeconds <= currentTimeSeconds ∧
-    currentTimeSeconds - issuedAtSeconds <= maximumCapabilityLifetimeSeconds
+    currentTimeSeconds <= expiresAtSeconds ∧
+    expiresAtSeconds - issuedAtSeconds <= maximumCapabilityLifetimeSeconds
   )
 
 structure CapabilityInputs where
   peerAdmitted : Bool
   authenticatedAdvertisement : Bool
   advertisementIssuedAtSeconds : Nat
+  advertisementExpiresAtSeconds : Nat
   currentTimeSeconds : Nat
   explicitLocalAllow : Bool
   deriving DecidableEq, Repr
 
-/-- Phase 4 capability permission is conjunctive: admission, authentication, a freshness
-decision derived from advertisement/current times, and explicit local allow are required. -/
+/-- Phase 4 capability permission is conjunctive: admission, authentication, activity
+inside the signed advertisement interval, the maximum lifetime bound, and explicit local
+allow are all required. -/
 def capabilityAllowed (c : CapabilityInputs) : Bool :=
   c.peerAdmitted &&
     c.authenticatedAdvertisement &&
     capabilityAdvertisementActive
       c.advertisementIssuedAtSeconds
+      c.advertisementExpiresAtSeconds
       c.currentTimeSeconds &&
     c.explicitLocalAllow
 
@@ -144,18 +150,39 @@ def RevocationTerminal : List PeerLifecycle → Prop
   | .disconnected :: tail => RevocationTerminal tail
 
 /-- A lifecycle candidate is locally admissible only when it extends the exact stored
-history and the complete candidate keeps revocation terminal. This rejects rollback,
-rewrite, same-sequence divergence, and both stored or same-candidate reintroduction after
-revocation. -/
+history and the complete candidate keeps revocation terminal. -/
 def lifecycleUpdateAllowed
     (stored candidate : List PeerLifecycle) : Prop :=
   Prefix stored candidate ∧
   RevocationTerminal candidate
 
+structure PeerRegistryEntry where
+  nodeId : String
+  lifecycle : List PeerLifecycle
+  deriving DecidableEq, Repr
+
+/-- Member-local state includes the authority-bearing surfaces that federation import and
+Assembly voting are forbidden to mutate. Returning this object unchanged therefore covers
+peer/trust/evidence/governance state plus capability, history, citizenship, identity,
+execution, credential, tool, network, file, and process state. -/
 structure SovereignState where
   governanceVersion : Nat
   trustVersion : Nat
   evidenceVersion : Nat
+  peerRegistry : List PeerRegistryEntry
+  trustRegistry : List String
+  evidenceState : List String
+  governanceState : List String
+  capabilityState : List String
+  historyState : List String
+  citizenshipState : List String
+  identityAuthorityState : List String
+  executionState : List String
+  credentialHandles : List String
+  toolHandles : List String
+  networkHandles : List String
+  openFiles : List String
+  processes : List String
   deriving DecidableEq, Repr
 
 structure RejoinResult where
@@ -181,22 +208,24 @@ structure BundleImportResult where
   trustChanged : Bool
   deriving DecidableEq, Repr
 
-/-- Bundle import preserves the complete bundle, including every independent provenance
-attribution, leaves the member's pre-existing local sovereign state unchanged, and creates
-neither local authority nor a trust mutation. -/
+/-- Bundle import preserves the complete bundle, every provenance attribution, and the
+complete pre-existing member-local state including its peer lifecycle registry. -/
 def importBundle (state : SovereignState) (bundle : PortableBundle) : BundleImportResult :=
   { localState := state
     importedBundle := bundle
     authorityEffect := false
     trustChanged := false }
 
-/-- Partition rejoin never rewrites local sovereign state. A same-snapshot rejoin clears
-reconciliation only after explicit local confirmation; changed or unconfirmed snapshots
-remain on the reconciliation path. -/
+/-- Partition rejoin derives snapshot equality from the immutable disconnect snapshot and
+the proposed remote snapshot. Reconciliation clears only when those snapshots are equal
+and the member explicitly confirms the rejoin. -/
 def rejoinPartition
-    (state : SovereignState) (sameSnapshot explicitLocalConfirm : Bool) : RejoinResult :=
-  if sameSnapshot && explicitLocalConfirm then
-    { localState := state, reconciliationRequired := false }
+    (state : SovereignState) (disconnectSnapshot proposedSnapshot : String)
+    (explicitLocalConfirm : Bool) : RejoinResult :=
+  if disconnectSnapshot = proposedSnapshot then
+    match explicitLocalConfirm with
+    | true => { localState := state, reconciliationRequired := false }
+    | false => { localState := state, reconciliationRequired := true }
   else
     { localState := state, reconciliationRequired := true }
 
@@ -291,8 +320,8 @@ structure VoteProcessResult where
   recordedVote : AssemblyVote
   deriving DecidableEq, Repr
 
-/-- Processing an Assembly vote records vote data but cannot act as a command against the
-member's local sovereign state. -/
+/-- Processing an Assembly vote records vote data but preserves the complete member-local
+state, including every authority-bearing surface represented by SovereignState. -/
 def processAssemblyVote (state : SovereignState) (vote : AssemblyVote) : VoteProcessResult :=
   { localState := state, recordedVote := vote }
 
@@ -320,13 +349,6 @@ structure AdvisoryReport where
 def nexusAdvisory : AdvisoryReport :=
   { advisoryWeight := 0, voteWeight := 0, authorityEffect := false }
 
-structure TransportFrame where
-  sender : String
-  messageId : String
-  payloadRef : String
-  provenanceRef : String
-  deriving DecidableEq, Repr
-
 inductive TransportProfile where
   | webSocket
   | quic
@@ -335,26 +357,75 @@ inductive TransportProfile where
   | storeForward
   deriving DecidableEq, Repr
 
-/-- Transporting an existing Holodeck teardown receipt preserves the receipt itself;
-transport metadata cannot relabel recorded boundary-use fields. -/
+structure TransportFrame where
+  sender : String
+  recipient : String
+  profile : TransportProfile
+  messageId : String
+  payloadRef : String
+  provenanceRef : String
+  deriving DecidableEq, Repr
+
+/-- Transporting an existing Holodeck teardown receipt preserves the receipt itself. -/
 def transportHolodeckReceipt
     (_profile : TransportProfile) (receipt : HolodeckReceipt) : HolodeckReceipt := receipt
 
-/-- Transport changes delivery profile, not authenticated protocol identity/provenance. -/
+/-- Transport changes delivery mechanics, not authenticated protocol identity/provenance. -/
 def transport (_profile : TransportProfile) (frame : TransportFrame) : TransportFrame := frame
+
+structure TransportAdmissionContext where
+  signatureValid : Bool
+  identityCurrent : Bool
+  replayFresh : Bool
+  localPeerAdmitted : Bool
+  verifiedSenderNodeId : String
+  localNodeId : String
+  relayAdmitted : Bool
+  deriving DecidableEq, Repr
+
+def forwardingProfile : TransportProfile → Bool
+  | .offlineSneakernet => true
+  | .storeForward => true
+  | _ => false
+
+def routeLocallyAdmitted
+    (frame : TransportFrame) (context : TransportAdmissionContext) : Bool :=
+  if frame.recipient = context.localNodeId then
+    true
+  else
+    forwardingProfile frame.profile && context.relayAdmitted
+
+/-- Identity, key-status, peer-admission and local recipient/relay checks are the
+pre-replay Phase 8 admission surface. -/
+def TransportRoutePrerequisitesSatisfied
+    (context : TransportAdmissionContext) (frame : TransportFrame) : Prop :=
+  context.signatureValid = true ∧
+  context.identityCurrent = true ∧
+  context.localPeerAdmitted = true ∧
+  frame.sender = context.verifiedSenderNodeId ∧
+  routeLocallyAdmitted frame context = true
+
+/-- Full transport admission adds replay freshness only after the route/identity surface
+has succeeded, preserving the frozen Phase 8 check ordering. -/
+def TransportPrerequisitesSatisfied
+    (context : TransportAdmissionContext) (frame : TransportFrame) : Prop :=
+  TransportRoutePrerequisitesSatisfied context frame ∧
+  context.replayFresh = true
 
 structure TransportAdmissionResult where
   accepted : Bool
   frame : TransportFrame
   deriving DecidableEq, Repr
 
-/-- Transport admission binds the frame sender to the independently verified Phase 2
-sender identity before admitting the frame. A mismatch is rejected. -/
+/-- Transport admission first validates identity/current-key/local-admission/recipient-or-
+relay prerequisites, then replay freshness. Only the full conjunction admits the frame. -/
 def admitTransport
-    (verifiedSender : String) (profile : TransportProfile)
-    (frame : TransportFrame) : TransportAdmissionResult :=
-  if frame.sender = verifiedSender then
-    { accepted := true, frame := transport profile frame }
+    (context : TransportAdmissionContext) (frame : TransportFrame) : TransportAdmissionResult :=
+  if route : TransportRoutePrerequisitesSatisfied context frame then
+    if context.replayFresh then
+      { accepted := true, frame := transport frame.profile frame }
+    else
+      { accepted := false, frame := frame }
   else
     { accepted := false, frame := frame }
 
@@ -365,14 +436,23 @@ structure RouteAssessment where
   senderBindingAccepted : Bool
   deriving DecidableEq, Repr
 
-/-- NAT route hints confer no trust, authority, or identity replacement. A ticket route is
-admitted only when its named node is exactly the authenticated sender. -/
-def natRouteAssessment (authenticatedSender ticketNode : String) : RouteAssessment :=
+/-- NAT route hints confer no trust, authority, or identity replacement. Sender binding is
+accepted only when both the ticket node and ticket identity reference match the independently
+authenticated Phase 2 node and verified identity reference. -/
+def natRouteAssessment
+    (authenticatedSender ticketNode verifiedIdentityRef ticketIdentityRef : String) :
+    RouteAssessment :=
   if ticketNode = authenticatedSender then
-    { trust := false
-      authority := false
-      identityReplacement := false
-      senderBindingAccepted := true }
+    if ticketIdentityRef = verifiedIdentityRef then
+      { trust := false
+        authority := false
+        identityReplacement := false
+        senderBindingAccepted := true }
+    else
+      { trust := false
+        authority := false
+        identityReplacement := false
+        senderBindingAccepted := false }
   else
     { trust := false
       authority := false

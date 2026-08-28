@@ -59,21 +59,23 @@ not visible in the theorem's local declaration text.
   (peered : Bool) → (peerFromPeering peered).admitted = false)
 
 #check (@capability_requires_explicit_local_allow :
-  (peer advertisement : Bool) → (issuedAt currentTime : Nat) →
+  (peer advertisement : Bool) → (issuedAt expiresAt currentTime : Nat) →
   capabilityAllowed {
     peerAdmitted := peer
     authenticatedAdvertisement := advertisement
     advertisementIssuedAtSeconds := issuedAt
+    advertisementExpiresAtSeconds := expiresAt
     currentTimeSeconds := currentTime
     explicitLocalAllow := false
   } = false)
 
 #check (@capability_requires_peer_admission :
-  (advertisement localAllow : Bool) → (issuedAt currentTime : Nat) →
+  (advertisement localAllow : Bool) → (issuedAt expiresAt currentTime : Nat) →
   capabilityAllowed {
     peerAdmitted := false
     authenticatedAdvertisement := advertisement
     advertisementIssuedAtSeconds := issuedAt
+    advertisementExpiresAtSeconds := expiresAt
     currentTimeSeconds := currentTime
     explicitLocalAllow := localAllow
   } = false)
@@ -83,6 +85,7 @@ not visible in the theorem's local declaration text.
     peerAdmitted := true
     authenticatedAdvertisement := false
     advertisementIssuedAtSeconds := 0
+    advertisementExpiresAtSeconds := 60
     currentTimeSeconds := 0
     explicitLocalAllow := true
   } = false ∧
@@ -90,16 +93,42 @@ not visible in the theorem's local declaration text.
     peerAdmitted := true
     authenticatedAdvertisement := true
     advertisementIssuedAtSeconds := 0
-    currentTimeSeconds := 3601
+    advertisementExpiresAtSeconds := 60
+    currentTimeSeconds := 61
     explicitLocalAllow := true
   } = false ∧
   capabilityAllowed {
     peerAdmitted := true
     authenticatedAdvertisement := true
     advertisementIssuedAtSeconds := 0
+    advertisementExpiresAtSeconds := 3601
+    currentTimeSeconds := 3600
+    explicitLocalAllow := true
+  } = false ∧
+  capabilityAllowed {
+    peerAdmitted := true
+    authenticatedAdvertisement := true
+    advertisementIssuedAtSeconds := 0
+    advertisementExpiresAtSeconds := 3600
     currentTimeSeconds := 3600
     explicitLocalAllow := true
   } = true ∧
+  capabilityAllowed {
+    peerAdmitted := true
+    authenticatedAdvertisement := true
+    advertisementIssuedAtSeconds := 1
+    advertisementExpiresAtSeconds := 60
+    currentTimeSeconds := 0
+    explicitLocalAllow := true
+  } = false ∧
+  capabilityAllowed {
+    peerAdmitted := true
+    authenticatedAdvertisement := true
+    advertisementIssuedAtSeconds := 60
+    advertisementExpiresAtSeconds := 60
+    currentTimeSeconds := 60
+    explicitLocalAllow := true
+  } = false ∧
   maximumCapabilityLifetimeSeconds = 3600)
 
 #check (@import_preserves_foreign_identity :
@@ -128,19 +157,22 @@ not visible in the theorem's local declaration text.
   RevocationTerminal candidate)
 
 #check (@partition_rejoin_preserves_local_state :
-  (state : SovereignState) → (sameSnapshot explicitLocalConfirm : Bool) →
-  (bundle : PortableBundle) →
-  (rejoinPartition state sameSnapshot explicitLocalConfirm).localState = state ∧
-  (importBundle state bundle).localState = state)
+  (state : SovereignState) → (disconnectSnapshot proposedSnapshot : String) →
+  (explicitLocalConfirm : Bool) → (bundle : PortableBundle) →
+  (rejoinPartition state disconnectSnapshot proposedSnapshot explicitLocalConfirm).localState = state ∧
+  (importBundle state bundle).localState = state ∧
+  (importBundle state bundle).localState.peerRegistry = state.peerRegistry)
 
 #check (@changed_partition_snapshot_requires_reconciliation :
-  (state : SovereignState) → (explicitLocalConfirm : Bool) →
-  (rejoinPartition state false explicitLocalConfirm).reconciliationRequired = true)
+  (state : SovereignState) → (disconnectSnapshot proposedSnapshot : String) →
+  disconnectSnapshot ≠ proposedSnapshot → (explicitLocalConfirm : Bool) →
+  (rejoinPartition state disconnectSnapshot proposedSnapshot explicitLocalConfirm).reconciliationRequired =
+    true)
 
 #check (@unchanged_partition_snapshot_needs_no_reconciliation :
-  (state : SovereignState) →
-  (rejoinPartition state true true).reconciliationRequired = false ∧
-  (rejoinPartition state true false).reconciliationRequired = true)
+  (state : SovereignState) → (snapshot : String) →
+  (rejoinPartition state snapshot snapshot true).reconciliationRequired = false ∧
+  (rejoinPartition state snapshot snapshot false).reconciliationRequired = true)
 
 #check (@canonical_identity_deterministic :
   (objectId : CanonicalBytes → String) → (a b : CanonicalBytes) →
@@ -211,11 +243,14 @@ not visible in the theorem's local declaration text.
   nexusAdvisory.authorityEffect = false)
 
 #check (@transport_preserves_authenticated_identity :
-  (verifiedSender : String) → (profile : TransportProfile) → (frame : TransportFrame) →
-  ((admitTransport verifiedSender profile frame).accepted = true →
-    (admitTransport verifiedSender profile frame).frame.sender = verifiedSender) ∧
-  (frame.sender ≠ verifiedSender →
-    (admitTransport verifiedSender profile frame).accepted = false))
+  (context : TransportAdmissionContext) → (frame : TransportFrame) →
+  ((admitTransport context frame).accepted = true →
+    TransportPrerequisitesSatisfied context frame ∧
+    (admitTransport context frame).frame.sender = context.verifiedSenderNodeId) ∧
+  (frame.sender ≠ context.verifiedSenderNodeId →
+    (admitTransport context frame).accepted = false) ∧
+  (¬ TransportPrerequisitesSatisfied context frame →
+    (admitTransport context frame).accepted = false))
 
 #check (@transport_preserves_message_identity :
   (profile : TransportProfile) → (frame : TransportFrame) →
@@ -230,15 +265,19 @@ not visible in the theorem's local declaration text.
   (transport profile frame).provenanceRef = frame.provenanceRef)
 
 #check (@nat_route_does_not_create_trust :
-  (authenticatedSender ticketNode : String) →
-  (natRouteAssessment authenticatedSender ticketNode).trust = false ∧
-  (natRouteAssessment authenticatedSender ticketNode).authority = false)
+  (authenticatedSender ticketNode verifiedIdentityRef ticketIdentityRef : String) →
+  (natRouteAssessment authenticatedSender ticketNode verifiedIdentityRef ticketIdentityRef).trust =
+    false ∧
+  (natRouteAssessment authenticatedSender ticketNode verifiedIdentityRef ticketIdentityRef).authority =
+    false)
 
 #check (@nat_route_does_not_replace_identity :
-  (authenticatedSender ticketNode : String) →
-  (natRouteAssessment authenticatedSender ticketNode).identityReplacement = false ∧
-  ((natRouteAssessment authenticatedSender ticketNode).senderBindingAccepted = true →
-    ticketNode = authenticatedSender))
+  (authenticatedSender ticketNode verifiedIdentityRef ticketIdentityRef : String) →
+  (natRouteAssessment authenticatedSender ticketNode verifiedIdentityRef ticketIdentityRef).identityReplacement =
+    false ∧
+  ((natRouteAssessment authenticatedSender ticketNode verifiedIdentityRef ticketIdentityRef).senderBindingAccepted =
+    true →
+    ticketNode = authenticatedSender ∧ ticketIdentityRef = verifiedIdentityRef))
 
 #check (@relay_does_not_create_authority :
   relayAssessment.authority = false)

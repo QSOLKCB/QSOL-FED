@@ -63,24 +63,26 @@ theorem peering_does_not_create_admission (peered : Bool) :
     (peerFromPeering peered).admitted = false := rfl
 
 theorem capability_requires_explicit_local_allow
-    (peer advertisement : Bool) (issuedAt currentTime : Nat) :
+    (peer advertisement : Bool) (issuedAt expiresAt currentTime : Nat) :
     capabilityAllowed {
       peerAdmitted := peer
       authenticatedAdvertisement := advertisement
       advertisementIssuedAtSeconds := issuedAt
+      advertisementExpiresAtSeconds := expiresAt
       currentTimeSeconds := currentTime
       explicitLocalAllow := false
     } = false := by
   unfold capabilityAllowed
   cases peer <;> cases advertisement <;>
-    cases h : capabilityAdvertisementActive issuedAt currentTime <;> rfl
+    cases h : capabilityAdvertisementActive issuedAt expiresAt currentTime <;> rfl
 
 theorem capability_requires_peer_admission
-    (advertisement localAllow : Bool) (issuedAt currentTime : Nat) :
+    (advertisement localAllow : Bool) (issuedAt expiresAt currentTime : Nat) :
     capabilityAllowed {
       peerAdmitted := false
       authenticatedAdvertisement := advertisement
       advertisementIssuedAtSeconds := issuedAt
+      advertisementExpiresAtSeconds := expiresAt
       currentTimeSeconds := currentTime
       explicitLocalAllow := localAllow
     } = false := rfl
@@ -90,6 +92,7 @@ theorem capability_requires_authenticated_advertisement :
       peerAdmitted := true
       authenticatedAdvertisement := false
       advertisementIssuedAtSeconds := 0
+      advertisementExpiresAtSeconds := 60
       currentTimeSeconds := 0
       explicitLocalAllow := true
     } = false ∧
@@ -97,16 +100,42 @@ theorem capability_requires_authenticated_advertisement :
       peerAdmitted := true
       authenticatedAdvertisement := true
       advertisementIssuedAtSeconds := 0
-      currentTimeSeconds := 3601
+      advertisementExpiresAtSeconds := 60
+      currentTimeSeconds := 61
       explicitLocalAllow := true
     } = false ∧
     capabilityAllowed {
       peerAdmitted := true
       authenticatedAdvertisement := true
       advertisementIssuedAtSeconds := 0
+      advertisementExpiresAtSeconds := 3601
+      currentTimeSeconds := 3600
+      explicitLocalAllow := true
+    } = false ∧
+    capabilityAllowed {
+      peerAdmitted := true
+      authenticatedAdvertisement := true
+      advertisementIssuedAtSeconds := 0
+      advertisementExpiresAtSeconds := 3600
       currentTimeSeconds := 3600
       explicitLocalAllow := true
     } = true ∧
+    capabilityAllowed {
+      peerAdmitted := true
+      authenticatedAdvertisement := true
+      advertisementIssuedAtSeconds := 1
+      advertisementExpiresAtSeconds := 60
+      currentTimeSeconds := 0
+      explicitLocalAllow := true
+    } = false ∧
+    capabilityAllowed {
+      peerAdmitted := true
+      authenticatedAdvertisement := true
+      advertisementIssuedAtSeconds := 60
+      advertisementExpiresAtSeconds := 60
+      currentTimeSeconds := 60
+      explicitLocalAllow := true
+    } = false ∧
     maximumCapabilityLifetimeSeconds = 3600 := by
   decide
 
@@ -151,24 +180,42 @@ theorem lifecycle_prefix_is_transitive
 /-! Partition sovereignty and bundle-import preservation -/
 
 /-- Rejoin and bundle import are separate operations, but neither may overwrite the
-member's existing local sovereign state. -/
+member's complete existing local sovereign state, including its peer lifecycle registry. -/
 theorem partition_rejoin_preserves_local_state
-    (state : SovereignState) (sameSnapshot explicitLocalConfirm : Bool)
-    (bundle : PortableBundle) :
-    (rejoinPartition state sameSnapshot explicitLocalConfirm).localState = state ∧
-    (importBundle state bundle).localState = state := by
-  cases sameSnapshot <;> cases explicitLocalConfirm <;> exact ⟨rfl, rfl⟩
+    (state : SovereignState) (disconnectSnapshot proposedSnapshot : String)
+    (explicitLocalConfirm : Bool) (bundle : PortableBundle) :
+    (rejoinPartition state disconnectSnapshot proposedSnapshot explicitLocalConfirm).localState = state ∧
+    (importBundle state bundle).localState = state ∧
+    (importBundle state bundle).localState.peerRegistry = state.peerRegistry := by
+  unfold rejoinPartition
+  split
+  · cases explicitLocalConfirm <;> exact ⟨rfl, rfl, rfl⟩
+  · exact ⟨rfl, rfl, rfl⟩
 
 theorem changed_partition_snapshot_requires_reconciliation
-    (state : SovereignState) (explicitLocalConfirm : Bool) :
-    (rejoinPartition state false explicitLocalConfirm).reconciliationRequired = true := by
-  cases explicitLocalConfirm <;> rfl
+    (state : SovereignState) (disconnectSnapshot proposedSnapshot : String)
+    (different : disconnectSnapshot ≠ proposedSnapshot)
+    (explicitLocalConfirm : Bool) :
+    (rejoinPartition state disconnectSnapshot proposedSnapshot explicitLocalConfirm).reconciliationRequired =
+      true := by
+  unfold rejoinPartition
+  split
+  · next equal => exact False.elim (different equal)
+  · rfl
 
 theorem unchanged_partition_snapshot_needs_no_reconciliation
-    (state : SovereignState) :
-    (rejoinPartition state true true).reconciliationRequired = false ∧
-    (rejoinPartition state true false).reconciliationRequired = true := by
-  exact ⟨rfl, rfl⟩
+    (state : SovereignState) (snapshot : String) :
+    (rejoinPartition state snapshot snapshot true).reconciliationRequired = false ∧
+    (rejoinPartition state snapshot snapshot false).reconciliationRequired = true := by
+  constructor
+  · unfold rejoinPartition
+    split
+    · rfl
+    · next notEqual => exact False.elim (notEqual rfl)
+  · unfold rejoinPartition
+    split
+    · rfl
+    · next notEqual => exact False.elim (notEqual rfl)
 
 /-! Canonical identity determinism -/
 
@@ -237,6 +284,10 @@ theorem sdk_conformance_does_not_create_authority (conforms : Bool) :
 
 /-! Assembly sovereignty -/
 
+/-- The vote-processing operation preserves the complete member state. Since the state
+contains peer lifecycle, capability, history, citizenship, identity authority, execution,
+credential/tool/network, open-file and process surfaces, none of them may be changed by
+an Assembly vote. -/
 theorem assembly_acceptance_does_not_mutate_member_authority
     (state : SovereignState) (vote : AssemblyVote) (accepted : Bool) :
     (processAssemblyVote state vote).localState = state ∧
@@ -257,25 +308,37 @@ theorem nexus_advisory_has_zero_vote_weight :
 /-! Transport identity and provenance independence -/
 
 theorem transport_preserves_authenticated_identity
-    (verifiedSender : String) (profile : TransportProfile) (frame : TransportFrame) :
-    ((admitTransport verifiedSender profile frame).accepted = true →
-      (admitTransport verifiedSender profile frame).frame.sender = verifiedSender) ∧
-    (frame.sender ≠ verifiedSender →
-      (admitTransport verifiedSender profile frame).accepted = false) := by
+    (context : TransportAdmissionContext) (frame : TransportFrame) :
+    ((admitTransport context frame).accepted = true →
+      TransportPrerequisitesSatisfied context frame ∧
+      (admitTransport context frame).frame.sender = context.verifiedSenderNodeId) ∧
+    (frame.sender ≠ context.verifiedSenderNodeId →
+      (admitTransport context frame).accepted = false) ∧
+    (¬ TransportPrerequisitesSatisfied context frame →
+      (admitTransport context frame).accepted = false) := by
   unfold admitTransport
   split
-  · next h =>
+  · next route =>
+      split
+      · next replay =>
+          constructor
+          · intro _accepted
+            exact ⟨⟨route, replay⟩, route.2.2.2.1⟩
+          · constructor
+            · intro mismatch
+              exact False.elim (mismatch route.2.2.2.1)
+            · intro missing
+              exact False.elim (missing ⟨route, replay⟩)
+      · next _replayMissing =>
+          constructor
+          · intro accepted
+            cases accepted
+          · exact ⟨fun _ => rfl, fun _ => rfl⟩
+  · next _routeMissing =>
       constructor
-      · intro _accepted
-        simpa [transport] using h
-      · intro hne
-        exact False.elim (hne h)
-  · next _h =>
-      constructor
-      · intro hacc
-        cases hacc
-      · intro _hne
-        rfl
+      · intro accepted
+        cases accepted
+      · exact ⟨fun _ => rfl, fun _ => rfl⟩
 
 theorem transport_preserves_message_identity
     (profile : TransportProfile) (frame : TransportFrame) :
@@ -290,27 +353,41 @@ theorem transport_preserves_provenance
     (transport profile frame).provenanceRef = frame.provenanceRef := rfl
 
 theorem nat_route_does_not_create_trust
-    (authenticatedSender ticketNode : String) :
-    (natRouteAssessment authenticatedSender ticketNode).trust = false ∧
-    (natRouteAssessment authenticatedSender ticketNode).authority = false := by
+    (authenticatedSender ticketNode verifiedIdentityRef ticketIdentityRef : String) :
+    (natRouteAssessment authenticatedSender ticketNode verifiedIdentityRef ticketIdentityRef).trust =
+      false ∧
+    (natRouteAssessment authenticatedSender ticketNode verifiedIdentityRef ticketIdentityRef).authority =
+      false := by
   unfold natRouteAssessment
   split
-  · exact ⟨rfl, rfl⟩
+  · split
+    · exact ⟨rfl, rfl⟩
+    · exact ⟨rfl, rfl⟩
   · exact ⟨rfl, rfl⟩
 
 theorem nat_route_does_not_replace_identity
-    (authenticatedSender ticketNode : String) :
-    (natRouteAssessment authenticatedSender ticketNode).identityReplacement = false ∧
-    ((natRouteAssessment authenticatedSender ticketNode).senderBindingAccepted = true →
-      ticketNode = authenticatedSender) := by
+    (authenticatedSender ticketNode verifiedIdentityRef ticketIdentityRef : String) :
+    (natRouteAssessment authenticatedSender ticketNode verifiedIdentityRef ticketIdentityRef).identityReplacement =
+      false ∧
+    ((natRouteAssessment authenticatedSender ticketNode verifiedIdentityRef ticketIdentityRef).senderBindingAccepted =
+      true →
+      ticketNode = authenticatedSender ∧ ticketIdentityRef = verifiedIdentityRef) := by
   unfold natRouteAssessment
   split
-  · next h => exact ⟨rfl, fun _ => h⟩
-  · next _h =>
+  · next nodeMatches =>
+      split
+      · next identityMatches =>
+          exact ⟨rfl, fun _ => ⟨nodeMatches, identityMatches⟩⟩
+      · next _identityMismatch =>
+          constructor
+          · rfl
+          · intro accepted
+            cases accepted
+  · next _nodeMismatch =>
       constructor
       · rfl
-      · intro hacc
-        cases hacc
+      · intro accepted
+        cases accepted
 
 theorem relay_does_not_create_authority :
     relayAssessment.authority = false := rfl
