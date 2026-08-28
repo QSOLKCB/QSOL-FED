@@ -229,16 +229,24 @@ theorem nat_route_does_not_create_trust
     (authenticatedSender ticketNode : String) :
     (natRouteAssessment authenticatedSender ticketNode).trust = false ∧
     (natRouteAssessment authenticatedSender ticketNode).authority = false := by
-  by_cases h : ticketNode = authenticatedSender <;> simp [natRouteAssessment, h]
+  unfold natRouteAssessment
+  split
+  · exact ⟨rfl, rfl⟩
+  · exact ⟨rfl, rfl⟩
 
 theorem nat_route_does_not_replace_identity
     (authenticatedSender ticketNode : String) :
     (natRouteAssessment authenticatedSender ticketNode).identityReplacement = false ∧
     ((natRouteAssessment authenticatedSender ticketNode).senderBindingAccepted = true →
       ticketNode = authenticatedSender) := by
-  by_cases h : ticketNode = authenticatedSender
-  · simp [natRouteAssessment, h]
-  · simp [natRouteAssessment, h]
+  unfold natRouteAssessment
+  split
+  · next h => exact ⟨rfl, fun _ => h⟩
+  · next _h =>
+      constructor
+      · rfl
+      · intro hacc
+        cases hacc
 
 theorem relay_does_not_create_authority :
     relayAssessment.authority = false := rfl
