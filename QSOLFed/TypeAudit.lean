@@ -51,7 +51,9 @@ not visible in the theorem's local declaration text.
   (signedAdmission signatureValid localAdmission).localAuthorityGranted = false)
 
 #check (@peering_does_not_create_trust :
-  (peered : Bool) → (peerFromPeering peered).trusted = false)
+  (peered : Bool) → (relation : PeerRelation) →
+  (peerFromPeering peered).trusted = false ∧
+  (admitPeer relation).trusted = relation.trusted)
 
 #check (@peering_does_not_create_admission :
   (peered : Bool) → (peerFromPeering peered).admitted = false)
@@ -91,7 +93,9 @@ not visible in the theorem's local declaration text.
   (importBundle state bundle).authorityEffect = false)
 
 #check (@import_does_not_change_trust :
-  (id : ForeignIdentity) → (importForeign id).trustChanged = false)
+  (id : ForeignIdentity) → (state : SovereignState) → (bundle : PortableBundle) →
+  (importForeign id).trustChanged = false ∧
+  (importBundle state bundle).trustChanged = false)
 
 #check (@lifecycle_append_is_monotone :
   (old : List PeerLifecycle) → (event : PeerLifecycle) →
@@ -160,7 +164,12 @@ not visible in the theorem's local declaration text.
   (conforms : Bool) → (sdkResult conforms).governanceMembership = false)
 
 #check (@sdk_conformance_does_not_create_authority :
-  (conforms : Bool) → (sdkResult conforms).authority = false)
+  (conforms : Bool) →
+  (sdkResult conforms).authority = false ∧
+  (sdkResult conforms).evidencePromoted = false ∧
+  (sdkResult conforms).capabilityInstalled = false ∧
+  (sdkResult conforms).voteCreated = false ∧
+  (sdkResult conforms).governanceMutated = false)
 
 #check (@assembly_acceptance_does_not_mutate_member_authority :
   (state : SovereignState) → (vote : AssemblyVote) → (accepted : Bool) →

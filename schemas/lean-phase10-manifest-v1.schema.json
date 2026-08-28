@@ -26,7 +26,7 @@
     "protocol": {"const": "qsol-fed/0"},
     "phase": {"const": 10},
     "status": {"enum": ["IMPLEMENTED_PENDING_CI", "LEAN_VERIFIED_ON_BRANCH", "LEAN_VERIFIED_ON_MERGED_MAIN"]},
-    "formalization_scope": {"type": "string", "minLength": 1, "maxLength": 1024},
+    "formalization_scope": {"const": "selected constitutional and protocol separation invariants from immutable QSOL-FED v0.11.0; not whole-software verification"},
     "source_release": {
       "type": "object",
       "additionalProperties": false,

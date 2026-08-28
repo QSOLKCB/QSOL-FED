@@ -73,6 +73,11 @@ structure PeerRelation where
 def peerFromPeering (peered : Bool) : PeerRelation :=
   { peered := peered, admitted := false, trusted := false }
 
+/-- Explicit local peer admission changes admission state while preserving the separate
+trust decision. -/
+def admitPeer (relation : PeerRelation) : PeerRelation :=
+  { relation with admitted := true }
+
 structure CapabilityInputs where
   peerAdmitted : Bool
   authenticatedAdvertisement : Bool
@@ -141,13 +146,17 @@ structure BundleImportResult where
   localState : SovereignState
   importedBundle : PortableBundle
   authorityEffect : Bool
+  trustChanged : Bool
   deriving DecidableEq, Repr
 
 /-- Bundle import preserves the complete bundle, including every independent provenance
 attribution, leaves the member's pre-existing local sovereign state unchanged, and creates
-no local authority. -/
+neither local authority nor a trust mutation. -/
 def importBundle (state : SovereignState) (bundle : PortableBundle) : BundleImportResult :=
-  { localState := state, importedBundle := bundle, authorityEffect := false }
+  { localState := state
+    importedBundle := bundle
+    authorityEffect := false
+    trustChanged := false }
 
 /-- Partition rejoin never rewrites local sovereign state. A same-snapshot rejoin clears
 reconciliation only after explicit local confirmation; changed or unconfirmed snapshots
@@ -208,11 +217,23 @@ structure SDKResult where
   trust : Bool
   governanceMembership : Bool
   authority : Bool
+  evidencePromoted : Bool
+  capabilityInstalled : Bool
+  voteCreated : Bool
+  governanceMutated : Bool
   deriving DecidableEq, Repr
 
-/-- SDK conformance does not imply trust, governance membership, or authority. -/
+/-- SDK conformance creates no trust, governance membership, authority, evidence promotion,
+capability installation, vote, or governance mutation. -/
 def sdkResult (conformance : Bool) : SDKResult :=
-  { conformance := conformance, trust := false, governanceMembership := false, authority := false }
+  { conformance := conformance
+    trust := false
+    governanceMembership := false
+    authority := false
+    evidencePromoted := false
+    capabilityInstalled := false
+    voteCreated := false
+    governanceMutated := false }
 
 inductive VoteChoice where
   | yes

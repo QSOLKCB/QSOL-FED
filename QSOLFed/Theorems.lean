@@ -53,8 +53,11 @@ theorem valid_signature_does_not_bypass_local_rejection
 
 /-! Peering / capability separation -/
 
-theorem peering_does_not_create_trust (peered : Bool) :
-    (peerFromPeering peered).trusted = false := rfl
+theorem peering_does_not_create_trust
+    (peered : Bool) (relation : PeerRelation) :
+    (peerFromPeering peered).trusted = false ∧
+    (admitPeer relation).trusted = relation.trusted := by
+  exact ⟨rfl, rfl⟩
 
 theorem peering_does_not_create_admission (peered : Bool) :
     (peerFromPeering peered).admitted = false := rfl
@@ -99,8 +102,11 @@ theorem import_does_not_create_local_authority
     (importBundle state bundle).authorityEffect = false := by
   exact ⟨rfl, rfl⟩
 
-theorem import_does_not_change_trust (id : ForeignIdentity) :
-    (importForeign id).trustChanged = false := rfl
+theorem import_does_not_change_trust
+    (id : ForeignIdentity) (state : SovereignState) (bundle : PortableBundle) :
+    (importForeign id).trustChanged = false ∧
+    (importBundle state bundle).trustChanged = false := by
+  exact ⟨rfl, rfl⟩
 
 /-! Lifecycle monotonicity and admission -/
 
@@ -194,7 +200,12 @@ theorem sdk_conformance_does_not_create_governance_membership (conforms : Bool) 
     (sdkResult conforms).governanceMembership = false := rfl
 
 theorem sdk_conformance_does_not_create_authority (conforms : Bool) :
-    (sdkResult conforms).authority = false := rfl
+    (sdkResult conforms).authority = false ∧
+    (sdkResult conforms).evidencePromoted = false ∧
+    (sdkResult conforms).capabilityInstalled = false ∧
+    (sdkResult conforms).voteCreated = false ∧
+    (sdkResult conforms).governanceMutated = false := by
+  exact ⟨rfl, rfl, rfl, rfl, rfl⟩
 
 /-! Assembly sovereignty -/
 
