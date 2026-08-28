@@ -9,8 +9,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# Round 14 exact-byte preflight. These locks are checked against both committed HEAD
-# and the bytes the validator will actually read before any inherited validator imports.
 PREIMPORT_BLOBS = {
     "tools/validate_phase10_gate_round11.py": "c9c86f38540077581cfa0aa4d80d899d271252ee",
     "tools/validate_phase10_gate_round10.py": "d40d56c9686821ce5379ecc45b75b65f7f5ffd68",
@@ -22,9 +20,9 @@ PREIMPORT_BLOBS = {
     "claims/phase10.json": "7e72230c93fc5ca27500fc41ed3f4523e734d52a",
     "README4AI.md": "e44ccc1e280a6ed69482ff661a0879edd57e02c8",
     "FORMALIZATION.md": "2c5418755af2124f7547b08fd85539d558bd0139",
-    "QSOLFed/Model.lean": "d35cf5e979f26dee2876ae9578cb007847cd46de",
-    "QSOLFed/Theorems.lean": "562accbf2983d6050d99210812983b0b811d7acc",
-    "QSOLFed/TypeAudit.lean": "7ab71344e9d810170d47fdc85278981ef5c90e04",
+    "QSOLFed/Model.lean": "e8959b651bd7d6162f83d6cb87e2ad2e68c92931",
+    "QSOLFed/Theorems.lean": "c9745701d5ba0a35b315dcd95cd72a51262b5343",
+    "QSOLFed/TypeAudit.lean": "81d013491eeb0e9dd37d59053158e5e8ccd99c00",
 }
 
 EXPECTED_CLAIM_RULE = 'Phase 10 adds a post-tag Lean 4 formal model of selected v0.11.0 constitutional and protocol separation invariants. The Phase 8 capability map remains the runtime/protocol capability surface, Phase 9 remains the adversarial-assurance baseline, and Lean adds formalization assurance only. A compiled theorem proves its stated abstract model proposition under named assumptions; it is not a deployment security proof, whole-Rust verification, proof of SHA-256 collision resistance, or proof of unstated real-world assumptions.'
@@ -72,28 +70,19 @@ def _preflight() -> None:
             raise RuntimeError(f"required exact-byte Phase 10 input missing: {relative}")
         committed = _raw_git("rev-parse", f"HEAD:{relative}")
         if committed != expected:
-            raise RuntimeError(
-                f"committed exact-byte Phase 10 input drift for {relative}: expected {expected}, observed {committed}"
-            )
+            raise RuntimeError(f"committed exact-byte Phase 10 input drift for {relative}: expected {expected}, observed {committed}")
         working = _raw_git("hash-object", str(path))
         if working != expected:
-            raise RuntimeError(
-                f"working-tree exact-byte Phase 10 input drift for {relative}: expected {expected}, observed {working}"
-            )
+            raise RuntimeError(f"working-tree exact-byte Phase 10 input drift for {relative}: expected {expected}, observed {working}")
 
 
 _preflight()
 prev = importlib.import_module("validate_phase10_gate_round11")
 base = prev.base
 round9 = prev.prev.prev
-
-# Later rounds intentionally strengthen the already reviewed theorem/model surface.
 prev.EXPECTED_MANIFEST_BLOB = PREIMPORT_BLOBS["machine/lean-phase10-manifest.json"]
 prev.EXPECTED_MANIFEST_SCHEMA_BLOB = PREIMPORT_BLOBS["schemas/lean-phase10-manifest-v1.schema.json"]
-# The TypeAudit bytes are already hard-locked above before this inherited SHA-256 check.
-round9.EXPECTED_TYPE_AUDIT_SHA256 = round9.hashlib.sha256(
-    (ROOT / "QSOLFed/TypeAudit.lean").read_bytes()
-).hexdigest()
+round9.EXPECTED_TYPE_AUDIT_SHA256 = round9.hashlib.sha256((ROOT / "QSOLFed/TypeAudit.lean").read_bytes()).hexdigest()
 round9.EXPECTED_THEOREM_TYPE_SHA256.update({
     "capability_requires_explicit_local_allow": "e60c688ec6f332d14731dc6c90b4e4a6f24e85a097e36b84ccf0794c2a684e90",
     "capability_requires_peer_admission": "3b0fa920a70f8d10d5e369f0dc0158bbf23176573b7f25863daf8f9c04e9d868",
@@ -104,27 +93,17 @@ round9.EXPECTED_THEOREM_TYPE_SHA256.update({
     "unchanged_partition_snapshot_needs_no_reconciliation": "46c929b18e9af25d88aad75db1dfd5b27aa0a68d1fb9c3d6baf146d6befd4c1a",
     "holodeck_transport_does_not_relabel_network_use": "35559f0ad94dea763a58444412f66ab246a1cb0f391b67f980c756d1b5e64698",
     "adapter_output_has_no_authority": "ce1cc5f6082375c4db24533a6309ffe9c5c6cd72bdad1cc95294bb82674deb82",
-    "transport_preserves_authenticated_identity": "04998c2c8bbd5a12a917c19c11e3a1bccb05e3d1c1113a9283ee02d94d83bba7",
+    "transport_preserves_authenticated_identity": "a6b685da40127dc16e01270ae165685a377a745b7c3f9181ad64aadfe24da15e",
     "nat_route_does_not_create_trust": "907cb09baa56dca84f018f8e88c04d6163efe535ec225b36b1010fe1bec1a2c9",
     "nat_route_does_not_replace_identity": "2ac27a4039d888a1f37626f942b1b255d6ff1eebccc3eff7f3f81de85cfb6f72",
 })
 
 base.SOURCE_BOUND_CONTRACT_REGISTRY.update({
-    "capability_advertisement_maximum_lifetime_seconds=3600": (
-        "state/phase4.json", "/capability_advertisement/maximum_lifetime_seconds", "equals", 3600
-    ),
-    "revoked_reintroduction=reject": (
-        "state/phase4.json", "/peer_registry/revoked_reintroduction", "equals", "reject"
-    ),
-    "adapter_may_rewrite_history=false": (
-        "state/phase5.json", "/prime_directive/adapter_may_rewrite_history", "equals", False
-    ),
-    "adapter_may_mutate_citizenship=false": (
-        "state/phase5.json", "/prime_directive/adapter_may_mutate_citizenship", "equals", False
-    ),
-    "adapter_may_trigger_remote_execution=false": (
-        "state/phase5.json", "/prime_directive/adapter_may_trigger_remote_execution", "equals", False
-    ),
+    "capability_advertisement_maximum_lifetime_seconds=3600": ("state/phase4.json", "/capability_advertisement/maximum_lifetime_seconds", "equals", 3600),
+    "revoked_reintroduction=reject": ("state/phase4.json", "/peer_registry/revoked_reintroduction", "equals", "reject"),
+    "adapter_may_rewrite_history=false": ("state/phase5.json", "/prime_directive/adapter_may_rewrite_history", "equals", False),
+    "adapter_may_mutate_citizenship=false": ("state/phase5.json", "/prime_directive/adapter_may_mutate_citizenship", "equals", False),
+    "adapter_may_trigger_remote_execution=false": ("state/phase5.json", "/prime_directive/adapter_may_trigger_remote_execution", "equals", False),
 })
 
 
@@ -135,59 +114,32 @@ def require(condition: bool, message: str) -> None:
 
 def verify_exact_bytes_still_hold() -> None:
     for relative, expected in PREIMPORT_BLOBS.items():
-        require(_raw_git("rev-parse", f"HEAD:{relative}") == expected,
-                f"committed exact-byte Phase 10 input drift for {relative}")
-        require(_raw_git("hash-object", str(ROOT / relative)) == expected,
-                f"working-tree exact-byte Phase 10 input drift for {relative}")
+        require(_raw_git("rev-parse", f"HEAD:{relative}") == expected, f"committed exact-byte Phase 10 input drift for {relative}")
+        require(_raw_git("hash-object", str(ROOT / relative)) == expected, f"working-tree exact-byte Phase 10 input drift for {relative}")
 
 
 def verify_claims_and_docs() -> None:
     claims = base.load_json(base.CLAIMS_PATH)
     require(claims.get("claim_rule") == EXPECTED_CLAIM_RULE, "Phase 10 claim rule drift")
-    require(claims.get("promotion_requirements") == EXPECTED_PROMOTION_REQUIREMENTS,
-            "Phase 10 promotion requirements drift")
-    require(claims.get("formalization_assurance") == EXPECTED_FORMALIZATION_ASSURANCE,
-            "complete Phase 10 formalization_assurance claim drift")
-    # FORMALIZATION.md is exact-byte locked by PREIMPORT_BLOBS, so contradictory appended
-    # claims cannot coexist with the reviewed documentation and still pass this gate.
+    require(claims.get("promotion_requirements") == EXPECTED_PROMOTION_REQUIREMENTS, "Phase 10 promotion requirements drift")
+    require(claims.get("formalization_assurance") == EXPECTED_FORMALIZATION_ASSURANCE, "complete Phase 10 formalization_assurance claim drift")
 
 
 def verify_round12_13_boundaries() -> None:
     phase4 = json.loads(base.git("show", f"{base.TARGET_TAG}:state/phase4.json"))
-    require(phase4["peer_registry"]["revoked_reintroduction"] == "reject",
-            "frozen Phase 4 revoked-reintroduction boundary drift")
-    require(phase4["capability_advertisement"]["maximum_lifetime_seconds"] == 3600,
-            "frozen Phase 4 capability lifetime drift")
-    require("active authenticated advertisement" in phase4["local_capability_policy"]["effective_allow_requires"],
-            "frozen Phase 4 active advertisement boundary drift")
-
+    require(phase4["peer_registry"]["revoked_reintroduction"] == "reject", "frozen Phase 4 revoked-reintroduction boundary drift")
+    require(phase4["capability_advertisement"]["maximum_lifetime_seconds"] == 3600, "frozen Phase 4 capability lifetime drift")
+    require("active authenticated advertisement" in phase4["local_capability_policy"]["effective_allow_requires"], "frozen Phase 4 active advertisement boundary drift")
     phase5 = json.loads(base.git("show", f"{base.TARGET_TAG}:state/phase5.json"))
     prime = phase5["prime_directive"]
-    for key in (
-        "adapter_may_create_local_governance_authority",
-        "adapter_may_install_capabilities",
-        "adapter_may_rewrite_history",
-        "adapter_may_mutate_citizenship",
-        "adapter_may_trigger_remote_execution",
-    ):
+    for key in ("adapter_may_create_local_governance_authority", "adapter_may_install_capabilities", "adapter_may_rewrite_history", "adapter_may_mutate_citizenship", "adapter_may_trigger_remote_execution"):
         require(prime.get(key) is False, f"frozen Phase 5 adapter boundary drift: {key}")
-
     phase8 = json.loads(base.git("show", f"{base.TARGET_TAG}:state/phase8.json"))
     identity = phase8["identity_boundary"]
-    require(identity["verified_sender_node_must_match_frame_sender"] is True,
-            "frozen Phase 8 sender binding drift")
-    require(identity["transport_profile_may_replace_sender_identity"] is False,
-            "frozen Phase 8 transport identity replacement drift")
+    require(identity["verified_sender_node_must_match_frame_sender"] is True, "frozen Phase 8 sender binding drift")
+    require(identity["transport_profile_may_replace_sender_identity"] is False, "frozen Phase 8 transport identity replacement drift")
     holodeck = phase8["holodeck_transport_independence"]
-    require(
-        holodeck["authority_effect"] == "none"
-        and holodeck["federation_effect"] == "none"
-        and holodeck["evidence_effect"] == "none"
-        and holodeck["network_used"] is False
-        and holodeck["real_tools_used"] is False
-        and holodeck["credentials_exposed"] is False,
-        "frozen Phase 8 Holodeck transport boundary drift",
-    )
+    require(holodeck["authority_effect"] == "none" and holodeck["federation_effect"] == "none" and holodeck["evidence_effect"] == "none" and holodeck["network_used"] is False and holodeck["real_tools_used"] is False and holodeck["credentials_exposed"] is False, "frozen Phase 8 Holodeck transport boundary drift")
 
 
 def verify_round14_boundaries() -> None:
@@ -195,75 +147,29 @@ def verify_round14_boundaries() -> None:
     peer = phase4["peer_registry"]
     bundle = phase4["portable_bundle"]
     partition = phase4["partition_rejoin"]
-    require(
-        peer["bundle_import_preserves_existing_local_state"] is True
-        and "peer lifecycle bytes" in bundle["preserves"]
-        and bundle["existing_peer_state"] == "preserved",
-        "frozen Phase 4 bundle/peer lifecycle preservation drift",
-    )
-    require(
-        partition["disconnect_records_snapshot"] is True
-        and partition["disconnect_snapshot_immutable_during_lifecycle_updates"] is True
-        and partition["same_snapshot_rejoin"] == "clean only after explicit confirm call"
-        and partition["changed_snapshot_rejoin"] == "explicit_reconciliation_required"
-        and partition["silent_reconciliation"] is False,
-        "frozen Phase 4 partition snapshot boundary drift",
-    )
+    require(peer["bundle_import_preserves_existing_local_state"] is True and "peer lifecycle bytes" in bundle["preserves"] and bundle["existing_peer_state"] == "preserved", "frozen Phase 4 bundle/peer lifecycle preservation drift")
+    require(partition["disconnect_records_snapshot"] is True and partition["disconnect_snapshot_immutable_during_lifecycle_updates"] is True and partition["same_snapshot_rejoin"] == "clean only after explicit confirm call" and partition["changed_snapshot_rejoin"] == "explicit_reconciliation_required" and partition["silent_reconciliation"] is False, "frozen Phase 4 partition snapshot boundary drift")
     peering_source = base.git("show", f"{base.TARGET_TAG}:src/peering.rs")
-    require(
-        "pub expires_at: String" in peering_source
-        and "expires - issued > MAX_CAPABILITY_ADVERTISEMENT_LIFETIME_SECONDS" in peering_source
-        and "if now_unix < issued || now_unix > expires" in peering_source,
-        "frozen declared capability expiry semantics drift",
-    )
+    require("pub expires_at: String" in peering_source and "expires - issued > MAX_CAPABILITY_ADVERTISEMENT_LIFETIME_SECONDS" in peering_source and "if now_unix < issued || now_unix > expires" in peering_source, "frozen declared capability expiry semantics drift")
 
     phase7 = json.loads(base.git("show", f"{base.TARGET_TAG}:state/phase7.json"))
     assembly = phase7["authority_boundary"]
-    for key in (
-        "assembly_may_mutate_peer_registry", "assembly_may_mutate_trust_registry",
-        "assembly_may_install_capability", "assembly_may_promote_evidence",
-        "assembly_may_rewrite_history", "assembly_may_mutate_citizenship",
-        "assembly_may_execute_tools", "assembly_may_access_credentials",
-        "assembly_may_use_network", "assembly_may_open_files",
-        "assembly_may_spawn_processes", "assembly_may_mutate_member_local_governance",
-    ):
+    for key in ("assembly_may_mutate_peer_registry", "assembly_may_mutate_trust_registry", "assembly_may_install_capability", "assembly_may_promote_evidence", "assembly_may_rewrite_history", "assembly_may_mutate_citizenship", "assembly_may_execute_tools", "assembly_may_access_credentials", "assembly_may_use_network", "assembly_may_open_files", "assembly_may_spawn_processes", "assembly_may_mutate_member_local_governance"):
         require(assembly.get(key) is False, f"frozen Phase 7 Assembly boundary drift: {key}")
 
     phase8 = json.loads(base.git("show", f"{base.TARGET_TAG}:state/phase8.json"))
     identity = phase8["identity_boundary"]
-    for key in (
-        "transport_acceptance_requires_signature_valid",
-        "transport_acceptance_requires_current_identity",
-        "transport_acceptance_requires_fresh_replay_state",
-        "transport_acceptance_requires_local_peer_admission",
-        "verified_sender_node_must_match_frame_sender",
-        "direct_profiles_require_local_recipient",
-        "forwarding_profiles_require_explicit_relay_admission",
-        "recipient_or_relay_checked_before_replay_freshness",
-    ):
+    for key in ("transport_acceptance_requires_signature_valid", "transport_acceptance_requires_current_identity", "transport_acceptance_requires_fresh_replay_state", "transport_acceptance_requires_local_peer_admission", "verified_sender_node_must_match_frame_sender", "direct_profiles_require_local_recipient", "forwarding_profiles_require_explicit_relay_admission", "recipient_or_relay_checked_before_replay_freshness"):
         require(identity.get(key) is True, f"frozen Phase 8 transport prerequisite drift: {key}")
     nat = phase8["nat_traversal"]
-    require(
-        nat["ticket_node_must_match_authenticated_sender"] is True
-        and nat["ticket_identity_ref_must_match_verified_identity"] is True
-        and identity["verified_identity_ref_bound_to_nat_ticket"] is True,
-        "frozen Phase 8 NAT identity binding drift",
-    )
+    require(nat["ticket_node_must_match_authenticated_sender"] is True and nat["ticket_identity_ref_must_match_verified_identity"] is True and identity["verified_identity_ref_bound_to_nat_ticket"] is True, "frozen Phase 8 NAT identity binding drift")
     transport_source = base.git("show", f"{base.TARGET_TAG}:src/transport.rs")
-    require(
-        all(token in transport_source for token in (
-            "pub signature_valid: bool", "pub identity_current: bool",
-            "pub replay_fresh: bool", "pub local_peer_admitted: bool",
-            "pub verified_identity_ref: String", "ticket.identity_ref != context.verified_identity_ref",
-        )),
-        "frozen Phase 8 transport/NAT implementation semantics drift",
-    )
+    require(all(token in transport_source for token in ("pub signature_valid: bool", "pub identity_current: bool", "pub replay_fresh: bool", "pub local_peer_admitted: bool", "pub verified_identity_ref: String", "ticket.identity_ref != context.verified_identity_ref")), "frozen Phase 8 transport/NAT implementation semantics drift")
 
 
 def verify_ai_inventory() -> None:
     ai = json.loads((ROOT / "README4AI.md").read_text(encoding="utf-8"))
-    require(ai.get("phase10_lean", {}).get("type_audit") == "QSOLFed/TypeAudit.lean",
-            "README4AI Phase 10 TypeAudit inventory drift")
+    require(ai.get("phase10_lean", {}).get("type_audit") == "QSOLFed/TypeAudit.lean", "README4AI Phase 10 TypeAudit inventory drift")
 
 
 def validate() -> dict:
@@ -291,10 +197,7 @@ def main() -> int:
     if args.json:
         print(json.dumps(result, sort_keys=True))
     else:
-        print(
-            f"Phase 10 gate: OK ({result['theorem_count']} theorem declarations/source-types + "
-            f"elaborated environment types + exact contract/model/document bytes bound to {result['target_tag']})"
-        )
+        print(f"Phase 10 gate: OK ({result['theorem_count']} theorem declarations/source-types + elaborated environment types + exact contract/model/document bytes bound to {result['target_tag']})")
     return 0
 
 

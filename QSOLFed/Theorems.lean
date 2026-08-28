@@ -308,16 +308,15 @@ theorem nexus_advisory_has_zero_vote_weight :
 /-! Transport identity and provenance independence -/
 
 /-- The accepted bit is definitionally equal to the complete frozen Phase 8 prerequisite
-conjunction. Thus signature validity, current identity, local peer admission, verified
-sender binding, recipient/relay admission, and replay freshness are all necessary, while
-the transported frame is preserved exactly. -/
+conjunction. String `BEq` is used only as a computational equality check, avoiding a
+proof-producing `Decidable` term in the graduation theorem. -/
 theorem transport_preserves_authenticated_identity
     (context : TransportAdmissionContext) (frame : TransportFrame) :
     (admitTransport context frame).accepted =
       (context.signatureValid &&
        context.identityCurrent &&
        context.localPeerAdmitted &&
-       decide (frame.sender = context.verifiedSenderNodeId) &&
+       (frame.sender == context.verifiedSenderNodeId) &&
        routeLocallyAdmitted frame context &&
        context.replayFresh) ∧
     (admitTransport context frame).frame = frame := by

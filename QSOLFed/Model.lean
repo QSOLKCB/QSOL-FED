@@ -356,12 +356,10 @@ def transportAdmissionAllowed
   context.signatureValid &&
     context.identityCurrent &&
     context.localPeerAdmitted &&
-    decide (frame.sender = context.verifiedSenderNodeId) &&
+    (frame.sender == context.verifiedSenderNodeId) &&
     routeLocallyAdmitted frame context &&
     context.replayFresh
 
-/-- Logical form of the complete admission prerequisites, retained for human-readable
-formal statements and correspondence documentation. -/
 def TransportRoutePrerequisitesSatisfied
     (context : TransportAdmissionContext) (frame : TransportFrame) : Prop :=
   context.signatureValid = true ∧
@@ -380,9 +378,6 @@ structure TransportAdmissionResult where
   frame : TransportFrame
   deriving DecidableEq, Repr
 
-/-- Admission exposes exactly the complete Boolean prerequisite predicate and transports
-only the already-bound frame. This form keeps the graduation proof definitional and
-kernel-axiom free. -/
 def admitTransport
     (context : TransportAdmissionContext) (frame : TransportFrame) : TransportAdmissionResult :=
   { accepted := transportAdmissionAllowed context frame

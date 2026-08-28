@@ -248,7 +248,7 @@ not visible in the theorem's local declaration text.
     (context.signatureValid &&
      context.identityCurrent &&
      context.localPeerAdmitted &&
-     decide (frame.sender = context.verifiedSenderNodeId) &&
+     (frame.sender == context.verifiedSenderNodeId) &&
      routeLocallyAdmitted frame context &&
      context.replayFresh) ∧
   (admitTransport context frame).frame = frame)
