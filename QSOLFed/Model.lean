@@ -80,19 +80,31 @@ def admitPeer (relation : PeerRelation) : PeerRelation :=
 
 def maximumCapabilityLifetimeSeconds : Nat := 3600
 
+/-- Capability advertisements are active only when their issue time is not in the future
+and their derived age is within the frozen Phase 4 maximum lifetime. -/
+def capabilityAdvertisementActive
+    (issuedAtSeconds currentTimeSeconds : Nat) : Bool :=
+  decide (
+    issuedAtSeconds <= currentTimeSeconds ∧
+    currentTimeSeconds - issuedAtSeconds <= maximumCapabilityLifetimeSeconds
+  )
+
 structure CapabilityInputs where
   peerAdmitted : Bool
   authenticatedAdvertisement : Bool
-  advertisementWithinLifetime : Bool
+  advertisementIssuedAtSeconds : Nat
+  currentTimeSeconds : Nat
   explicitLocalAllow : Bool
   deriving DecidableEq, Repr
 
-/-- Phase 4 capability permission is conjunctive: admission, authentication, independently
-validated advertisement lifetime/freshness, and explicit local allow are all required. -/
+/-- Phase 4 capability permission is conjunctive: admission, authentication, a freshness
+decision derived from advertisement/current times, and explicit local allow are required. -/
 def capabilityAllowed (c : CapabilityInputs) : Bool :=
   c.peerAdmitted &&
     c.authenticatedAdvertisement &&
-    c.advertisementWithinLifetime &&
+    capabilityAdvertisementActive
+      c.advertisementIssuedAtSeconds
+      c.currentTimeSeconds &&
     c.explicitLocalAllow
 
 structure ForeignIdentity where
@@ -122,13 +134,23 @@ inductive PeerLifecycle where
 def Prefix {α : Type} (old newer : List α) : Prop :=
   ∃ tail, newer = old ++ tail
 
+/-- Revocation is terminal wherever it occurs: no lifecycle event may follow it. -/
+def RevocationTerminal : List PeerLifecycle → Prop
+  | [] => True
+  | .introduced :: tail => RevocationTerminal tail
+  | .admitted :: tail => RevocationTerminal tail
+  | .quarantined :: tail => RevocationTerminal tail
+  | .revoked :: tail => tail = []
+  | .disconnected :: tail => RevocationTerminal tail
+
 /-- A lifecycle candidate is locally admissible only when it extends the exact stored
-history, and a stored revocation is terminal. Rollback, rewrite, same-sequence divergence,
-and revoked reintroduction therefore have no admitted path. -/
+history and the complete candidate keeps revocation terminal. This rejects rollback,
+rewrite, same-sequence divergence, and both stored or same-candidate reintroduction after
+revocation. -/
 def lifecycleUpdateAllowed
     (stored candidate : List PeerLifecycle) : Prop :=
   Prefix stored candidate ∧
-  (List.Mem .revoked stored → candidate = stored)
+  RevocationTerminal candidate
 
 structure SovereignState where
   governanceVersion : Nat
@@ -320,6 +342,21 @@ def transportHolodeckReceipt
 
 /-- Transport changes delivery profile, not authenticated protocol identity/provenance. -/
 def transport (_profile : TransportProfile) (frame : TransportFrame) : TransportFrame := frame
+
+structure TransportAdmissionResult where
+  accepted : Bool
+  frame : TransportFrame
+  deriving DecidableEq, Repr
+
+/-- Transport admission binds the frame sender to the independently verified Phase 2
+sender identity before admitting the frame. A mismatch is rejected. -/
+def admitTransport
+    (verifiedSender : String) (profile : TransportProfile)
+    (frame : TransportFrame) : TransportAdmissionResult :=
+  if frame.sender = verifiedSender then
+    { accepted := true, frame := transport profile frame }
+  else
+    { accepted := false, frame := frame }
 
 structure RouteAssessment where
   trust : Bool

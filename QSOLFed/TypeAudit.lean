@@ -59,20 +59,22 @@ not visible in the theorem's local declaration text.
   (peered : Bool) → (peerFromPeering peered).admitted = false)
 
 #check (@capability_requires_explicit_local_allow :
-  (peer advertisement active : Bool) →
+  (peer advertisement : Bool) → (issuedAt currentTime : Nat) →
   capabilityAllowed {
     peerAdmitted := peer
     authenticatedAdvertisement := advertisement
-    advertisementWithinLifetime := active
+    advertisementIssuedAtSeconds := issuedAt
+    currentTimeSeconds := currentTime
     explicitLocalAllow := false
   } = false)
 
 #check (@capability_requires_peer_admission :
-  (advertisement active localAllow : Bool) →
+  (advertisement localAllow : Bool) → (issuedAt currentTime : Nat) →
   capabilityAllowed {
     peerAdmitted := false
     authenticatedAdvertisement := advertisement
-    advertisementWithinLifetime := active
+    advertisementIssuedAtSeconds := issuedAt
+    currentTimeSeconds := currentTime
     explicitLocalAllow := localAllow
   } = false)
 
@@ -80,15 +82,24 @@ not visible in the theorem's local declaration text.
   capabilityAllowed {
     peerAdmitted := true
     authenticatedAdvertisement := false
-    advertisementWithinLifetime := true
+    advertisementIssuedAtSeconds := 0
+    currentTimeSeconds := 0
     explicitLocalAllow := true
   } = false ∧
   capabilityAllowed {
     peerAdmitted := true
     authenticatedAdvertisement := true
-    advertisementWithinLifetime := false
+    advertisementIssuedAtSeconds := 0
+    currentTimeSeconds := 3601
     explicitLocalAllow := true
   } = false ∧
+  capabilityAllowed {
+    peerAdmitted := true
+    authenticatedAdvertisement := true
+    advertisementIssuedAtSeconds := 0
+    currentTimeSeconds := 3600
+    explicitLocalAllow := true
+  } = true ∧
   maximumCapabilityLifetimeSeconds = 3600)
 
 #check (@import_preserves_foreign_identity :
@@ -114,7 +125,7 @@ not visible in the theorem's local declaration text.
   (stored candidate : List PeerLifecycle) →
   lifecycleUpdateAllowed stored candidate →
   Prefix stored candidate ∧
-  (List.Mem .revoked stored → candidate = stored))
+  RevocationTerminal candidate)
 
 #check (@partition_rejoin_preserves_local_state :
   (state : SovereignState) → (sameSnapshot explicitLocalConfirm : Bool) →
@@ -150,7 +161,7 @@ not visible in the theorem's local declaration text.
 
 #check (@holodeck_transport_does_not_relabel_network_use :
   (profile : TransportProfile) → (receipt : HolodeckReceipt) →
-  (transportHolodeckReceipt profile receipt).networkUsed = receipt.networkUsed)
+  transportHolodeckReceipt profile receipt = receipt)
 
 #check (@holodeck_end_program_terminal_even_when_frozen :
   (receipt : HolodeckReceipt) →
@@ -200,8 +211,11 @@ not visible in the theorem's local declaration text.
   nexusAdvisory.authorityEffect = false)
 
 #check (@transport_preserves_authenticated_identity :
-  (profile : TransportProfile) → (frame : TransportFrame) →
-  (transport profile frame).sender = frame.sender)
+  (verifiedSender : String) → (profile : TransportProfile) → (frame : TransportFrame) →
+  ((admitTransport verifiedSender profile frame).accepted = true →
+    (admitTransport verifiedSender profile frame).frame.sender = verifiedSender) ∧
+  (frame.sender ≠ verifiedSender →
+    (admitTransport verifiedSender profile frame).accepted = false))
 
 #check (@transport_preserves_message_identity :
   (profile : TransportProfile) → (frame : TransportFrame) →

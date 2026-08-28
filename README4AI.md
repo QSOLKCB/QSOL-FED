@@ -426,6 +426,7 @@
     "theorem_manifest_schema": "schemas/lean-phase10-manifest-v1.schema.json",
     "model": "QSOLFed/Model.lean",
     "theorems": "QSOLFed/Theorems.lean",
+    "type_audit": "QSOLFed/TypeAudit.lean",
     "axiom_audit": "QSOLFed/AxiomAudit.lean",
     "gate_validator": "tools/validate_phase10_gate.py",
     "workflow": ".github/workflows/phase10-lean.yml",

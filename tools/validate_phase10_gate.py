@@ -10,10 +10,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# Round 12 preflights every inherited executable snapshot and every blob-locked
-# machine contract against BOTH committed HEAD bytes and the working-tree bytes
-# that this process will actually import/read. No inherited validator is imported
-# until this check has succeeded.
+# Round 13 preserves the round-12 exact-byte preflight and additionally locks the
+# complete Phase 10 state contract before inherited validators read it. Every listed
+# input must match BOTH committed HEAD bytes and the working-tree bytes actually used.
+# No inherited validator is imported until this check has succeeded.
 PREIMPORT_BLOBS = {
     "tools/validate_phase10_gate_round11.py": "c9c86f38540077581cfa0aa4d80d899d271252ee",
     "tools/validate_phase10_gate_round10.py": "d40d56c9686821ce5379ecc45b75b65f7f5ffd68",
@@ -21,6 +21,8 @@ PREIMPORT_BLOBS = {
     "tools/validate_phase10_gate_base.py": "ced7c981daf3a71ba6d7736755e0154bd7414ade",
     "machine/lean-phase10-manifest.json": "178d2c21a236ee81048db866e230aaddb6c92497",
     "schemas/lean-phase10-manifest-v1.schema.json": "ce0fb2c46184c5323ca898d8a90517ea67537809",
+    "state/phase10.json": "d167a8123cb0124fdd92e77dc4e8476b5de999af",
+    "README4AI.md": "e44ccc1e280a6ed69482ff661a0879edd57e02c8",
 }
 
 EXPECTED_MANIFEST_BLOB = PREIMPORT_BLOBS["machine/lean-phase10-manifest.json"]
@@ -76,13 +78,15 @@ prev.EXPECTED_MANIFEST_SCHEMA_BLOB = EXPECTED_MANIFEST_SCHEMA_BLOB
 
 # Strengthened theorem declarations and exact elaborated type audit.
 round9 = prev.prev.prev
-round9.EXPECTED_TYPE_AUDIT_SHA256 = "68c4155ee171874b849ba73d48112a578365319822f468c01697c690023c31e2"
+round9.EXPECTED_TYPE_AUDIT_SHA256 = "10d6238597c11a9552a98810dc42f7da4d690a88d245ac5310e03529c01b5707"
 round9.EXPECTED_THEOREM_TYPE_SHA256.update({
-    "capability_requires_explicit_local_allow": "2689b46739253083646c40eb259882a5973c9b5800f7ef843bec84d49a9aafb7",
-    "capability_requires_peer_admission": "f77cdf7d54e3117c3d0bd09c6f5ee458bc7b3099b8465950345acdf21708bfa1",
-    "capability_requires_authenticated_advertisement": "d6a8d4f11d69f4da51ff23041749d0dd69c245bf50b8e197ec886f31422ac2aa",
-    "lifecycle_prefix_is_transitive": "359c50e1a22c4d49574a6740a4003328b051d0ce6c392b45fc9635505ecc2ed2",
+    "capability_requires_explicit_local_allow": "72d7fef1779f58a53339641dcee6251ca32a1abbeef3e1eedc73ee38ddc9319f",
+    "capability_requires_peer_admission": "21dfe36ea5ec6bc101fc0fad5f4b23674d0dedd379bb1320cbb906dc5d68a88d",
+    "capability_requires_authenticated_advertisement": "7ff9f36ffd7e4e9554c9e14b76d00d7e39dd147036bbd3593b1719ba4bdcc023",
+    "lifecycle_prefix_is_transitive": "5d2113da5b36a302a7384ab7006ab3a239a7aa53008080c5306f26257610f89e",
+    "holodeck_transport_does_not_relabel_network_use": "35559f0ad94dea763a58444412f66ab246a1cb0f391b67f980c756d1b5e64698",
     "adapter_output_has_no_authority": "ce1cc5f6082375c4db24533a6309ffe9c5c6cd72bdad1cc95294bb82674deb82",
+    "transport_preserves_authenticated_identity": "abc234c34bec2f5e2c84c37b2afaed4bdf0a0920b3555d8732efcf2b725b2c80",
 })
 
 # New theorem-facing boundaries resolve only to immutable v0.11.0 fields.
@@ -182,11 +186,48 @@ def verify_round12_source_boundaries() -> None:
     )
 
 
+def verify_round13_source_boundaries() -> None:
+    phase8 = json.loads(base.git("show", f"{base.TARGET_TAG}:state/phase8.json"))
+    identity = phase8.get("identity_boundary", {})
+    require(
+        identity.get("verified_sender_node_must_match_frame_sender") is True,
+        "frozen Phase 8 verified-sender/frame-sender binding drift",
+    )
+    require(
+        identity.get("transport_profile_may_replace_sender_identity") is False,
+        "frozen Phase 8 transport sender-replacement boundary drift",
+    )
+
+    holodeck = phase8.get("holodeck_transport_independence", {})
+    expected_holodeck = {
+        "authority_effect": "none",
+        "federation_effect": "none",
+        "evidence_effect": "none",
+        "network_used": False,
+        "real_tools_used": False,
+        "credentials_exposed": False,
+    }
+    require(
+        {key: holodeck.get(key) for key in expected_holodeck} == expected_holodeck,
+        "frozen Phase 8 Holodeck transport-isolation boundary drift",
+    )
+
+
+def verify_ai_inventory_type_audit() -> None:
+    ai_manifest = json.loads((ROOT / "README4AI.md").read_text(encoding="utf-8"))
+    require(
+        ai_manifest.get("phase10_lean", {}).get("type_audit") == "QSOLFed/TypeAudit.lean",
+        "README4AI Phase 10 inventory must include the elaborated TypeAudit",
+    )
+
+
 def validate() -> dict:
     verify_working_tree_blob_locks_still_hold()
     result = prev.validate()
     verify_claim_language_and_promotion_locked()
     verify_round12_source_boundaries()
+    verify_round13_source_boundaries()
+    verify_ai_inventory_type_audit()
     return result
 
 

@@ -63,21 +63,23 @@ theorem peering_does_not_create_admission (peered : Bool) :
     (peerFromPeering peered).admitted = false := rfl
 
 theorem capability_requires_explicit_local_allow
-    (peer advertisement active : Bool) :
+    (peer advertisement : Bool) (issuedAt currentTime : Nat) :
     capabilityAllowed {
       peerAdmitted := peer
       authenticatedAdvertisement := advertisement
-      advertisementWithinLifetime := active
+      advertisementIssuedAtSeconds := issuedAt
+      currentTimeSeconds := currentTime
       explicitLocalAllow := false
     } = false := by
-  cases peer <;> cases advertisement <;> cases active <;> rfl
+  simp [capabilityAllowed]
 
 theorem capability_requires_peer_admission
-    (advertisement active localAllow : Bool) :
+    (advertisement localAllow : Bool) (issuedAt currentTime : Nat) :
     capabilityAllowed {
       peerAdmitted := false
       authenticatedAdvertisement := advertisement
-      advertisementWithinLifetime := active
+      advertisementIssuedAtSeconds := issuedAt
+      currentTimeSeconds := currentTime
       explicitLocalAllow := localAllow
     } = false := rfl
 
@@ -85,17 +87,26 @@ theorem capability_requires_authenticated_advertisement :
     capabilityAllowed {
       peerAdmitted := true
       authenticatedAdvertisement := false
-      advertisementWithinLifetime := true
+      advertisementIssuedAtSeconds := 0
+      currentTimeSeconds := 0
       explicitLocalAllow := true
     } = false ∧
     capabilityAllowed {
       peerAdmitted := true
       authenticatedAdvertisement := true
-      advertisementWithinLifetime := false
+      advertisementIssuedAtSeconds := 0
+      currentTimeSeconds := 3601
       explicitLocalAllow := true
     } = false ∧
+    capabilityAllowed {
+      peerAdmitted := true
+      authenticatedAdvertisement := true
+      advertisementIssuedAtSeconds := 0
+      currentTimeSeconds := 3600
+      explicitLocalAllow := true
+    } = true ∧
     maximumCapabilityLifetimeSeconds = 3600 := by
-  exact ⟨rfl, rfl, rfl⟩
+  rfl
 
 /-! Import non-authority and provenance preservation -/
 
@@ -127,13 +138,12 @@ theorem lifecycle_append_is_monotone
   exact ⟨[event], rfl⟩
 
 /-- Every lifecycle update accepted by the model preserves the exact stored lifecycle as
-a prefix, and once the stored lifecycle contains revocation no later candidate may extend
-or reintroduce that identity. -/
+a prefix, and the complete candidate makes revocation terminal wherever it occurs. -/
 theorem lifecycle_prefix_is_transitive
     (stored candidate : List PeerLifecycle)
     (accepted : lifecycleUpdateAllowed stored candidate) :
     Prefix stored candidate ∧
-    (List.Mem .revoked stored → candidate = stored) := by
+    RevocationTerminal candidate := by
   exact accepted
 
 /-! Partition sovereignty and bundle-import preservation -/
@@ -182,7 +192,7 @@ theorem holodeck_output_has_no_federation_effect (frozen : Bool) :
 
 theorem holodeck_transport_does_not_relabel_network_use
     (profile : TransportProfile) (receipt : HolodeckReceipt) :
-    (transportHolodeckReceipt profile receipt).networkUsed = receipt.networkUsed := rfl
+    transportHolodeckReceipt profile receipt = receipt := rfl
 
 theorem holodeck_end_program_terminal_even_when_frozen
     (receipt : HolodeckReceipt) :
@@ -245,8 +255,25 @@ theorem nexus_advisory_has_zero_vote_weight :
 /-! Transport identity and provenance independence -/
 
 theorem transport_preserves_authenticated_identity
-    (profile : TransportProfile) (frame : TransportFrame) :
-    (transport profile frame).sender = frame.sender := rfl
+    (verifiedSender : String) (profile : TransportProfile) (frame : TransportFrame) :
+    ((admitTransport verifiedSender profile frame).accepted = true →
+      (admitTransport verifiedSender profile frame).frame.sender = verifiedSender) ∧
+    (frame.sender ≠ verifiedSender →
+      (admitTransport verifiedSender profile frame).accepted = false) := by
+  unfold admitTransport
+  split
+  · next h =>
+      constructor
+      · intro _accepted
+        simpa [transport] using h
+      · intro hne
+        exact False.elim (hne h)
+  · next _h =>
+      constructor
+      · intro hacc
+        cases hacc
+      · intro _hne
+        rfl
 
 theorem transport_preserves_message_identity
     (profile : TransportProfile) (frame : TransportFrame) :
