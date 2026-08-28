@@ -106,7 +106,7 @@ theorem capability_requires_authenticated_advertisement :
       explicitLocalAllow := true
     } = true ∧
     maximumCapabilityLifetimeSeconds = 3600 := by
-  rfl
+  decide
 
 /-! Import non-authority and provenance preservation -/
 
