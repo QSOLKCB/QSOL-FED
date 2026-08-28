@@ -42,6 +42,7 @@ EXPECTED_FROZEN_INPUTS = {
     "schemas/moriarty-report-v1.schema.json": "2c1992a796c48265309770653923effdb65b4f79",
 }
 PLACEHOLDER_RE = re.compile(r"\b(?:sorry|admit)\b")
+AXIOM_TOKEN_RE = re.compile(r"\baxiom\b")
 DECL_RE_TEMPLATE = r"\btheorem\s+{name}\b"
 AXIOM_PRINT_RE = re.compile(r"(?m)^[ \t]*#print[ \t]+axioms[ \t]+QSOLFed\.([a-z][a-z0-9_]*)[ \t]*$")
 
@@ -453,6 +454,75 @@ def verify_no_placeholders() -> None:
         require(match is None, f"unresolved proof placeholder in {path.relative_to(ROOT)}")
 
 
+def _lean_code_only(text: str, path: Path) -> str:
+    out: list[str] = []
+    i = 0
+    block_depth = 0
+    in_string = False
+    while i < len(text):
+        if block_depth:
+            if text.startswith("/-", i):
+                block_depth += 1
+                out.extend("  ")
+                i += 2
+            elif text.startswith("-/", i):
+                block_depth -= 1
+                out.extend("  ")
+                i += 2
+            else:
+                out.append("\n" if text[i] == "\n" else " ")
+                i += 1
+            continue
+
+        if in_string:
+            if text[i] == "\\" and i + 1 < len(text):
+                out.extend("  ")
+                i += 2
+            elif text[i] == '"':
+                in_string = False
+                out.append(" ")
+                i += 1
+            else:
+                out.append("\n" if text[i] == "\n" else " ")
+                i += 1
+            continue
+
+        if text.startswith("--", i):
+            while i < len(text) and text[i] != "\n":
+                out.append(" ")
+                i += 1
+            continue
+        if text.startswith("/-", i):
+            block_depth = 1
+            out.extend("  ")
+            i += 2
+            continue
+        if text[i] == '"':
+            in_string = True
+            out.append(" ")
+            i += 1
+            continue
+
+        out.append(text[i])
+        i += 1
+
+    require(block_depth == 0, f"unterminated Lean block comment while scanning {path.relative_to(ROOT)}")
+    require(not in_string, f"unterminated Lean string while scanning {path.relative_to(ROOT)}")
+    return "".join(out)
+
+
+def verify_no_custom_axioms() -> None:
+    lean_files = sorted(ROOT.glob("QSOLFed/**/*.lean")) + [ROOT / "QSOLFed.lean"]
+    require(lean_files, "no Lean source files found")
+    found: list[str] = []
+    for path in lean_files:
+        code = _lean_code_only(path.read_text(encoding="utf-8"), path)
+        for match in AXIOM_TOKEN_RE.finditer(code):
+            line = code.count("\n", 0, match.start()) + 1
+            found.append(f"{path.relative_to(ROOT)}:{line}")
+    require(not found, "custom axiom declaration/token found in Phase 10 source: " + ", ".join(found))
+
+
 def verify_manifest_policy(manifest: dict) -> None:
     require(manifest.get("schema") == "qsol-fed-lean-phase10-manifest/1", "manifest schema drift")
     require(manifest.get("protocol") == "qsol-fed/0" and manifest.get("phase") == 10, "manifest protocol/phase drift")
@@ -493,7 +563,7 @@ def verify_frozen_roadmap_contract() -> None:
         "No unresolved `sorry`/`admit` is permitted in the graduation theorem set",
         "assumptions must be named and theorem-to-contract traceability complete",
         "LEAN THEOREM != DEPLOYMENT SECURITY PROOF",
-        "FORMAL MODEL != UNSTATED REAL-WORLD ASSUMPTION",
+        "FORMAL MODEL != UNSTATED REAL-WORLD_ASSUMPTION",
     ]
     for text in required:
         require(text in roadmap, f"frozen Phase 10 ROADMAP contract missing: {text}")
@@ -561,6 +631,7 @@ def validate() -> dict:
     verify_contract_traceability(manifest, frozen_inputs)
     verify_axiom_audit_coverage(manifest)
     verify_no_placeholders()
+    verify_no_custom_axioms()
     verify_frozen_roadmap_contract()
     return {
         "status": "ok",
