@@ -308,8 +308,8 @@ theorem nexus_advisory_has_zero_vote_weight :
 /-! Transport identity and provenance independence -/
 
 /-- Every accepted transport is the conjunction of the six independently recorded Phase 8
-checks. Sender equality is discharged through an explicit constructive branch, while the
-exact-locked model derives both sender matching and route admission internally. -/
+checks. Both sender binding and recipient routing are discharged by constructive equality
+branches; no proposition-rewriting tactic is needed by the graduation proof. -/
 theorem transport_preserves_authenticated_identity
     (context : TransportAdmissionContext) (frame : TransportFrame) :
     (admitTransport context frame).signatureValid = context.signatureValid ∧
@@ -324,10 +324,8 @@ theorem transport_preserves_authenticated_identity
        (admitTransport context frame).routeAdmitted &&
        (admitTransport context frame).replayFresh) ∧
     (admitTransport context frame).frame = frame := by
-  unfold admitTransport
-  split
-  · exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
-  · exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+  unfold admitTransport routeLocallyAdmitted
+  split <;> split <;> exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 theorem transport_preserves_message_identity
     (profile : TransportProfile) (frame : TransportFrame) :
