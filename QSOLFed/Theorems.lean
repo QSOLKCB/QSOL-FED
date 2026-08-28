@@ -322,7 +322,7 @@ theorem transport_preserves_authenticated_identity
     ((admitTransport context frame).senderMatchesVerified = true →
       frame.sender = context.verifiedSenderNodeId) ∧
     (admitTransport context frame).frame = frame := by
-  have andTrue : ∀ x y : Bool, x && y = true → x = true ∧ y = true := by
+  have andTrue : ∀ x y : Bool, (x && y) = true → x = true ∧ y = true := by
     intro x y h
     cases x <;> cases y <;> cases h
     exact ⟨rfl, rfl⟩
