@@ -48,37 +48,19 @@ import QSOLFed.Theorems
 #print axioms QSOLFed.relay_does_not_create_authority
 #print axioms QSOLFed.relay_does_not_create_trust
 
-#print axioms String.decEq
-#print axioms QSOLFed.TransportFrame
-#print axioms QSOLFed.TransportAdmissionContext
-#print axioms QSOLFed.TransportAdmissionResult
+#print axioms QSOLFed.TransportProfile
 #print axioms QSOLFed.forwardingProfile
-#print axioms QSOLFed.routeLocallyAdmitted
-#print axioms QSOLFed.admitTransport
 
-def diagnostic_and (a b : Bool) : Bool := a && b
-#print axioms diagnostic_and
+def diagnostic_forwarding_explicit : QSOLFed.TransportProfile → Bool
+  | .webSocket => false
+  | .quic => false
+  | .unixIPC => false
+  | .offlineSneakernet => true
+  | .storeForward => true
+#print axioms diagnostic_forwarding_explicit
 
-def diagnostic_route_fields
-    (frame : QSOLFed.TransportFrame) (context : QSOLFed.TransportAdmissionContext) : Bool :=
-  frame.recipient == context.localNodeId
-#print axioms diagnostic_route_fields
-
-def diagnostic_route_fields_match
-    (frame : QSOLFed.TransportFrame) (context : QSOLFed.TransportAdmissionContext) : Bool :=
-  match frame.recipient == context.localNodeId with
-  | true => true
-  | false => false
-#print axioms diagnostic_route_fields_match
-
-def diagnostic_route_fallback
-    (profile : QSOLFed.TransportProfile) (relay : Bool) : Bool :=
-  QSOLFed.forwardingProfile profile && relay
-#print axioms diagnostic_route_fallback
-
-def diagnostic_route_like
-    (frame : QSOLFed.TransportFrame) (context : QSOLFed.TransportAdmissionContext) : Bool :=
-  match frame.recipient == context.localNodeId with
-  | true => true
-  | false => QSOLFed.forwardingProfile frame.profile && context.relayAdmitted
-#print axioms diagnostic_route_like
+def diagnostic_forwarding_wildcard : QSOLFed.TransportProfile → Bool
+  | .offlineSneakernet => true
+  | .storeForward => true
+  | _ => false
+#print axioms diagnostic_forwarding_wildcard
