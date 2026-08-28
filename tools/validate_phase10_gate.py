@@ -20,9 +20,9 @@ PREIMPORT_BLOBS = {
     "claims/phase10.json": "7e72230c93fc5ca27500fc41ed3f4523e734d52a",
     "README4AI.md": "e44ccc1e280a6ed69482ff661a0879edd57e02c8",
     "FORMALIZATION.md": "2c5418755af2124f7547b08fd85539d558bd0139",
-    "QSOLFed/Model.lean": "e8959b651bd7d6162f83d6cb87e2ad2e68c92931",
-    "QSOLFed/Theorems.lean": "c9745701d5ba0a35b315dcd95cd72a51262b5343",
-    "QSOLFed/TypeAudit.lean": "81d013491eeb0e9dd37d59053158e5e8ccd99c00",
+    "QSOLFed/Model.lean": "d727f5349cff8dc46b5b78511e40b5f73825ef2b",
+    "QSOLFed/Theorems.lean": "66870e7830743f20714ff6d710f28eda3dd604af",
+    "QSOLFed/TypeAudit.lean": "9f5993ea7e8f9799df26b0c55d3fdb6dbb340c8c",
 }
 
 EXPECTED_CLAIM_RULE = 'Phase 10 adds a post-tag Lean 4 formal model of selected v0.11.0 constitutional and protocol separation invariants. The Phase 8 capability map remains the runtime/protocol capability surface, Phase 9 remains the adversarial-assurance baseline, and Lean adds formalization assurance only. A compiled theorem proves its stated abstract model proposition under named assumptions; it is not a deployment security proof, whole-Rust verification, proof of SHA-256 collision resistance, or proof of unstated real-world assumptions.'
@@ -93,7 +93,7 @@ round9.EXPECTED_THEOREM_TYPE_SHA256.update({
     "unchanged_partition_snapshot_needs_no_reconciliation": "46c929b18e9af25d88aad75db1dfd5b27aa0a68d1fb9c3d6baf146d6befd4c1a",
     "holodeck_transport_does_not_relabel_network_use": "35559f0ad94dea763a58444412f66ab246a1cb0f391b67f980c756d1b5e64698",
     "adapter_output_has_no_authority": "ce1cc5f6082375c4db24533a6309ffe9c5c6cd72bdad1cc95294bb82674deb82",
-    "transport_preserves_authenticated_identity": "a6b685da40127dc16e01270ae165685a377a745b7c3f9181ad64aadfe24da15e",
+    "transport_preserves_authenticated_identity": "7c295b2039570fe5bdeda3a79b6637f3a4d8377fb3adcc5e86bd629e379ae57a",
     "nat_route_does_not_create_trust": "907cb09baa56dca84f018f8e88c04d6163efe535ec225b36b1010fe1bec1a2c9",
     "nat_route_does_not_replace_identity": "2ac27a4039d888a1f37626f942b1b255d6ff1eebccc3eff7f3f81de85cfb6f72",
 })

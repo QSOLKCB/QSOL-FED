@@ -307,20 +307,25 @@ theorem nexus_advisory_has_zero_vote_weight :
 
 /-! Transport identity and provenance independence -/
 
-/-- The accepted bit is definitionally equal to the complete frozen Phase 8 prerequisite
-conjunction. String `BEq` is used only as a computational equality check, avoiding a
-proof-producing `Decidable` term in the graduation theorem. -/
+/-- Every accepted transport is the conjunction of the six independently recorded Phase 8
+checks. The exact-locked model derives senderMatchesVerified and routeAdmitted from the
+verified sender/local node/profile/relay inputs rather than accepting those checks from a
+caller. -/
 theorem transport_preserves_authenticated_identity
     (context : TransportAdmissionContext) (frame : TransportFrame) :
+    (admitTransport context frame).signatureValid = context.signatureValid ∧
+    (admitTransport context frame).identityCurrent = context.identityCurrent ∧
+    (admitTransport context frame).localPeerAdmitted = context.localPeerAdmitted ∧
+    (admitTransport context frame).replayFresh = context.replayFresh ∧
     (admitTransport context frame).accepted =
-      (context.signatureValid &&
-       context.identityCurrent &&
-       context.localPeerAdmitted &&
-       (frame.sender == context.verifiedSenderNodeId) &&
-       routeLocallyAdmitted frame context &&
-       context.replayFresh) ∧
+      ((admitTransport context frame).signatureValid &&
+       (admitTransport context frame).identityCurrent &&
+       (admitTransport context frame).localPeerAdmitted &&
+       (admitTransport context frame).senderMatchesVerified &&
+       (admitTransport context frame).routeAdmitted &&
+       (admitTransport context frame).replayFresh) ∧
     (admitTransport context frame).frame = frame := by
-  exact ⟨rfl, rfl⟩
+  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 theorem transport_preserves_message_identity
     (profile : TransportProfile) (frame : TransportFrame) :

@@ -349,38 +349,36 @@ def routeLocallyAdmitted
   else
     forwardingProfile frame.profile && context.relayAdmitted
 
-/-- The complete frozen Phase 8 admission predicate. The recipient/relay decision is
-placed before replay freshness to mirror the frozen acceptance order. -/
-def transportAdmissionAllowed
-    (context : TransportAdmissionContext) (frame : TransportFrame) : Bool :=
-  context.signatureValid &&
-    context.identityCurrent &&
-    context.localPeerAdmitted &&
-    (frame.sender == context.verifiedSenderNodeId) &&
-    routeLocallyAdmitted frame context &&
-    context.replayFresh
-
-def TransportRoutePrerequisitesSatisfied
-    (context : TransportAdmissionContext) (frame : TransportFrame) : Prop :=
-  context.signatureValid = true ∧
-  context.identityCurrent = true ∧
-  context.localPeerAdmitted = true ∧
-  frame.sender = context.verifiedSenderNodeId ∧
-  routeLocallyAdmitted frame context = true
-
-def TransportPrerequisitesSatisfied
-    (context : TransportAdmissionContext) (frame : TransportFrame) : Prop :=
-  TransportRoutePrerequisitesSatisfied context frame ∧
-  context.replayFresh = true
-
 structure TransportAdmissionResult where
+  signatureValid : Bool
+  identityCurrent : Bool
+  replayFresh : Bool
+  localPeerAdmitted : Bool
+  senderMatchesVerified : Bool
+  routeAdmitted : Bool
   accepted : Bool
   frame : TransportFrame
   deriving DecidableEq, Repr
 
+/-- The result records every independently derived Phase 8 prerequisite. Sender matching
+and route admission are derived inside this operation from the independently verified
+sender, local node, profile and explicit relay admission, never supplied by the caller. -/
 def admitTransport
     (context : TransportAdmissionContext) (frame : TransportFrame) : TransportAdmissionResult :=
-  { accepted := transportAdmissionAllowed context frame
+  let senderMatchesVerified := frame.sender == context.verifiedSenderNodeId
+  let routeAdmitted := routeLocallyAdmitted frame context
+  { signatureValid := context.signatureValid
+    identityCurrent := context.identityCurrent
+    replayFresh := context.replayFresh
+    localPeerAdmitted := context.localPeerAdmitted
+    senderMatchesVerified := senderMatchesVerified
+    routeAdmitted := routeAdmitted
+    accepted := context.signatureValid &&
+      context.identityCurrent &&
+      context.localPeerAdmitted &&
+      senderMatchesVerified &&
+      routeAdmitted &&
+      context.replayFresh
     frame := transport frame.profile frame }
 
 structure RouteAssessment where
