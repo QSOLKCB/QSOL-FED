@@ -344,10 +344,9 @@ def forwardingProfile : TransportProfile → Bool
 
 def routeLocallyAdmitted
     (frame : TransportFrame) (context : TransportAdmissionContext) : Bool :=
-  if frame.recipient = context.localNodeId then
-    true
-  else
-    forwardingProfile frame.profile && context.relayAdmitted
+  match frame.recipient == context.localNodeId with
+  | true => true
+  | false => forwardingProfile frame.profile && context.relayAdmitted
 
 structure TransportAdmissionResult where
   signatureValid : Bool
