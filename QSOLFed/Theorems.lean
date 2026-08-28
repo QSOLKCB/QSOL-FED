@@ -328,44 +328,34 @@ theorem transport_preserves_authenticated_identity
     · unfold admitTransport at accepted
       rw [if_pos hsender] at accepted
       cases hroute : routeLocallyAdmitted frame context
-      · rw [hroute] at accepted
-        cases hsig : context.signatureValid
-        · rw [hsig] at accepted
-          cases accepted
-        · cases hid : context.identityCurrent
-          · rw [hsig, hid] at accepted
-            cases accepted
-          · cases hpeer : context.localPeerAdmitted
-            · rw [hsig, hid, hpeer] at accepted
-              cases accepted
-            · rw [hsig, hid, hpeer, hroute] at accepted
-              cases accepted
       · cases hsig : context.signatureValid
-        · rw [hsig] at accepted
-          cases accepted
+        · cases accepted
         · cases hid : context.identityCurrent
-          · rw [hsig, hid] at accepted
-            cases accepted
+          · cases accepted
           · cases hpeer : context.localPeerAdmitted
-            · rw [hsig, hid, hpeer] at accepted
-              cases accepted
+            · cases accepted
+            · cases accepted
+      · cases hsig : context.signatureValid
+        · cases accepted
+        · cases hid : context.identityCurrent
+          · cases accepted
+          · cases hpeer : context.localPeerAdmitted
+            · cases accepted
             · cases hreplay : context.replayFresh
-              · rw [hsig, hid, hpeer, hroute, hreplay] at accepted
-                cases accepted
-              · exact ⟨hsig, hid, hpeer, rfl, hroute, hreplay⟩
+              · cases accepted
+              · unfold admitTransport
+                rw [if_pos hsender]
+                rw [hroute, hsig, hid, hpeer, hreplay]
+                exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
     · unfold admitTransport at accepted
       rw [if_neg hsender] at accepted
       cases hsig : context.signatureValid
-      · rw [hsig] at accepted
-        cases accepted
+      · cases accepted
       · cases hid : context.identityCurrent
-        · rw [hsig, hid] at accepted
-          cases accepted
+        · cases accepted
         · cases hpeer : context.localPeerAdmitted
-          · rw [hsig, hid, hpeer] at accepted
-            cases accepted
-          · rw [hsig, hid, hpeer] at accepted
-            cases accepted
+          · cases accepted
+          · cases accepted
   · constructor
     · intro matched
       by_cases hsender : frame.sender = context.verifiedSenderNodeId
