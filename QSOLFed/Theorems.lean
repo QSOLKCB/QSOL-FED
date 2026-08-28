@@ -156,8 +156,9 @@ theorem holodeck_end_program_terminal_even_when_frozen
 
 theorem adapter_output_has_no_authority :
     safeAdapterResult.localGovernanceAuthority = false ∧
+    safeAdapterResult.capabilityInstalled = false ∧
     safeAdapterResult.authorityEffect = false := by
-  exact ⟨rfl, rfl⟩
+  exact ⟨rfl, ⟨rfl, rfl⟩⟩
 
 theorem adapter_cannot_inject_vote :
     safeAdapterResult.voteInjected = false := rfl
@@ -178,8 +179,11 @@ theorem sdk_conformance_does_not_create_authority (conforms : Bool) :
 
 /-! Assembly sovereignty -/
 
-theorem assembly_acceptance_does_not_mutate_member_authority (accepted : Bool) :
-    (governanceReceipt accepted).memberLocalAuthorityMutated = false := rfl
+theorem assembly_acceptance_does_not_mutate_member_authority
+    (state : SovereignState) (vote : AssemblyVote) (accepted : Bool) :
+    (processAssemblyVote state vote).localState = state ∧
+    (governanceReceipt accepted).memberLocalAuthorityMutated = false := by
+  exact ⟨rfl, rfl⟩
 
 theorem assembly_acceptance_does_not_change_protocol_automatically (accepted : Bool) :
     (governanceReceipt accepted).protocolChangedAutomatically = false := rfl

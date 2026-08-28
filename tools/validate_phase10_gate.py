@@ -14,9 +14,9 @@ ROOT = Path(__file__).resolve().parents[1]
 LEGACY_GATE_PATH = ROOT / "tools/validate_phase10_gate_base.py"
 LEGACY_GATE_BLOB = "ced7c981daf3a71ba6d7736755e0154bd7414ade"
 
-# Round-7 contract additions. The legacy gate remains a frozen snapshot of the
-# already-reviewed round-6 validator; this wrapper layers the new fail-closed
-# checks without weakening any prior gate.
+# Round-7/8 contract additions. The legacy gate remains a frozen snapshot of the
+# already-reviewed round-6 validator; this wrapper layers later fail-closed checks
+# without weakening any prior gate.
 base.SOURCE_BOUND_CONTRACT_REGISTRY.update({
     "nexus_advisory_authority_effect=none": (
         "state/phase7.json",
@@ -27,6 +27,12 @@ base.SOURCE_BOUND_CONTRACT_REGISTRY.update({
     "ticket_grants_authority=false": (
         "state/phase8.json",
         "/nat_traversal/ticket_grants_authority",
+        "equals",
+        False,
+    ),
+    "adapter_may_install_capabilities=false": (
+        "state/phase5.json",
+        "/prime_directive/adapter_may_install_capabilities",
         "equals",
         False,
     ),
@@ -46,6 +52,16 @@ EXPECTED_ASSUMPTIONS = [
         "statement": "real-world principal uniqueness, deployment hardening, host isolation and operational credential hygiene are outside the theorem model unless explicitly represented.",
     },
 ]
+
+EXPECTED_STATE_NON_CLAIMS = {
+    "deployment_security_proof": False,
+    "whole_rust_implementation_verified": False,
+    "canonicalizer_implementation_verified": False,
+    "sha256_collision_resistance_proved": False,
+    "host_or_vm_isolation_proved": False,
+    "real_world_principal_uniqueness_proved": False,
+    "moriarty_exhaustiveness_proved": False,
+}
 
 EXPECTED_THEOREM_TYPE_SHA256 = {
     "prime_directive_accepts_data_only": "a9970c1529f1f67b91dbcb47eb18042ec4715547eb733080798b9d646ef10bbc",
@@ -77,13 +93,13 @@ EXPECTED_THEOREM_TYPE_SHA256 = {
     "holodeck_output_has_no_federation_effect": "321e8487df522bbd93e14ccd5693fcae309d9985c24517fb16df393e8bfcbbab",
     "holodeck_transport_does_not_relabel_network_use": "3d0f171dbf9af4078cc0576c411e9a2a5c8a10853f426a1d5c2ba38e6814e5bc",
     "holodeck_end_program_terminal_even_when_frozen": "629ec6fe62a8776ca912a28bd0b503c7069f2c1811bd29f066d486cffbcb7840",
-    "adapter_output_has_no_authority": "3812ba13f8587747e4f64812be6cb0b2dd1bc9e24ae7678c23215676a7f6dfe2",
+    "adapter_output_has_no_authority": "655e275a2887fd92439de728311344b844deb521ff9176812f0f12db70cffea0",
     "adapter_cannot_inject_vote": "3c454c34f6988268bc8659a53e42043582132beda7af4f066bb62c1fd3cc444e",
     "adapter_cannot_promote_evidence": "bd7140ad840b8a5b1a15645d125a1c949f27f481542b8924256d7615479e84a3",
     "sdk_conformance_does_not_create_trust": "27950340c947151b3ec464cd166408162ff08c3d0873a9ed6b39087a079be17f",
     "sdk_conformance_does_not_create_governance_membership": "690085239cc58005dd6dbae653a7da617a106d414a9d00b3c6e71c85f640ff2a",
     "sdk_conformance_does_not_create_authority": "0921313bddab8e978f5a1a41fcc55ef91c0c701bfaecc60856ec2c242f88eeb1",
-    "assembly_acceptance_does_not_mutate_member_authority": "43d0dc32cf09a97e70ed0cf844b7e8083c17617f4423693de32027c75b4fdf72",
+    "assembly_acceptance_does_not_mutate_member_authority": "713434e1b482c91b8c4f2595e74c0b56a62478d4025f99ad92fa64c21742061a",
     "assembly_acceptance_does_not_change_protocol_automatically": "2f80e3ab0ec9a0c5b66e43b4ff8891d9cd3e92aed8bc10edfaaf8d0ec3736473",
     "assembly_receipt_has_no_authority_effect": "e3304ca570c2387a924b1a28fc1cf91891c55ab63742a78c0bb04cdbdc60cdcc",
     "nexus_advisory_has_zero_vote_weight": "01f356290d4269f36f757222aca85196f56e68048c67f99d15f296d10958fbae",
@@ -134,6 +150,14 @@ def verify_state_evidence_locked() -> None:
     require(
         evidence == expected,
         "Phase 10 state MORIARTY evidence object differs from the frozen non-security-proof boundary",
+    )
+
+
+def verify_state_nonclaims_locked() -> None:
+    state = base.load_json(base.STATE_PATH)
+    require(
+        state.get("non_claims") == EXPECTED_STATE_NON_CLAIMS,
+        "Phase 10 state non-claim boundary drift",
     )
 
 
@@ -213,6 +237,7 @@ def validate() -> dict:
     verify_legacy_gate_snapshot()
     result = base.validate()
     verify_state_evidence_locked()
+    verify_state_nonclaims_locked()
     verify_assumption_statements_locked()
     verify_namespace_syntax_fail_closed()
     verify_theorem_type_digests()

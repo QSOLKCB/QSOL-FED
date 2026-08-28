@@ -212,6 +212,28 @@ structure SDKResult where
 def sdkResult (conformance : Bool) : SDKResult :=
   { conformance := conformance, trust := false, governanceMembership := false, authority := false }
 
+inductive VoteChoice where
+  | yes
+  | no
+  | abstain
+  deriving DecidableEq, Repr
+
+structure AssemblyVote where
+  memberId : String
+  proposalId : String
+  choice : VoteChoice
+  deriving DecidableEq, Repr
+
+structure VoteProcessResult where
+  localState : SovereignState
+  recordedVote : AssemblyVote
+  deriving DecidableEq, Repr
+
+/-- Processing an Assembly vote records vote data but cannot act as a command against the
+member's local sovereign state. -/
+def processAssemblyVote (state : SovereignState) (vote : AssemblyVote) : VoteProcessResult :=
+  { localState := state, recordedVote := vote }
+
 structure GovernanceReceipt where
   accepted : Bool
   memberLocalAuthorityMutated : Bool
