@@ -81,10 +81,77 @@ jobs:
             echo "Phase 10 graduation theorem set unexpectedly depends on axioms" >&2
             exit 1
           fi
-          if grep -R -n -E '^[[:space:]]*axiom[[:space:]]' QSOLFed QSOLFed.lean; then
-            echo "custom axiom declaration found in Phase 10 source" >&2
-            exit 1
-          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          def lean_code_only(text: str) -> str:
+              out = []
+              i = 0
+              block_depth = 0
+              in_string = False
+              while i < len(text):
+                  if block_depth:
+                      if text.startswith('/-', i):
+                          block_depth += 1
+                          out.extend('  ')
+                          i += 2
+                      elif text.startswith('-/', i):
+                          block_depth -= 1
+                          out.extend('  ')
+                          i += 2
+                      else:
+                          out.append('\n' if text[i] == '\n' else ' ')
+                          i += 1
+                      continue
+
+                  if in_string:
+                      if text[i] == '\\' and i + 1 < len(text):
+                          out.extend('  ')
+                          i += 2
+                      elif text[i] == '"':
+                          in_string = False
+                          out.append(' ')
+                          i += 1
+                      else:
+                          out.append('\n' if text[i] == '\n' else ' ')
+                          i += 1
+                      continue
+
+                  if text.startswith('--', i):
+                      while i < len(text) and text[i] != '\n':
+                          out.append(' ')
+                          i += 1
+                      continue
+                  if text.startswith('/-', i):
+                      block_depth = 1
+                      out.extend('  ')
+                      i += 2
+                      continue
+                  if text[i] == '"':
+                      in_string = True
+                      out.append(' ')
+                      i += 1
+                      continue
+
+                  out.append(text[i])
+                  i += 1
+
+              if block_depth or in_string:
+                  raise SystemExit('unterminated Lean comment or string while scanning custom axioms')
+              return ''.join(out)
+
+          sources = [Path('QSOLFed.lean'), *sorted(Path('QSOLFed').rglob('*.lean'))]
+          found = []
+          for path in sources:
+              code = lean_code_only(path.read_text())
+              for match in re.finditer(r'\baxiom\b', code):
+                  line = code.count('\n', 0, match.start()) + 1
+                  found.append(f'{path}:{line}')
+
+          if found:
+              raise SystemExit('custom axiom declaration/token found in Phase 10 source: ' + ', '.join(found))
+          PY
 
       - name: Revalidate after Lean build
         run: |
