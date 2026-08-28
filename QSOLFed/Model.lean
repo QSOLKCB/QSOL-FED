@@ -405,6 +405,15 @@ def TransportRoutePrerequisitesSatisfied
   frame.sender = context.verifiedSenderNodeId ∧
   routeLocallyAdmitted frame context = true
 
+/-- The route prerequisite proposition is constructively decidable because all of its
+components are decidable equalities. Naming the instance lets admission use a dependent
+`if` without importing classical choice or weakening the zero-axiom theorem gate. -/
+instance transportRoutePrerequisitesSatisfiedDecidable
+    (context : TransportAdmissionContext) (frame : TransportFrame) :
+    Decidable (TransportRoutePrerequisitesSatisfied context frame) := by
+  unfold TransportRoutePrerequisitesSatisfied
+  infer_instance
+
 /-- Full transport admission adds replay freshness only after the route/identity surface
 has succeeded, preserving the frozen Phase 8 check ordering. -/
 def TransportPrerequisitesSatisfied
