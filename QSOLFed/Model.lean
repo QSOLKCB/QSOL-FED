@@ -102,6 +102,11 @@ def importForeign (id : ForeignIdentity) : ImportResult :=
 def Prefix {α : Type} (old newer : List α) : Prop :=
   ∃ tail, newer = old ++ tail
 
+/-- A lifecycle candidate is locally admissible only when it extends the exact stored
+history. Rollback, rewrite, and same-sequence divergence therefore have no admitted path. -/
+def lifecycleUpdateAllowed {α : Type} (stored candidate : List α) : Prop :=
+  Prefix stored candidate
+
 inductive PeerLifecycle where
   | introduced
   | admitted
@@ -121,10 +126,12 @@ structure RejoinResult where
   reconciliationRequired : Bool
   deriving DecidableEq, Repr
 
-/-- Partition rejoin never rewrites local sovereign state. A changed snapshot requires
-an explicit reconciliation path. -/
-def rejoinPartition (state : SovereignState) (sameSnapshot : Bool) : RejoinResult :=
-  if sameSnapshot then
+/-- Partition rejoin never rewrites local sovereign state. A same-snapshot rejoin clears
+reconciliation only after explicit local confirmation; changed or unconfirmed snapshots
+remain on the reconciliation path. -/
+def rejoinPartition
+    (state : SovereignState) (sameSnapshot explicitLocalConfirm : Bool) : RejoinResult :=
+  if sameSnapshot && explicitLocalConfirm then
     { localState := state, reconciliationRequired := false }
   else
     { localState := state, reconciliationRequired := true }
@@ -222,6 +229,11 @@ inductive TransportProfile where
   | offlineSneakernet
   | storeForward
   deriving DecidableEq, Repr
+
+/-- Transporting an existing Holodeck teardown receipt preserves the receipt itself;
+transport metadata cannot relabel recorded boundary-use fields. -/
+def transportHolodeckReceipt
+    (_profile : TransportProfile) (receipt : HolodeckReceipt) : HolodeckReceipt := receipt
 
 /-- Transport changes delivery profile, not authenticated protocol identity/provenance. -/
 def transport (_profile : TransportProfile) (frame : TransportFrame) : TransportFrame := frame
