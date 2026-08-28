@@ -5,7 +5,13 @@
   "wire_protocol": "qsol-fed/1",
   "charter": "qsol-fed-charter/1",
   "prime_directive": "qsol-fed-prime-directive/1",
-  "status": "phase10_lean_formalization_implemented_pending_merge",
+  "status": "phase10_complete_merged_main_verified_zenodo_published",
+  "current_project_phase": 10,
+  "runtime_capability_phase": 8,
+  "adversarial_assurance_phase": 9,
+  "formalization_phase": 10,
+  "software_version": "0.11.0",
+  "formalization_record_version": "1.0.0",
   "phase0_status": "historical_gate_preserved",
   "phase1_status": "canonical_wire_gate_enforced",
   "phase2_status": "historical_crypto_gate_preserved",
@@ -18,7 +24,7 @@
   "phase7_status": "historical_federation_assembly_gate_preserved",
   "phase8_status": "transport_resilience_gate_enforced",
   "phase9_status": "moriarty_adversarial_graduation_gate_enforced",
-  "claim_boundary": "Phase 8 remains the current runtime/protocol capability surface. Phase 9 adds provider-neutral MORIARTY/1 exact-commit adversarial graduation assurance. Phase 10 adds a post-tag Lean 4 formal model of selected invariants from immutable v0.11.0 without promoting runtime capability. The 47 graduation theorems compile on pinned Lean 4.33.1 with no sorry/admit, no custom axioms, and no kernel axiom dependencies. LEAN THEOREM != DEPLOYMENT SECURITY PROOF.",
+  "claim_boundary": "QSOL-FED is complete through Phase 10. Phase 8 remains the current runtime/protocol capability surface; Phase 9 adds provider-neutral MORIARTY/1 exact-commit adversarial graduation assurance; Phase 10 adds a post-tag Lean 4 formal model of selected invariants from immutable v0.11.0 without promoting runtime capability. The 47 graduation theorems compile on pinned Lean 4.33.1 with no sorry/admit, no custom axioms, and no kernel axiom dependencies. The reviewed formalization merged to main at 9bc0e33fc30ed14b5ca1a3bfbd2e7ecc5059452b and is published on Zenodo as v1.0.0 / DOI 10.5281/zenodo.22149263. LEAN THEOREM != DEPLOYMENT SECURITY PROOF.",
   "phase0_claims": {
     "constitutional_model": true,
     "machine_contracts": true,
@@ -30,6 +36,7 @@
     "interoperable_federation": false
   },
   "current_claim_manifest": "claims/phase8.json",
+  "current_runtime_capability_claim_manifest": "claims/phase8.json",
   "current_claims": {
     "constitutional_model": true,
     "machine_contracts": true,
@@ -399,10 +406,14 @@
     "phase7_claims": "claims/phase7.json",
     "phase8_claims": "claims/phase8.json",
     "phase9_assurance": "claims/phase9.json",
+    "phase10_assurance": "claims/phase10.json",
     "phase6_sdk": "state/phase6.json",
     "phase7_assembly": "state/phase7.json",
     "phase8_transport": "state/phase8.json",
     "phase9_moriarty": "state/phase9.json",
+    "phase10_lean_state": "state/phase10.json",
+    "phase10_theorem_manifest": "machine/lean-phase10-manifest.json",
+    "phase10_formalization_docs": "FORMALIZATION.md",
     "assembly_docs": "ASSEMBLY.md",
     "transport_docs": "TRANSPORTS.md",
     "moriarty_docs": "MORIARTY.md",
@@ -414,9 +425,10 @@
     "phase6_validator": "tools/validate_phase6_gate.py",
     "phase7_validator": "tools/validate_phase7_gate.py",
     "phase8_validator": "tools/validate_phase8_gate.py",
-    "phase9_validator": "tools/validate_phase9_gate.py"
+    "phase9_validator": "tools/validate_phase9_gate.py",
+    "phase10_validator": "tools/validate_phase10_gate.py"
   },
-  "phase10_status": "lean_formalization_implemented_branch_verified_merge_pending",
+  "phase10_status": "lean_formalization_merged_main_verified_and_zenodo_published",
   "formalization_assurance_manifest": "claims/phase10.json",
   "phase10_lean": {
     "contract": "state/phase10.json",
@@ -443,6 +455,27 @@
     "kernel_axiom_dependencies": false,
     "whole_implementation_verified": false,
     "deployment_security_proof": false,
-    "source_release_rewritten": false
+    "source_release_rewritten": false,
+    "formalization_merge_commit": "9bc0e33fc30ed14b5ca1a3bfbd2e7ecc5059452b",
+    "formalization_merge_tree": "062ca7fd78c5ada08f0f54f7c822337e2fa081e0",
+    "merged_main_phase10_workflow": {
+      "run_id": 33198458502,
+      "run_number": 128,
+      "conclusion": "success"
+    },
+    "merged_main_constitutional_moriarty_workflow": {
+      "run_id": 33198458525,
+      "run_number": 471,
+      "conclusion": "success"
+    },
+    "integration_claim_record_note": "claims/phase10.json is an exact reviewed Phase 10 input and retains its integration-time pre-merge gate_status. Live post-merge completion is evidenced by the formalization merge commit and exact merged-main workflows recorded here; the immutable v0.11.0 theorem target is not rewritten.",
+    "zenodo_publication": {
+      "version": "1.0.0",
+      "doi": "10.5281/zenodo.22149263",
+      "title": "QSOL-FED Lean 4 Formalization: Machine-Checked Constitutional and Protocol Separation Invariants",
+      "citation": "Slade, T. (2026). QSOL-FED Lean 4 Formalization: Machine-Checked Constitutional and Protocol Separation Invariants (Version 1.0.0) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.22149263",
+      "record_license": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
+      "repository_license": "Apache-2.0 unchanged"
+    }
   }
 }

@@ -18,7 +18,7 @@ PREIMPORT_BLOBS = {
     "schemas/lean-phase10-manifest-v1.schema.json": "ce0fb2c46184c5323ca898d8a90517ea67537809",
     "state/phase10.json": "d167a8123cb0124fdd92e77dc4e8476b5de999af",
     "claims/phase10.json": "7e72230c93fc5ca27500fc41ed3f4523e734d52a",
-    "README4AI.md": "e44ccc1e280a6ed69482ff661a0879edd57e02c8",
+    "README4AI.md": "5d19e6f6057e55551a2259a61ae88c61444bdafe",
     "FORMALIZATION.md": "2c5418755af2124f7547b08fd85539d558bd0139",
     "QSOLFed/Model.lean": "7cf071fe7e3787b63fe8979a9f925d7a70dbd7d8",
     "QSOLFed/Theorems.lean": "5d9bbceb06afcd973b01866c30d4b84ea50681fa",
