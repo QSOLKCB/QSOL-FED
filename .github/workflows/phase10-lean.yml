@@ -73,6 +73,12 @@ jobs:
           lake --version
           lake build
 
+      - name: Audit elaborated theorem types
+        run: |
+          set -euo pipefail
+          lake env lean QSOLFed/TypeAudit.lean | tee "$RUNNER_TEMP/phase10-types.txt"
+          echo "Phase 10 elaborated theorem type audit: OK" | tee -a "$RUNNER_TEMP/phase10-types.txt"
+
       - name: Audit kernel axiom dependencies
         run: |
           set -euo pipefail
@@ -193,6 +199,8 @@ jobs:
             FORMALIZATION.md
             lean-toolchain
             lakefile.toml
+            QSOLFed/TypeAudit.lean
             evidence/phase10/moriarty-report-c953463724cdf218802e66e16f582ae8d600ca47.json
             ${{ runner.temp }}/phase10-gate.json
+            ${{ runner.temp }}/phase10-types.txt
             ${{ runner.temp }}/phase10-axioms.txt

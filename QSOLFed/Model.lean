@@ -285,11 +285,22 @@ structure RouteAssessment where
   trust : Bool
   authority : Bool
   identityReplacement : Bool
+  senderBindingAccepted : Bool
   deriving DecidableEq, Repr
 
-/-- NAT route hints confer no trust, authority, or identity replacement. -/
-def natRouteAssessment : RouteAssessment :=
-  { trust := false, authority := false, identityReplacement := false }
+/-- NAT route hints confer no trust, authority, or identity replacement. A ticket route is
+admitted only when its named node is exactly the authenticated sender. -/
+def natRouteAssessment (authenticatedSender ticketNode : String) : RouteAssessment :=
+  if ticketNode = authenticatedSender then
+    { trust := false
+      authority := false
+      identityReplacement := false
+      senderBindingAccepted := true }
+  else
+    { trust := false
+      authority := false
+      identityReplacement := false
+      senderBindingAccepted := false }
 
 structure RelayAssessment where
   trust : Bool

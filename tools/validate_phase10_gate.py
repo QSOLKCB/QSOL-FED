@@ -13,8 +13,10 @@ import validate_phase10_gate_base as base
 ROOT = Path(__file__).resolve().parents[1]
 LEGACY_GATE_PATH = ROOT / "tools/validate_phase10_gate_base.py"
 LEGACY_GATE_BLOB = "ced7c981daf3a71ba6d7736755e0154bd7414ade"
+TYPE_AUDIT_PATH = ROOT / "QSOLFed/TypeAudit.lean"
+EXPECTED_TYPE_AUDIT_SHA256 = "961837fb378f0459026cd76d377ec471dcb6f3dec23f722170fdda6d3cd6f199"
 
-# Round-7/8 contract additions. The legacy gate remains a frozen snapshot of the
+# Round-7/8/9 contract additions. The legacy gate remains a frozen snapshot of the
 # already-reviewed round-6 validator; this wrapper layers later fail-closed checks
 # without weakening any prior gate.
 base.SOURCE_BOUND_CONTRACT_REGISTRY.update({
@@ -35,6 +37,66 @@ base.SOURCE_BOUND_CONTRACT_REGISTRY.update({
         "/prime_directive/adapter_may_install_capabilities",
         "equals",
         False,
+    ),
+    "remote_vote_creation_forbidden": (
+        "invariants/fed-v1.json",
+        "/invariants/11/id",
+        "equals",
+        "remote_vote_creation_forbidden",
+    ),
+    "remote_capability_installation_forbidden": (
+        "invariants/fed-v1.json",
+        "/invariants/12/id",
+        "equals",
+        "remote_capability_installation_forbidden",
+    ),
+    "remote_history_rewrite_forbidden": (
+        "invariants/fed-v1.json",
+        "/invariants/13/id",
+        "equals",
+        "remote_history_rewrite_forbidden",
+    ),
+    "remote_citizenship_mutation_forbidden": (
+        "invariants/fed-v1.json",
+        "/invariants/14/id",
+        "equals",
+        "remote_citizenship_mutation_forbidden",
+    ),
+    "remote_local_authority_claim_forbidden": (
+        "invariants/fed-v1.json",
+        "/invariants/16/id",
+        "equals",
+        "remote_local_authority_claim_forbidden",
+    ),
+    "secrets_in_semantic_state_forbidden": (
+        "invariants/fed-v1.json",
+        "/invariants/17/id",
+        "equals",
+        "secrets_in_semantic_state_forbidden",
+    ),
+    "holodeck_network_client_exposed=false": (
+        "state/phase5a-holodeck.json",
+        "/sandbox/network_client_exposed",
+        "equals",
+        False,
+    ),
+    "holodeck_tool_dispatcher_exposed=false": (
+        "state/phase5a-holodeck.json",
+        "/sandbox/tool_dispatcher_exposed",
+        "equals",
+        False,
+    ),
+    "holodeck_credential_handle_exposed=false": (
+        "state/phase5a-holodeck.json",
+        "/sandbox/credential_handle_exposed",
+        "equals",
+        False,
+    ),
+    "ticket_node_must_match_authenticated_sender": (
+        "state/phase8.json",
+        "/nat_traversal/ticket_node_must_match_authenticated_sender",
+        "equals",
+        True,
     ),
 })
 
@@ -63,10 +125,28 @@ EXPECTED_STATE_NON_CLAIMS = {
     "moriarty_exhaustiveness_proved": False,
 }
 
+EXPECTED_FORMALIZATION_LAYER = {
+    "post_tag": True,
+    "rewrites_source_release": False,
+    "lean_toolchain": "leanprover/lean4:v4.33.1",
+    "lean_archive_sha256": "890afd185370f85666025b883914ab4f4b339136f8c96167b69cfb62aecaf235",
+    "external_lean_dependencies": [],
+    "lake_package": "qsol-fed-formal",
+    "root_module": "QSOLFed",
+    "model": "QSOLFed/Model.lean",
+    "graduation_theorems": "QSOLFed/Theorems.lean",
+    "axiom_audit": "QSOLFed/AxiomAudit.lean",
+    "manifest": "machine/lean-phase10-manifest.json",
+    "manifest_schema": "schemas/lean-phase10-manifest-v1.schema.json",
+    "gate_validator": "tools/validate_phase10_gate.py",
+    "workflow": ".github/workflows/phase10-lean.yml",
+    "documentation": "FORMALIZATION.md",
+}
+
 EXPECTED_THEOREM_TYPE_SHA256 = {
     "prime_directive_accepts_data_only": "a9970c1529f1f67b91dbcb47eb18042ec4715547eb733080798b9d646ef10bbc",
     "prime_directive_quarantines_foreign_state": "228093719203b00ebfa83627b31177dc84da362ef5fab06e7b9357ccd9f41259",
-    "prime_directive_rejects_governance_mutation": "0e2c19d8b01b991ef2e9e87caf082e1fd2b74237903754da9ab7f437732be224",
+    "prime_directive_rejects_governance_mutation": "51cbba7557f9c97a71a10f4a1eca068e92af1bfa84b85b61a67f8b1c4279afde",
     "prime_directive_rejects_evidence_promotion": "b88f3b90259de61f11a4601df8eb290b06161c56193a64f49ffa8ba7585fc435",
     "prime_directive_rejects_arbitrary_execution": "70d47a9252269ede3cd18fdbc85f256ab82c09af89081064d3586e548456271e",
     "prime_directive_rejects_runtime_override": "b750c3cfdfc6e65ab1b7930cf8329a2b9e084d2c8d2816225c7b3ef29d7a4032",
@@ -88,7 +168,7 @@ EXPECTED_THEOREM_TYPE_SHA256 = {
     "changed_partition_snapshot_requires_reconciliation": "dabe384653387ca1afa4e64d926de78594833b49e1814fb03e42e1e49cc0e607",
     "unchanged_partition_snapshot_needs_no_reconciliation": "7c8bc3cb93502c6c5f6368925f9dcb04ce11fc5f4d4b68857061da33aef17f8f",
     "canonical_identity_deterministic": "0b87fc85763a90516b385d7994a4eb40098fb92a794a3a7ffa046fa208510557",
-    "holodeck_output_has_no_authority": "d604d8f847120d8b55badba238b9d5fac6b623eb394d6751c1f27c9cf27d06d7",
+    "holodeck_output_has_no_authority": "6df2fc2be79e0457af388476dca52a3ee6d31a52bd935fe82e2f0f5b77439ade",
     "holodeck_output_has_no_evidence_effect": "5d8256bd969477f050267388beefe1e2ee995c89367cd0ea4d9e4eee406cfeb1",
     "holodeck_output_has_no_federation_effect": "321e8487df522bbd93e14ccd5693fcae309d9985c24517fb16df393e8bfcbbab",
     "holodeck_transport_does_not_relabel_network_use": "3d0f171dbf9af4078cc0576c411e9a2a5c8a10853f426a1d5c2ba38e6814e5bc",
@@ -107,13 +187,15 @@ EXPECTED_THEOREM_TYPE_SHA256 = {
     "transport_preserves_message_identity": "ee38f8f7b923341886e784239f9ee90c266e173a9081f921dec1c15db04780de",
     "transport_preserves_payload_reference": "e9b1780e95bcd259aa4bbd85081fadd4e99c738032da96886b48072d303448d9",
     "transport_preserves_provenance": "e79594378d179aa2f280f774f4a402e83bf1e7af84c5346c3c91c239a0d30cdb",
-    "nat_route_does_not_create_trust": "27e4adbc44afb6ee7d72c5adc2958c8df8eb29dc3036d432d933756e4eca9aea",
-    "nat_route_does_not_replace_identity": "74d127d00d89646ec340b267456e7e6290ede70ab755d95c080cc0120012fd03",
+    "nat_route_does_not_create_trust": "e27cf167d39894c8827589492775173d644e644fbad7f39665643ea5d70c9392",
+    "nat_route_does_not_replace_identity": "2c62cf8ff56c759b413de899b5915148fe5760f86e8b997fd37f10f72cfa2c5e",
     "relay_does_not_create_authority": "7b4099149e9bb4585f7a096566bf5e742380cfa9de9d06cc1124f175dfe185c5",
     "relay_does_not_create_trust": "2c064061b897987816f081029eca5a4e19c339ced60c2c31cd766e80a249bef9"
 }
 
 THEOREM_START_RE = re.compile(r"(?m)^[ \t]*theorem[ \t]+([a-z][a-z0-9_]*)\b")
+TYPE_AUDIT_RE = re.compile(r"(?m)^#check[ \t]+\(@([a-z][a-z0-9_]*)[ \t]*:")
+THEOREM_CONTEXT_RE = re.compile(r"(?m)^[ \t]*(?:section|variable|variables|include|omit)\b")
 
 
 def require(condition: bool, message: str) -> None:
@@ -161,6 +243,14 @@ def verify_state_nonclaims_locked() -> None:
     )
 
 
+def verify_state_formalization_layer_locked() -> None:
+    state = base.load_json(base.STATE_PATH)
+    require(
+        state.get("formalization_layer") == EXPECTED_FORMALIZATION_LAYER,
+        "Phase 10 formalization-layer state drift",
+    )
+
+
 def verify_assumption_statements_locked() -> None:
     manifest = base.load_json(base.MANIFEST_PATH)
     require(
@@ -184,6 +274,33 @@ def verify_namespace_syntax_fail_closed() -> None:
                 base.NAMESPACE_END_RE.fullmatch(line) is not None,
                 f"unsupported Lean namespace end syntax in QSOLFed/Theorems.lean:{line_number}",
             )
+
+
+def verify_theorem_context_fail_closed() -> None:
+    path = ROOT / "QSOLFed/Theorems.lean"
+    code = base._lean_code_only(path.read_text(encoding="utf-8"), path)
+    match = THEOREM_CONTEXT_RE.search(code)
+    require(
+        match is None,
+        "section/variable/include/omit theorem context commands are not admitted in QSOLFed/Theorems.lean",
+    )
+
+
+def verify_type_audit_locked() -> None:
+    require(TYPE_AUDIT_PATH.is_file(), "Phase 10 elaborated theorem type audit missing")
+    audit_bytes = TYPE_AUDIT_PATH.read_bytes()
+    require(
+        hashlib.sha256(audit_bytes).hexdigest() == EXPECTED_TYPE_AUDIT_SHA256,
+        "Phase 10 elaborated theorem type audit source drift",
+    )
+    code = base._lean_code_only(audit_bytes.decode("utf-8"), TYPE_AUDIT_PATH)
+    observed = TYPE_AUDIT_RE.findall(code)
+    manifest = base.load_json(base.MANIFEST_PATH)
+    expected = [item["declaration"] for item in manifest.get("theorems", [])]
+    require(
+        observed == expected,
+        "Phase 10 elaborated theorem type audit coverage/order differs from theorem manifest",
+    )
 
 
 def _find_top_level_proof_assign(block: str, declaration: str) -> int:
@@ -238,9 +355,12 @@ def validate() -> dict:
     result = base.validate()
     verify_state_evidence_locked()
     verify_state_nonclaims_locked()
+    verify_state_formalization_layer_locked()
     verify_assumption_statements_locked()
     verify_namespace_syntax_fail_closed()
+    verify_theorem_context_fail_closed()
     verify_theorem_type_digests()
+    verify_type_audit_locked()
     return result
 
 
@@ -260,7 +380,7 @@ def main() -> int:
         print(json.dumps(result, sort_keys=True))
     else:
         print(
-            f"Phase 10 gate: OK ({result['theorem_count']} theorem declarations/types bound to {result['target_tag']})"
+            f"Phase 10 gate: OK ({result['theorem_count']} theorem declarations/source-types + elaborated environment types bound to {result['target_tag']})"
         )
     return 0
 

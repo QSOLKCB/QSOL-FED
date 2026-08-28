@@ -12,7 +12,14 @@ theorem prime_directive_quarantines_foreign_state :
     primeDirective .foreignState = .quarantine := rfl
 
 theorem prime_directive_rejects_governance_mutation :
-    primeDirective .governanceMutation = .reject := rfl
+    primeDirective .governanceMutation = .reject ∧
+    primeDirective .voteCreation = .reject ∧
+    primeDirective .capabilityInstallation = .reject ∧
+    primeDirective .historyRewrite = .reject ∧
+    primeDirective .citizenshipMutation = .reject ∧
+    primeDirective .localAuthorityClaim = .reject ∧
+    primeDirective .semanticSecret = .reject := by
+  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 theorem prime_directive_rejects_evidence_promotion :
     primeDirective .evidencePromotion = .reject := rfl
@@ -134,7 +141,11 @@ theorem canonical_identity_deterministic
 /-! Holodeck separation and safeguards -/
 
 theorem holodeck_output_has_no_authority (frozen : Bool) :
-    (safeHolodeckReceipt frozen).authorityEffect = false := rfl
+    (safeHolodeckReceipt frozen).authorityEffect = false ∧
+    (safeHolodeckReceipt frozen).networkUsed = false ∧
+    (safeHolodeckReceipt frozen).realToolsUsed = false ∧
+    (safeHolodeckReceipt frozen).credentialsExposed = false := by
+  exact ⟨rfl, rfl, rfl, rfl⟩
 
 theorem holodeck_output_has_no_evidence_effect (frozen : Bool) :
     (safeHolodeckReceipt frozen).evidenceEffect = false := rfl
@@ -214,13 +225,20 @@ theorem transport_preserves_provenance
     (profile : TransportProfile) (frame : TransportFrame) :
     (transport profile frame).provenanceRef = frame.provenanceRef := rfl
 
-theorem nat_route_does_not_create_trust :
-    natRouteAssessment.trust = false ∧
-    natRouteAssessment.authority = false := by
-  exact ⟨rfl, rfl⟩
+theorem nat_route_does_not_create_trust
+    (authenticatedSender ticketNode : String) :
+    (natRouteAssessment authenticatedSender ticketNode).trust = false ∧
+    (natRouteAssessment authenticatedSender ticketNode).authority = false := by
+  by_cases h : ticketNode = authenticatedSender <;> simp [natRouteAssessment, h]
 
-theorem nat_route_does_not_replace_identity :
-    natRouteAssessment.identityReplacement = false := rfl
+theorem nat_route_does_not_replace_identity
+    (authenticatedSender ticketNode : String) :
+    (natRouteAssessment authenticatedSender ticketNode).identityReplacement = false ∧
+    ((natRouteAssessment authenticatedSender ticketNode).senderBindingAccepted = true →
+      ticketNode = authenticatedSender) := by
+  by_cases h : ticketNode = authenticatedSender
+  · simp [natRouteAssessment, h]
+  · simp [natRouteAssessment, h]
 
 theorem relay_does_not_create_authority :
     relayAssessment.authority = false := rfl
