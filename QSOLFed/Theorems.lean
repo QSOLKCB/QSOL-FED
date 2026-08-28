@@ -62,29 +62,40 @@ theorem peering_does_not_create_trust
 theorem peering_does_not_create_admission (peered : Bool) :
     (peerFromPeering peered).admitted = false := rfl
 
-theorem capability_requires_explicit_local_allow (peer advertisement : Bool) :
+theorem capability_requires_explicit_local_allow
+    (peer advertisement active : Bool) :
     capabilityAllowed {
       peerAdmitted := peer
       authenticatedAdvertisement := advertisement
+      advertisementWithinLifetime := active
       explicitLocalAllow := false
     } = false := by
-  cases peer <;> cases advertisement <;> rfl
+  cases peer <;> cases advertisement <;> cases active <;> rfl
 
-theorem capability_requires_peer_admission (advertisement localAllow : Bool) :
+theorem capability_requires_peer_admission
+    (advertisement active localAllow : Bool) :
     capabilityAllowed {
       peerAdmitted := false
       authenticatedAdvertisement := advertisement
+      advertisementWithinLifetime := active
       explicitLocalAllow := localAllow
-    } = false := by
-  cases advertisement <;> cases localAllow <;> rfl
+    } = false := rfl
 
-theorem capability_requires_authenticated_advertisement (peer localAllow : Bool) :
+theorem capability_requires_authenticated_advertisement :
     capabilityAllowed {
-      peerAdmitted := peer
+      peerAdmitted := true
       authenticatedAdvertisement := false
-      explicitLocalAllow := localAllow
-    } = false := by
-  cases peer <;> cases localAllow <;> rfl
+      advertisementWithinLifetime := true
+      explicitLocalAllow := true
+    } = false ∧
+    capabilityAllowed {
+      peerAdmitted := true
+      authenticatedAdvertisement := true
+      advertisementWithinLifetime := false
+      explicitLocalAllow := true
+    } = false ∧
+    maximumCapabilityLifetimeSeconds = 3600 := by
+  exact ⟨rfl, rfl, rfl⟩
 
 /-! Import non-authority and provenance preservation -/
 
@@ -116,11 +127,13 @@ theorem lifecycle_append_is_monotone
   exact ⟨[event], rfl⟩
 
 /-- Every lifecycle update accepted by the model preserves the exact stored lifecycle as
-a prefix. A rollback or rewritten candidate therefore cannot satisfy the admission predicate. -/
+a prefix, and once the stored lifecycle contains revocation no later candidate may extend
+or reintroduce that identity. -/
 theorem lifecycle_prefix_is_transitive
     (stored candidate : List PeerLifecycle)
     (accepted : lifecycleUpdateAllowed stored candidate) :
-    Prefix stored candidate := by
+    Prefix stored candidate ∧
+    (List.Mem .revoked stored → candidate = stored) := by
   exact accepted
 
 /-! Partition sovereignty and bundle-import preservation -/
@@ -182,8 +195,11 @@ theorem holodeck_end_program_terminal_even_when_frozen
 theorem adapter_output_has_no_authority :
     safeAdapterResult.localGovernanceAuthority = false ∧
     safeAdapterResult.capabilityInstalled = false ∧
+    safeAdapterResult.historyRewritten = false ∧
+    safeAdapterResult.citizenshipMutated = false ∧
+    safeAdapterResult.remoteExecutionTriggered = false ∧
     safeAdapterResult.authorityEffect = false := by
-  exact ⟨rfl, ⟨rfl, rfl⟩⟩
+  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 theorem adapter_cannot_inject_vote :
     safeAdapterResult.voteInjected = false := rfl

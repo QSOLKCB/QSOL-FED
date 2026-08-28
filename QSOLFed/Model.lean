@@ -78,15 +78,22 @@ trust decision. -/
 def admitPeer (relation : PeerRelation) : PeerRelation :=
   { relation with admitted := true }
 
+def maximumCapabilityLifetimeSeconds : Nat := 3600
+
 structure CapabilityInputs where
   peerAdmitted : Bool
   authenticatedAdvertisement : Bool
+  advertisementWithinLifetime : Bool
   explicitLocalAllow : Bool
   deriving DecidableEq, Repr
 
-/-- Phase 4 capability permission is conjunctive and requires explicit local allow. -/
+/-- Phase 4 capability permission is conjunctive: admission, authentication, independently
+validated advertisement lifetime/freshness, and explicit local allow are all required. -/
 def capabilityAllowed (c : CapabilityInputs) : Bool :=
-  c.peerAdmitted && c.authenticatedAdvertisement && c.explicitLocalAllow
+  c.peerAdmitted &&
+    c.authenticatedAdvertisement &&
+    c.advertisementWithinLifetime &&
+    c.explicitLocalAllow
 
 structure ForeignIdentity where
   contentId : String
@@ -103,15 +110,6 @@ structure ImportResult where
 def importForeign (id : ForeignIdentity) : ImportResult :=
   { foreignIdentity := id, localAuthority := false, trustChanged := false }
 
-/-- List-prefix relation used to model append-only peer lifecycle history. -/
-def Prefix {α : Type} (old newer : List α) : Prop :=
-  ∃ tail, newer = old ++ tail
-
-/-- A lifecycle candidate is locally admissible only when it extends the exact stored
-history. Rollback, rewrite, and same-sequence divergence therefore have no admitted path. -/
-def lifecycleUpdateAllowed {α : Type} (stored candidate : List α) : Prop :=
-  Prefix stored candidate
-
 inductive PeerLifecycle where
   | introduced
   | admitted
@@ -119,6 +117,18 @@ inductive PeerLifecycle where
   | revoked
   | disconnected
   deriving DecidableEq, Repr
+
+/-- List-prefix relation used to model append-only peer lifecycle history. -/
+def Prefix {α : Type} (old newer : List α) : Prop :=
+  ∃ tail, newer = old ++ tail
+
+/-- A lifecycle candidate is locally admissible only when it extends the exact stored
+history, and a stored revocation is terminal. Rollback, rewrite, same-sequence divergence,
+and revoked reintroduction therefore have no admitted path. -/
+def lifecycleUpdateAllowed
+    (stored candidate : List PeerLifecycle) : Prop :=
+  Prefix stored candidate ∧
+  (List.Mem .revoked stored → candidate = stored)
 
 structure SovereignState where
   governanceVersion : Nat
@@ -201,15 +211,22 @@ structure AdapterResult where
   evidencePromoted : Bool
   voteInjected : Bool
   capabilityInstalled : Bool
+  historyRewritten : Bool
+  citizenshipMutated : Bool
+  remoteExecutionTriggered : Bool
   authorityEffect : Bool
   deriving DecidableEq, Repr
 
-/-- QSOL adapter output remains non-authoritative. -/
+/-- QSOL adapter output remains non-authoritative and cannot perform any Prime Directive
+authority-bearing side effect. -/
 def safeAdapterResult : AdapterResult :=
   { localGovernanceAuthority := false
     evidencePromoted := false
     voteInjected := false
     capabilityInstalled := false
+    historyRewritten := false
+    citizenshipMutated := false
+    remoteExecutionTriggered := false
     authorityEffect := false }
 
 structure SDKResult where

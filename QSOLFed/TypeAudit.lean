@@ -59,28 +59,37 @@ not visible in the theorem's local declaration text.
   (peered : Bool) → (peerFromPeering peered).admitted = false)
 
 #check (@capability_requires_explicit_local_allow :
-  (peer advertisement : Bool) →
+  (peer advertisement active : Bool) →
   capabilityAllowed {
     peerAdmitted := peer
     authenticatedAdvertisement := advertisement
+    advertisementWithinLifetime := active
     explicitLocalAllow := false
   } = false)
 
 #check (@capability_requires_peer_admission :
-  (advertisement localAllow : Bool) →
+  (advertisement active localAllow : Bool) →
   capabilityAllowed {
     peerAdmitted := false
     authenticatedAdvertisement := advertisement
+    advertisementWithinLifetime := active
     explicitLocalAllow := localAllow
   } = false)
 
 #check (@capability_requires_authenticated_advertisement :
-  (peer localAllow : Bool) →
   capabilityAllowed {
-    peerAdmitted := peer
+    peerAdmitted := true
     authenticatedAdvertisement := false
-    explicitLocalAllow := localAllow
-  } = false)
+    advertisementWithinLifetime := true
+    explicitLocalAllow := true
+  } = false ∧
+  capabilityAllowed {
+    peerAdmitted := true
+    authenticatedAdvertisement := true
+    advertisementWithinLifetime := false
+    explicitLocalAllow := true
+  } = false ∧
+  maximumCapabilityLifetimeSeconds = 3600)
 
 #check (@import_preserves_foreign_identity :
   (id : ForeignIdentity) → (state : SovereignState) → (bundle : PortableBundle) →
@@ -104,7 +113,8 @@ not visible in the theorem's local declaration text.
 #check (@lifecycle_prefix_is_transitive :
   (stored candidate : List PeerLifecycle) →
   lifecycleUpdateAllowed stored candidate →
-  Prefix stored candidate)
+  Prefix stored candidate ∧
+  (List.Mem .revoked stored → candidate = stored))
 
 #check (@partition_rejoin_preserves_local_state :
   (state : SovereignState) → (sameSnapshot explicitLocalConfirm : Bool) →
@@ -149,6 +159,9 @@ not visible in the theorem's local declaration text.
 #check (@adapter_output_has_no_authority :
   safeAdapterResult.localGovernanceAuthority = false ∧
   safeAdapterResult.capabilityInstalled = false ∧
+  safeAdapterResult.historyRewritten = false ∧
+  safeAdapterResult.citizenshipMutated = false ∧
+  safeAdapterResult.remoteExecutionTriggered = false ∧
   safeAdapterResult.authorityEffect = false)
 
 #check (@adapter_cannot_inject_vote :
