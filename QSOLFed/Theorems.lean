@@ -324,28 +324,62 @@ theorem transport_preserves_authenticated_identity
     (admitTransport context frame).frame = frame := by
   constructor
   · intro accepted
-    unfold admitTransport at accepted ⊢
-    split
-    · cases hroute : routeLocallyAdmitted frame context <;>
-      cases context.signatureValid <;>
-      cases context.identityCurrent <;>
-      cases context.localPeerAdmitted <;>
-      cases context.replayFresh <;>
-      cases accepted <;>
-      exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
-    · cases context.signatureValid <;>
-      cases context.identityCurrent <;>
-      cases context.localPeerAdmitted <;>
-      cases context.replayFresh <;>
-      cases accepted
+    by_cases hsender : frame.sender = context.verifiedSenderNodeId
+    · unfold admitTransport at accepted
+      rw [if_pos hsender] at accepted
+      cases hroute : routeLocallyAdmitted frame context
+      · rw [hroute] at accepted
+        cases hsig : context.signatureValid
+        · rw [hsig] at accepted
+          cases accepted
+        · cases hid : context.identityCurrent
+          · rw [hsig, hid] at accepted
+            cases accepted
+          · cases hpeer : context.localPeerAdmitted
+            · rw [hsig, hid, hpeer] at accepted
+              cases accepted
+            · rw [hsig, hid, hpeer, hroute] at accepted
+              cases accepted
+      · cases hsig : context.signatureValid
+        · rw [hsig] at accepted
+          cases accepted
+        · cases hid : context.identityCurrent
+          · rw [hsig, hid] at accepted
+            cases accepted
+          · cases hpeer : context.localPeerAdmitted
+            · rw [hsig, hid, hpeer] at accepted
+              cases accepted
+            · cases hreplay : context.replayFresh
+              · rw [hsig, hid, hpeer, hroute, hreplay] at accepted
+                cases accepted
+              · exact ⟨hsig, hid, hpeer, rfl, hroute, hreplay⟩
+    · unfold admitTransport at accepted
+      rw [if_neg hsender] at accepted
+      cases hsig : context.signatureValid
+      · rw [hsig] at accepted
+        cases accepted
+      · cases hid : context.identityCurrent
+        · rw [hsig, hid] at accepted
+          cases accepted
+        · cases hpeer : context.localPeerAdmitted
+          · rw [hsig, hid, hpeer] at accepted
+            cases accepted
+          · rw [hsig, hid, hpeer] at accepted
+            cases accepted
   · constructor
     · intro matched
-      unfold admitTransport at matched
-      split
-      · next senderMatches => exact senderMatches
-      · cases matched
-    · unfold admitTransport
-      split <;> rfl
+      by_cases hsender : frame.sender = context.verifiedSenderNodeId
+      · exact hsender
+      · unfold admitTransport at matched
+        rw [if_neg hsender] at matched
+        cases matched
+    · by_cases hsender : frame.sender = context.verifiedSenderNodeId
+      · unfold admitTransport
+        rw [if_pos hsender]
+        rfl
+      · unfold admitTransport
+        rw [if_neg hsender]
+        rfl
 
 theorem transport_preserves_message_identity
     (profile : TransportProfile) (frame : TransportFrame) :

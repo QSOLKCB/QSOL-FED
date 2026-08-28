@@ -21,7 +21,7 @@ PREIMPORT_BLOBS = {
     "README4AI.md": "e44ccc1e280a6ed69482ff661a0879edd57e02c8",
     "FORMALIZATION.md": "2c5418755af2124f7547b08fd85539d558bd0139",
     "QSOLFed/Model.lean": "809918669c6fd41b2d72cd58ba4c00680eb62471",
-    "QSOLFed/Theorems.lean": "154874249ab15d4d69c9c28840e1ad487d398b62",
+    "QSOLFed/Theorems.lean": "7eb122baa8ea0eafa965de2c7362797ce8b503ab",
     "QSOLFed/TypeAudit.lean": "56ca469c0bec3e8cfafcd62eaa0523f3040d6591",
 }
 
