@@ -328,43 +328,48 @@ theorem transport_preserves_authenticated_identity
     exact ⟨rfl, rfl⟩
   constructor
   · intro accepted
-    by_cases hsender : frame.sender = context.verifiedSenderNodeId
-    · unfold admitTransport at accepted
-      rw [if_pos hsender] at accepted
-      have h1 := andTrue _ _ accepted
-      have h2 := andTrue _ _ h1.1
-      have h3 := andTrue _ _ h2.1
-      have h4 := andTrue _ _ h3.1
-      have h5 := andTrue _ _ h4.1
-      unfold admitTransport
-      rw [if_pos hsender]
-      change context.signatureValid = true ∧
-        context.identityCurrent = true ∧
-        context.localPeerAdmitted = true ∧
-        true = true ∧
-        routeLocallyAdmitted frame context = true ∧
-        context.replayFresh = true
-      exact ⟨h5.1, h5.2, h4.2, rfl, h2.2, h1.2⟩
-    · unfold admitTransport at accepted
-      rw [if_neg hsender] at accepted
-      have h1 := andTrue _ _ accepted
-      have h2 := andTrue _ _ h1.1
-      have h3 := andTrue _ _ h2.1
-      exact False.elim (Bool.false_ne_true h3.2)
+    cases hsender : String.decEq frame.sender context.verifiedSenderNodeId with
+    | isTrue senderEq =>
+        unfold admitTransport at accepted
+        rw [hsender] at accepted
+        have h1 := andTrue _ _ accepted
+        have h2 := andTrue _ _ h1.1
+        have h3 := andTrue _ _ h2.1
+        have h4 := andTrue _ _ h3.1
+        have h5 := andTrue _ _ h4.1
+        unfold admitTransport
+        rw [hsender]
+        change context.signatureValid = true ∧
+          context.identityCurrent = true ∧
+          context.localPeerAdmitted = true ∧
+          true = true ∧
+          routeLocallyAdmitted frame context = true ∧
+          context.replayFresh = true
+        exact ⟨h5.1, h5.2, h4.2, rfl, h2.2, h1.2⟩
+    | isFalse senderNe =>
+        unfold admitTransport at accepted
+        rw [hsender] at accepted
+        have h1 := andTrue _ _ accepted
+        have h2 := andTrue _ _ h1.1
+        have h3 := andTrue _ _ h2.1
+        exact False.elim (Bool.false_ne_true h3.2)
   · constructor
     · intro matched
-      by_cases hsender : frame.sender = context.verifiedSenderNodeId
-      · exact hsender
-      · unfold admitTransport at matched
-        rw [if_neg hsender] at matched
-        exact False.elim (Bool.false_ne_true matched)
-    · by_cases hsender : frame.sender = context.verifiedSenderNodeId
-      · unfold admitTransport
-        rw [if_pos hsender]
-        rfl
-      · unfold admitTransport
-        rw [if_neg hsender]
-        rfl
+      cases hsender : String.decEq frame.sender context.verifiedSenderNodeId with
+      | isTrue senderEq => exact senderEq
+      | isFalse senderNe =>
+          unfold admitTransport at matched
+          rw [hsender] at matched
+          exact False.elim (Bool.false_ne_true matched)
+    · cases hsender : String.decEq frame.sender context.verifiedSenderNodeId with
+      | isTrue senderEq =>
+          unfold admitTransport
+          rw [hsender]
+          rfl
+      | isFalse senderNe =>
+          unfold admitTransport
+          rw [hsender]
+          rfl
 
 theorem transport_preserves_message_identity
     (profile : TransportProfile) (frame : TransportFrame) :
