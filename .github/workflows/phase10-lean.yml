@@ -1,0 +1,211 @@
+name: phase10-lean
+
+on:
+  push:
+    branches:
+      - formal/phase10-lean-v0.11
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lean:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify immutable source release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          git fetch --force origin refs/tags/v0.11.0:refs/tags/v0.11.0
+          test "$(git cat-file -t v0.11.0)" = commit
+          test "$(git rev-parse 'v0.11.0^{commit}')" = c953463724cdf218802e66e16f582ae8d600ca47
+          test "$(git rev-parse 'c953463724cdf218802e66e16f582ae8d600ca47^{tree}')" = 93f23cd7eda6dd92ae13b7bb96bee01935b80731
+          curl -fsSL --retry 3 \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/QSOLKCB/QSOL-FED/releases/tags/v0.11.0 \
+            -o "$RUNNER_TEMP/qsol-fed-release.json"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          release = json.loads(Path(__import__('os').environ['RUNNER_TEMP'], 'qsol-fed-release.json').read_text())
+          assert release['id'] == 377808649
+          assert release['tag_name'] == 'v0.11.0'
+          assert release['target_commitish'] == 'c953463724cdf218802e66e16f582ae8d600ca47'
+          assert release['immutable'] is True
+          assert release['draft'] is False
+          assert release['prerelease'] is False
+          assert release['published_at'] == '2026-08-27T12:35:21Z'
+          PY
+
+      - name: Validate Phase 10 manifest and traceability
+        run: |
+          set -euo pipefail
+          python3 tools/validate_phase10_gate.py
+          python3 tools/validate_phase10_gate.py --json | tee "$RUNNER_TEMP/phase10-gate.json"
+
+      - name: Install pinned Lean 4.33.1
+        run: |
+          set -euo pipefail
+          LEAN_URL=https://github.com/leanprover/lean4/releases/download/v4.33.1/lean-4.33.1-linux.tar.zst
+          LEAN_SHA=890afd185370f85666025b883914ab4f4b339136f8c96167b69cfb62aecaf235
+          curl -fL --retry 3 --retry-delay 2 "$LEAN_URL" -o "$RUNNER_TEMP/lean.tar.zst"
+          echo "$LEAN_SHA  $RUNNER_TEMP/lean.tar.zst" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/lean"
+          tar --zstd -xf "$RUNNER_TEMP/lean.tar.zst" -C "$RUNNER_TEMP/lean"
+          LEAN_ROOT="$(find "$RUNNER_TEMP/lean" -mindepth 1 -maxdepth 1 -type d -name 'lean-*' -print -quit)"
+          test -n "$LEAN_ROOT"
+          echo "$LEAN_ROOT/bin" >> "$GITHUB_PATH"
+          "$LEAN_ROOT/bin/lean" --version
+          "$LEAN_ROOT/bin/lake" --version
+
+      - name: Build theorem package
+        run: |
+          set -euo pipefail
+          lean --version
+          lake --version
+          lake build
+
+      - name: Audit elaborated theorem types
+        run: |
+          set -euo pipefail
+          lake env lean QSOLFed/TypeAudit.lean | tee "$RUNNER_TEMP/phase10-types.txt"
+          echo "Phase 10 elaborated theorem type audit: OK" | tee -a "$RUNNER_TEMP/phase10-types.txt"
+
+      - name: Audit kernel axiom dependencies
+        run: |
+          set -euo pipefail
+          lake env lean QSOLFed/AxiomAudit.lean | tee "$RUNNER_TEMP/phase10-axioms.txt"
+          if grep -F "depends on axioms:" "$RUNNER_TEMP/phase10-axioms.txt"; then
+            echo "Phase 10 graduation theorem set unexpectedly depends on axioms" >&2
+            exit 1
+          fi
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          manifest = json.loads(Path('machine/lean-phase10-manifest.json').read_text())
+          expected = [item['declaration'] for item in manifest['theorems']]
+          audit_output = Path(os.environ['RUNNER_TEMP'], 'phase10-axioms.txt').read_text()
+          observed = re.findall(
+              r"(?m)^'QSOLFed\.([a-z][a-z0-9_]*)' does not depend on any axioms$",
+              audit_output,
+          )
+          if observed != expected:
+              raise SystemExit(
+                  'Lean axiom-audit output coverage/order differs from theorem manifest: '
+                  f'expected {len(expected)} entries, observed {len(observed)}'
+              )
+          PY
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          def lean_code_only(text: str) -> str:
+              out = []
+              i = 0
+              block_depth = 0
+              in_string = False
+              while i < len(text):
+                  if block_depth:
+                      if text.startswith('/-', i):
+                          block_depth += 1
+                          out.extend('  ')
+                          i += 2
+                      elif text.startswith('-/', i):
+                          block_depth -= 1
+                          out.extend('  ')
+                          i += 2
+                      else:
+                          out.append('\n' if text[i] == '\n' else ' ')
+                          i += 1
+                      continue
+
+                  if in_string:
+                      if text[i] == '\\' and i + 1 < len(text):
+                          out.extend('  ')
+                          i += 2
+                      elif text[i] == '"':
+                          in_string = False
+                          out.append(' ')
+                          i += 1
+                      else:
+                          out.append('\n' if text[i] == '\n' else ' ')
+                          i += 1
+                      continue
+
+                  if text.startswith('--', i):
+                      while i < len(text) and text[i] != '\n':
+                          out.append(' ')
+                          i += 1
+                      continue
+                  if text.startswith('/-', i):
+                      block_depth = 1
+                      out.extend('  ')
+                      i += 2
+                      continue
+                  if text[i] == '"':
+                      in_string = True
+                      out.append(' ')
+                      i += 1
+                      continue
+
+                  out.append(text[i])
+                  i += 1
+
+              if block_depth or in_string:
+                  raise SystemExit('unterminated Lean comment or string while scanning custom axioms')
+              return ''.join(out)
+
+          sources = [Path('QSOLFed.lean'), *sorted(Path('QSOLFed').rglob('*.lean'))]
+          found = []
+          for path in sources:
+              code = lean_code_only(path.read_text())
+              for match in re.finditer(r'\b(?:axiom|constant)\b', code):
+                  line = code.count('\n', 0, match.start()) + 1
+                  found.append(f'{path}:{line}')
+
+          if found:
+              raise SystemExit('custom axiom/constant declaration token found in Phase 10 source: ' + ', '.join(found))
+          PY
+
+      - name: Revalidate after Lean build
+        run: |
+          set -euo pipefail
+          python3 tools/validate_phase10_gate.py
+          git diff --exit-code -- . ':!.lake' ':!lake-manifest.json'
+
+      - name: Upload Phase 10 evidence
+        if: success()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
+        with:
+          name: phase10-lean-evidence-${{ github.run_id }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            machine/lean-phase10-manifest.json
+            state/phase10.json
+            claims/phase10.json
+            schemas/lean-phase10-manifest-v1.schema.json
+            FORMALIZATION.md
+            lean-toolchain
+            lakefile.toml
+            QSOLFed/TypeAudit.lean
+            evidence/phase10/moriarty-report-c953463724cdf218802e66e16f582ae8d600ca47.json
+            ${{ runner.temp }}/phase10-gate.json
+            ${{ runner.temp }}/phase10-types.txt
+            ${{ runner.temp }}/phase10-axioms.txt

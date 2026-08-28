@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qsol.example/schemas/lean-phase10-manifest-v1.schema.json",
+  "title": "QSOL-FED Phase 10 Lean theorem manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "protocol",
+    "phase",
+    "status",
+    "formalization_scope",
+    "source_release",
+    "moriarty_binding",
+    "toolchain",
+    "frozen_inputs",
+    "schema_binding",
+    "assumptions",
+    "nonclaims",
+    "graduation_requirements",
+    "theorem_count",
+    "theorems"
+  ],
+  "properties": {
+    "schema": {"const": "qsol-fed-lean-phase10-manifest/1"},
+    "protocol": {"const": "qsol-fed/0"},
+    "phase": {"const": 10},
+    "status": {"enum": ["IMPLEMENTED_PENDING_CI", "LEAN_VERIFIED_ON_BRANCH", "LEAN_VERIFIED_ON_MERGED_MAIN"]},
+    "formalization_scope": {"const": "selected constitutional and protocol separation invariants from immutable QSOL-FED v0.11.0; not whole-software verification"},
+    "source_release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "tag", "immutable", "commit", "tree", "published_at"],
+      "properties": {
+        "id": {"const": 377808649},
+        "tag": {"const": "v0.11.0"},
+        "immutable": {"const": true},
+        "commit": {"const": "c953463724cdf218802e66e16f582ae8d600ca47"},
+        "tree": {"const": "93f23cd7eda6dd92ae13b7bb96bee01935b80731"},
+        "published_at": {"const": "2026-08-27T12:35:21Z"}
+      }
+    },
+    "moriarty_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocol", "workflow_run", "run_number", "artifact_id", "artifact_digest",
+        "report_path", "report_sha256", "target_commit", "corpus_ref", "family_count",
+        "executed_probe_count", "unresolved_counterexamples", "graduated", "security_proof"
+      ],
+      "properties": {
+        "protocol": {"const": "MORIARTY/1"},
+        "workflow_run": {"const": 33069191846},
+        "run_number": {"const": 413},
+        "artifact_id": {"const": 9645064099},
+        "artifact_digest": {"const": "sha256:1c77cb56e83a0af19961e9f3c99d3ace02f6dd905655dc64b36aa90d46e9d9ce"},
+        "report_path": {"const": "evidence/phase10/moriarty-report-c953463724cdf218802e66e16f582ae8d600ca47.json"},
+        "report_sha256": {"const": "sha256:6c215f44a1c52aa3bfefadc4039013ea69ddbe0f2afd06f6dac27377369b185c"},
+        "target_commit": {"const": "c953463724cdf218802e66e16f582ae8d600ca47"},
+        "corpus_ref": {"const": "sha256:af50e8145a72a1a583ede29687535a59c0e17ac37fdd66e1ede51c453e8fd3e6"},
+        "family_count": {"const": 15},
+        "executed_probe_count": {"const": 13},
+        "unresolved_counterexamples": {"const": 0},
+        "graduated": {"const": true},
+        "security_proof": {"const": false}
+      }
+    },
+    "toolchain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lean", "lean_toolchain", "archive_url", "archive_sha256", "external_dependencies"],
+      "properties": {
+        "lean": {"const": "v4.33.1"},
+        "lean_toolchain": {"const": "leanprover/lean4:v4.33.1"},
+        "archive_url": {"const": "https://github.com/leanprover/lean4/releases/download/v4.33.1/lean-4.33.1-linux.tar.zst"},
+        "archive_sha256": {"const": "890afd185370f85666025b883914ab4f4b339136f8c96167b69cfb62aecaf235"},
+        "external_dependencies": {"type": "array", "maxItems": 0}
+      }
+    },
+    "frozen_inputs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "git_blob_sha1"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 256},
+          "git_blob_sha1": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+        }
+      }
+    },
+    "schema_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rule", "source_tree"],
+      "properties": {
+        "rule": {"type": "string", "minLength": 1, "maxLength": 1024},
+        "source_tree": {"const": "93f23cd7eda6dd92ae13b7bb96bee01935b80731"}
+      }
+    },
+    "assumptions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "statement"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"},
+          "statement": {"type": "string", "minLength": 1, "maxLength": 2048}
+        }
+      }
+    },
+    "nonclaims": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {"type": "string", "minLength": 1, "maxLength": 256}
+    },
+    "graduation_requirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "no_unresolved_sorry_or_admit", "named_assumptions_required",
+        "theorem_to_contract_traceability_required", "clean_checkout_build_required",
+        "custom_axioms_allowed"
+      ],
+      "properties": {
+        "no_unresolved_sorry_or_admit": {"const": true},
+        "named_assumptions_required": {"const": true},
+        "theorem_to_contract_traceability_required": {"const": true},
+        "clean_checkout_build_required": {"const": true},
+        "custom_axioms_allowed": {"type": "array", "maxItems": 0}
+      }
+    },
+    "theorem_count": {"const": 47},
+    "theorems": {
+      "type": "array",
+      "minItems": 47,
+      "maxItems": 47,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "declaration", "module", "path", "source_refs", "contract_ids", "proof_status"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^FED-LEAN-[0-9]{3}$"},
+          "declaration": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+          "module": {"const": "QSOLFed.Theorems"},
+          "path": {"const": "QSOLFed/Theorems.lean"},
+          "source_refs": {"type": "array", "minItems": 1, "maxItems": 16, "items": {"type": "string", "minLength": 1, "maxLength": 256}},
+          "contract_ids": {"type": "array", "minItems": 1, "maxItems": 16, "items": {"type": "string", "minLength": 1, "maxLength": 256}},
+          "proof_status": {"const": "IMPLEMENTED"}
+        }
+      }
+    }
+  }
+}

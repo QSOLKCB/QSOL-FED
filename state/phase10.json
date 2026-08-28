@@ -1,0 +1,91 @@
+{
+  "document_type": "qsol-fed-phase10-lean-contract",
+  "schema_version": 1,
+  "protocol": "qsol-fed/0",
+  "wire_protocol": "qsol-fed/1",
+  "phase": "10",
+  "purpose": "post-tag Lean 4 formalization of selected invariants from the immutable Phase 9 source release",
+  "feature_dependency": false,
+  "claim_surface_changed": false,
+  "capability_baseline": "claims/phase8.json",
+  "adversarial_assurance_baseline": "claims/phase9.json",
+  "formalization_assurance_manifest": "claims/phase10.json",
+  "source_release": {
+    "release_id": 377808649,
+    "tag": "v0.11.0",
+    "immutable": true,
+    "commit": "c953463724cdf218802e66e16f582ae8d600ca47",
+    "tree": "93f23cd7eda6dd92ae13b7bb96bee01935b80731",
+    "published_at": "2026-08-27T12:35:21Z"
+  },
+  "formalization_layer": {
+    "post_tag": true,
+    "rewrites_source_release": false,
+    "lean_toolchain": "leanprover/lean4:v4.33.1",
+    "lean_archive_sha256": "890afd185370f85666025b883914ab4f4b339136f8c96167b69cfb62aecaf235",
+    "external_lean_dependencies": [],
+    "lake_package": "qsol-fed-formal",
+    "root_module": "QSOLFed",
+    "model": "QSOLFed/Model.lean",
+    "graduation_theorems": "QSOLFed/Theorems.lean",
+    "type_audit": "QSOLFed/TypeAudit.lean",
+    "axiom_audit": "QSOLFed/AxiomAudit.lean",
+    "manifest": "machine/lean-phase10-manifest.json",
+    "manifest_schema": "schemas/lean-phase10-manifest-v1.schema.json",
+    "gate_validator": "tools/validate_phase10_gate.py",
+    "workflow": ".github/workflows/phase10-lean.yml",
+    "documentation": "FORMALIZATION.md"
+  },
+  "moriarty_source_evidence": {
+    "workflow_run": 33069191846,
+    "run_number": 413,
+    "artifact_id": 9645064099,
+    "artifact_zip_digest": "sha256:1c77cb56e83a0af19961e9f3c99d3ace02f6dd905655dc64b36aa90d46e9d9ce",
+    "retained_report": "evidence/phase10/moriarty-report-c953463724cdf218802e66e16f582ae8d600ca47.json",
+    "retained_report_sha256": "sha256:6c215f44a1c52aa3bfefadc4039013ea69ddbe0f2afd06f6dac27377369b185c",
+    "target_commit": "c953463724cdf218802e66e16f582ae8d600ca47",
+    "corpus_ref": "sha256:af50e8145a72a1a583ede29687535a59c0e17ac37fdd66e1ede51c453e8fd3e6",
+    "family_count": 15,
+    "executed_probe_count": 13,
+    "unresolved_counterexamples": 0,
+    "graduated": true,
+    "security_proof": false
+  },
+  "theorem_scope": {
+    "theorem_count": 47,
+    "families": [
+      "prime_directive_admission",
+      "signature_trust_authority_separation",
+      "peering_capability_separation",
+      "import_non_authority",
+      "lifecycle_monotonicity",
+      "partition_sovereignty",
+      "provenance_preservation",
+      "canonical_identity_determinism",
+      "holodeck_separation_and_safeguards",
+      "adapter_non_authority",
+      "sdk_conformance_boundaries",
+      "assembly_sovereignty",
+      "transport_identity_and_provenance_independence"
+    ],
+    "no_sorry_or_admit": true,
+    "custom_axioms": [],
+    "kernel_axiom_dependencies": [],
+    "theorem_to_contract_traceability": true
+  },
+  "named_assumptions": [
+    "MODEL_SCOPE",
+    "CANONICAL_BYTES_INPUT",
+    "REAL_WORLD_PRINCIPALS"
+  ],
+  "non_claims": {
+    "deployment_security_proof": false,
+    "whole_rust_implementation_verified": false,
+    "canonicalizer_implementation_verified": false,
+    "sha256_collision_resistance_proved": false,
+    "host_or_vm_isolation_proved": false,
+    "real_world_principal_uniqueness_proved": false,
+    "moriarty_exhaustiveness_proved": false
+  },
+  "phase10_gate": "From a clean post-tag checkout, verify that immutable release v0.11.0 resolves directly to exact source commit c953463724cdf218802e66e16f582ae8d600ca47 and tree 93f23cd7eda6dd92ae13b7bb96bee01935b80731; verify the retained MORIARTY report bytes and exact source contract blobs; validate complete theorem-to-contract traceability; compile all 47 graduation theorems on the pinned Lean 4.33.1 archive; ascribe all 47 fully elaborated theorem constants against the exact TypeAudit expectations; reject sorry/admit, custom axioms, and any kernel axiom dependency in the graduation theorem set. The formal model adds assurance only and does not rewrite the frozen source release or promote deployment/security claims."
+}
