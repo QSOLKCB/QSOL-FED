@@ -58,3 +58,15 @@ theorem diagnostic_string_beq_implies_eq (a b : String) :
   exact beq_iff_eq.mp h
 
 #print axioms diagnostic_string_beq_implies_eq
+
+def diagnostic_string_beq_value (a b : String) : Bool := a == b
+#print axioms diagnostic_string_beq_value
+
+def diagnostic_string_decide_value (a b : String) : Bool := decide (a = b)
+#print axioms diagnostic_string_decide_value
+
+def diagnostic_nat_decide_value (a b : Nat) : Bool := decide (a = b)
+#print axioms diagnostic_nat_decide_value
+
+def diagnostic_bytes_decide_value (a b : List UInt8) : Bool := decide (a = b)
+#print axioms diagnostic_bytes_decide_value
