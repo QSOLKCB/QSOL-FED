@@ -146,8 +146,11 @@ theorem holodeck_transport_does_not_relabel_network_use
     (profile : TransportProfile) (receipt : HolodeckReceipt) :
     (transportHolodeckReceipt profile receipt).networkUsed = receipt.networkUsed := rfl
 
-theorem holodeck_end_program_terminal_even_when_frozen :
-    (endProgram (safeHolodeckReceipt true)).ended = true := rfl
+theorem holodeck_end_program_terminal_even_when_frozen
+    (receipt : HolodeckReceipt) :
+    receipt.frozen = true → (endProgram receipt).ended = true := by
+  intro _frozen
+  rfl
 
 /-! Adapter non-authority -/
 
@@ -185,7 +188,9 @@ theorem assembly_receipt_has_no_authority_effect (accepted : Bool) :
     (governanceReceipt accepted).authorityEffect = false := rfl
 
 theorem nexus_advisory_has_zero_vote_weight :
-    nexusAdvisory.voteWeight = 0 := rfl
+    nexusAdvisory.voteWeight = 0 ∧
+    nexusAdvisory.authorityEffect = false := by
+  exact ⟨rfl, rfl⟩
 
 /-! Transport identity and provenance independence -/
 
@@ -206,7 +211,9 @@ theorem transport_preserves_provenance
     (transport profile frame).provenanceRef = frame.provenanceRef := rfl
 
 theorem nat_route_does_not_create_trust :
-    natRouteAssessment.trust = false := rfl
+    natRouteAssessment.trust = false ∧
+    natRouteAssessment.authority = false := by
+  exact ⟨rfl, rfl⟩
 
 theorem nat_route_does_not_replace_identity :
     natRouteAssessment.identityReplacement = false := rfl
