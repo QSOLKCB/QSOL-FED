@@ -28,6 +28,7 @@
     "root_module": "QSOLFed",
     "model": "QSOLFed/Model.lean",
     "graduation_theorems": "QSOLFed/Theorems.lean",
+    "type_audit": "QSOLFed/TypeAudit.lean",
     "axiom_audit": "QSOLFed/AxiomAudit.lean",
     "manifest": "machine/lean-phase10-manifest.json",
     "manifest_schema": "schemas/lean-phase10-manifest-v1.schema.json",
@@ -86,5 +87,5 @@
     "real_world_principal_uniqueness_proved": false,
     "moriarty_exhaustiveness_proved": false
   },
-  "phase10_gate": "From a clean post-tag checkout, verify that immutable release v0.11.0 resolves directly to exact source commit c953463724cdf218802e66e16f582ae8d600ca47 and tree 93f23cd7eda6dd92ae13b7bb96bee01935b80731; verify the retained MORIARTY report bytes and exact source contract blobs; validate complete theorem-to-contract traceability; compile all 47 graduation theorems on the pinned Lean 4.33.1 archive; reject sorry/admit, custom axioms, and any kernel axiom dependency in the graduation theorem set. The formal model adds assurance only and does not rewrite the frozen source release or promote deployment/security claims."
+  "phase10_gate": "From a clean post-tag checkout, verify that immutable release v0.11.0 resolves directly to exact source commit c953463724cdf218802e66e16f582ae8d600ca47 and tree 93f23cd7eda6dd92ae13b7bb96bee01935b80731; verify the retained MORIARTY report bytes and exact source contract blobs; validate complete theorem-to-contract traceability; compile all 47 graduation theorems on the pinned Lean 4.33.1 archive; ascribe all 47 fully elaborated theorem constants against the exact TypeAudit expectations; reject sorry/admit, custom axioms, and any kernel axiom dependency in the graduation theorem set. The formal model adds assurance only and does not rewrite the frozen source release or promote deployment/security claims."
 }

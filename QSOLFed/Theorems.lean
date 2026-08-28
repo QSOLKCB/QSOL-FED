@@ -5,8 +5,12 @@ namespace QSOLFed
 /-! Prime Directive admission -/
 
 theorem prime_directive_accepts_data_only (input : RemoteInput) :
-    primeDirective input = .acceptAsData → input = .dataOffer := by
-  cases input <;> intro h <;> cases h <;> rfl
+    primeDirective .dataOffer = .acceptAsData ∧
+    (primeDirective input = .acceptAsData → input = .dataOffer) := by
+  constructor
+  · rfl
+  · intro h
+    cases input <;> cases h <;> rfl
 
 theorem prime_directive_quarantines_foreign_state :
     primeDirective .foreignState = .quarantine := rfl
@@ -41,9 +45,10 @@ theorem signature_validity_does_not_create_trust (valid : Bool) :
 theorem signature_validity_does_not_create_authority (valid : Bool) :
     authorityFromSignature valid = false := rfl
 
-theorem valid_signature_does_not_bypass_local_rejection :
-    (signedAdmission true .reject).localAdmission = .reject ∧
-    (signedAdmission true .reject).localAuthorityGranted = false := by
+theorem valid_signature_does_not_bypass_local_rejection
+    (signatureValid : Bool) (localAdmission : Admission) :
+    (signedAdmission signatureValid localAdmission).localAdmission = localAdmission ∧
+    (signedAdmission signatureValid localAdmission).localAuthorityGranted = false := by
   exact ⟨rfl, rfl⟩
 
 /-! Peering / capability separation -/
@@ -88,8 +93,11 @@ theorem import_preserves_foreign_identity
     (importBundle state bundle).importedBundle.attributions = bundle.attributions := by
   exact ⟨rfl, rfl⟩
 
-theorem import_does_not_create_local_authority (id : ForeignIdentity) :
-    (importForeign id).localAuthority = false := rfl
+theorem import_does_not_create_local_authority
+    (id : ForeignIdentity) (state : SovereignState) (bundle : PortableBundle) :
+    (importForeign id).localAuthority = false ∧
+    (importBundle state bundle).authorityEffect = false := by
+  exact ⟨rfl, rfl⟩
 
 theorem import_does_not_change_trust (id : ForeignIdentity) :
     (importForeign id).trustChanged = false := rfl

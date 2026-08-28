@@ -6,7 +6,7 @@ QSOL-FED is a security-sensitive federation boundary. Protocol convenience never
 
 ### Read first
 
-Read `README4AI.md`, `CHARTER.md`, `PRIME_DIRECTIVE.md`, all historical/current `claims/*.json`, `invariants/fed-v1.json`, `wire/phase1.json`, `crypto/phase2.json`, `api/phase3.json`, `state/phase4.json`, `state/phase5a-holodeck.json`, `state/phase5.json`, `state/phase5c.json`, `state/phase6.json`, `state/phase7.json`, `state/phase8.json`, `state/phase9.json`, `state/phase10.json`, `claims/phase10.json`, `machine/lean-phase10-manifest.json`, `schemas/lean-phase10-manifest-v1.schema.json`, `FORMALIZATION.md`, `QSOLFed/Model.lean`, `QSOLFed/Theorems.lean`, `QSOLFed/AxiomAudit.lean`, `tools/validate_phase10_gate.py`, `CANONICAL_JSON.md`, `CRYPTOGRAPHY.md`, `API.md`, `TLS_PROFILE.md`, `FEDERATION_STATE.md`, `HOLODECK.md`, `QSOL_ADAPTERS.md`, `SDK.md`, `docs/THIRD_PARTY_INTEGRATION.md`, `ASSEMBLY.md`, `TRANSPORTS.md`, `MORIARTY.md`, `fixtures/phase9/attack-corpus.json`, `fixtures/phase9/accepted-counterexamples.json`, `src/invariants.rs`, `src/claims.rs`, `src/store.rs`, `src/peering.rs`, `src/bundle.rs`, `src/holodeck.rs`, `src/qsol_adapters.rs`, `src/oracle_live.rs`, `src/sdk.rs`, `src/assembly.rs`, `src/transport.rs`, `tools/run_moriarty.py`, `tools/validate_phase9_gate.py`, and `THREAT_MODEL.md` before changing security, state, simulation, adapter, SDK, governance, transport, archive, relay, NAT, resilience, adversarial-graduation, or assurance semantics.
+Read `README4AI.md`, `CHARTER.md`, `PRIME_DIRECTIVE.md`, all historical/current `claims/*.json`, `invariants/fed-v1.json`, `wire/phase1.json`, `crypto/phase2.json`, `api/phase3.json`, `state/phase4.json`, `state/phase5a-holodeck.json`, `state/phase5.json`, `state/phase5c.json`, `state/phase6.json`, `state/phase7.json`, `state/phase8.json`, `state/phase9.json`, `state/phase10.json`, `claims/phase10.json`, `machine/lean-phase10-manifest.json`, `schemas/lean-phase10-manifest-v1.schema.json`, `FORMALIZATION.md`, `QSOLFed/Model.lean`, `QSOLFed/Theorems.lean`, `QSOLFed/TypeAudit.lean`, `QSOLFed/AxiomAudit.lean`, `tools/validate_phase10_gate.py`, `CANONICAL_JSON.md`, `CRYPTOGRAPHY.md`, `API.md`, `TLS_PROFILE.md`, `FEDERATION_STATE.md`, `HOLODECK.md`, `QSOL_ADAPTERS.md`, `SDK.md`, `docs/THIRD_PARTY_INTEGRATION.md`, `ASSEMBLY.md`, `TRANSPORTS.md`, `MORIARTY.md`, `fixtures/phase9/attack-corpus.json`, `fixtures/phase9/accepted-counterexamples.json`, `src/invariants.rs`, `src/claims.rs`, `src/store.rs`, `src/peering.rs`, `src/bundle.rs`, `src/holodeck.rs`, `src/qsol_adapters.rs`, `src/oracle_live.rs`, `src/sdk.rs`, `src/assembly.rs`, `src/transport.rs`, `tools/run_moriarty.py`, `tools/validate_phase9_gate.py`, and `THREAT_MODEL.md` before changing security, state, simulation, adapter, SDK, governance, transport, archive, relay, NAT, resilience, adversarial-graduation, or assurance semantics.
 
 ### Core constitutional rules
 
@@ -151,7 +151,7 @@ FORMAL MODEL != UNSTATED REAL-WORLD ASSUMPTION
 TARGET_BOUND SOURCE RELEASE != POST-TAG FORMALIZATION LAYER
 ```
 
-Run `python3 tools/validate_phase10_gate.py`, `lake build`, and `lake env lean QSOLFed/AxiomAudit.lean` after formalization/manifest/contract/claim/documentation changes.
+Run `python3 tools/validate_phase10_gate.py`, `lake build`, `lake env lean QSOLFed/TypeAudit.lean`, and `lake env lean QSOLFed/AxiomAudit.lean` after formalization/manifest/contract/claim/documentation changes.
 
 ### Claim discipline
 
@@ -184,6 +184,7 @@ python3 tools/validate_phase8_gate.py
 python3 tools/validate_phase9_gate.py --target-commit "$(git rev-parse HEAD)"
 python3 tools/validate_phase10_gate.py
 lake build
+lake env lean QSOLFed/TypeAudit.lean
 lake env lean QSOLFed/AxiomAudit.lean
 ```
 

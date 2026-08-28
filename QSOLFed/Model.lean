@@ -140,12 +140,14 @@ structure PortableBundle where
 structure BundleImportResult where
   localState : SovereignState
   importedBundle : PortableBundle
+  authorityEffect : Bool
   deriving DecidableEq, Repr
 
 /-- Bundle import preserves the complete bundle, including every independent provenance
-attribution, while leaving the member's pre-existing local sovereign state unchanged. -/
+attribution, leaves the member's pre-existing local sovereign state unchanged, and creates
+no local authority. -/
 def importBundle (state : SovereignState) (bundle : PortableBundle) : BundleImportResult :=
-  { localState := state, importedBundle := bundle }
+  { localState := state, importedBundle := bundle, authorityEffect := false }
 
 /-- Partition rejoin never rewrites local sovereign state. A same-snapshot rejoin clears
 reconciliation only after explicit local confirmation; changed or unconfirmed snapshots

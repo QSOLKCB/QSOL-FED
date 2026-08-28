@@ -38,7 +38,7 @@ The graduation set contains 47 named Lean theorems covering the 13 initial Phase
 12. Assembly sovereignty.
 13. Transport identity and provenance independence.
 
-The abstract model is in `QSOLFed/Model.lean`; graduation theorems are in `QSOLFed/Theorems.lean`. `machine/lean-phase10-manifest.json` maps every graduation theorem to frozen source contracts and boundary IDs.
+The abstract model is in `QSOLFed/Model.lean`; graduation theorems are in `QSOLFed/Theorems.lean`; `QSOLFed/TypeAudit.lean` ascribes the fully elaborated environment type of every graduation theorem to its exact expected proposition; and `QSOLFed/AxiomAudit.lean` audits kernel axiom dependencies. `machine/lean-phase10-manifest.json` maps every graduation theorem to frozen source contracts and boundary IDs.
 
 ## What is not formalized
 
@@ -104,6 +104,7 @@ CI downloads the archive directly, verifies the checksum, then builds the Lake p
 - the retained MORIARTY report matches its recorded SHA-256 and exact source identity.
 - every theorem declaration in the manifest exists in `QSOLFed/Theorems.lean`.
 - every theorem has source-contract and boundary traceability.
+- `QSOLFed/TypeAudit.lean` ascribes all 47 fully elaborated theorem constants to their exact expected types, exposing any hidden or implicit parameters.
 - no `sorry` or `admit` occurs in the Lean source.
 - no custom `axiom` declaration occurs in the Lean source.
 - all 47 graduation theorems compile.
@@ -118,6 +119,7 @@ With Lean 4.33.1 available on `PATH`:
 ```bash
 python3 tools/validate_phase10_gate.py
 lake build
+lake env lean QSOLFed/TypeAudit.lean
 lake env lean QSOLFed/AxiomAudit.lean
 ```
 

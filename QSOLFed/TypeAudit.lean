@@ -11,7 +11,9 @@ not visible in the theorem's local declaration text.
 -/
 
 #check (@prime_directive_accepts_data_only :
-  (input : RemoteInput) → primeDirective input = .acceptAsData → input = .dataOffer)
+  (input : RemoteInput) →
+  primeDirective .dataOffer = .acceptAsData ∧
+  (primeDirective input = .acceptAsData → input = .dataOffer))
 
 #check (@prime_directive_quarantines_foreign_state :
   primeDirective .foreignState = .quarantine)
@@ -44,8 +46,9 @@ not visible in the theorem's local declaration text.
   (valid : Bool) → authorityFromSignature valid = false)
 
 #check (@valid_signature_does_not_bypass_local_rejection :
-  (signedAdmission true .reject).localAdmission = .reject ∧
-  (signedAdmission true .reject).localAuthorityGranted = false)
+  (signatureValid : Bool) → (localAdmission : Admission) →
+  (signedAdmission signatureValid localAdmission).localAdmission = localAdmission ∧
+  (signedAdmission signatureValid localAdmission).localAuthorityGranted = false)
 
 #check (@peering_does_not_create_trust :
   (peered : Bool) → (peerFromPeering peered).trusted = false)
@@ -83,7 +86,9 @@ not visible in the theorem's local declaration text.
   (importBundle state bundle).importedBundle.attributions = bundle.attributions)
 
 #check (@import_does_not_create_local_authority :
-  (id : ForeignIdentity) → (importForeign id).localAuthority = false)
+  (id : ForeignIdentity) → (state : SovereignState) → (bundle : PortableBundle) →
+  (importForeign id).localAuthority = false ∧
+  (importBundle state bundle).authorityEffect = false)
 
 #check (@import_does_not_change_trust :
   (id : ForeignIdentity) → (importForeign id).trustChanged = false)
