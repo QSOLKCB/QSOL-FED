@@ -71,7 +71,9 @@ theorem capability_requires_explicit_local_allow
       currentTimeSeconds := currentTime
       explicitLocalAllow := false
     } = false := by
-  simp [capabilityAllowed]
+  unfold capabilityAllowed
+  cases peer <;> cases advertisement <;>
+    cases h : capabilityAdvertisementActive issuedAt currentTime <;> rfl
 
 theorem capability_requires_peer_admission
     (advertisement localAllow : Bool) (issuedAt currentTime : Nat) :
