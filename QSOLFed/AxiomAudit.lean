@@ -47,3 +47,8 @@ import QSOLFed.Theorems
 #print axioms QSOLFed.nat_route_does_not_replace_identity
 #print axioms QSOLFed.relay_does_not_create_authority
 #print axioms QSOLFed.relay_does_not_create_trust
+
+-- Temporary diagnostic surface; remove before final exact-head evidence.
+#print axioms String.decEq
+#print axioms QSOLFed.routeLocallyAdmitted
+#print axioms QSOLFed.admitTransport
