@@ -21,8 +21,8 @@ PREIMPORT_BLOBS = {
     "README4AI.md": "e44ccc1e280a6ed69482ff661a0879edd57e02c8",
     "FORMALIZATION.md": "2c5418755af2124f7547b08fd85539d558bd0139",
     "QSOLFed/Model.lean": "809918669c6fd41b2d72cd58ba4c00680eb62471",
-    "QSOLFed/Theorems.lean": "f7ba45079d6b01fed2fdafe91e064f24c94b84fd",
-    "QSOLFed/TypeAudit.lean": "9f5993ea7e8f9799df26b0c55d3fdb6dbb340c8c",
+    "QSOLFed/Theorems.lean": "154874249ab15d4d69c9c28840e1ad487d398b62",
+    "QSOLFed/TypeAudit.lean": "56ca469c0bec3e8cfafcd62eaa0523f3040d6591",
 }
 
 EXPECTED_CLAIM_RULE = 'Phase 10 adds a post-tag Lean 4 formal model of selected v0.11.0 constitutional and protocol separation invariants. The Phase 8 capability map remains the runtime/protocol capability surface, Phase 9 remains the adversarial-assurance baseline, and Lean adds formalization assurance only. A compiled theorem proves its stated abstract model proposition under named assumptions; it is not a deployment security proof, whole-Rust verification, proof of SHA-256 collision resistance, or proof of unstated real-world assumptions.'
@@ -93,7 +93,7 @@ round9.EXPECTED_THEOREM_TYPE_SHA256.update({
     "unchanged_partition_snapshot_needs_no_reconciliation": "46c929b18e9af25d88aad75db1dfd5b27aa0a68d1fb9c3d6baf146d6befd4c1a",
     "holodeck_transport_does_not_relabel_network_use": "35559f0ad94dea763a58444412f66ab246a1cb0f391b67f980c756d1b5e64698",
     "adapter_output_has_no_authority": "ce1cc5f6082375c4db24533a6309ffe9c5c6cd72bdad1cc95294bb82674deb82",
-    "transport_preserves_authenticated_identity": "7c295b2039570fe5bdeda3a79b6637f3a4d8377fb3adcc5e86bd629e379ae57a",
+    "transport_preserves_authenticated_identity": "0dc323d439041369569dea51495ec26bb150425516d4d9e739ecb29c09b82607",
     "nat_route_does_not_create_trust": "907cb09baa56dca84f018f8e88c04d6163efe535ec225b36b1010fe1bec1a2c9",
     "nat_route_does_not_replace_identity": "2ac27a4039d888a1f37626f942b1b255d6ff1eebccc3eff7f3f81de85cfb6f72",
 })

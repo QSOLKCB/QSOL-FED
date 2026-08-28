@@ -307,25 +307,45 @@ theorem nexus_advisory_has_zero_vote_weight :
 
 /-! Transport identity and provenance independence -/
 
-/-- Every accepted transport is the conjunction of the six independently recorded Phase 8
-checks. Both sender binding and recipient routing are discharged by constructive equality
-branches; no proposition-rewriting tactic is needed by the graduation proof. -/
+/-- Accepted transport implies every independently recorded Phase 8 admission check passed.
+A recorded sender match also implies exact equality with the independently verified sender,
+and admission preserves the already-bound frame. -/
 theorem transport_preserves_authenticated_identity
     (context : TransportAdmissionContext) (frame : TransportFrame) :
-    (admitTransport context frame).signatureValid = context.signatureValid ∧
-    (admitTransport context frame).identityCurrent = context.identityCurrent ∧
-    (admitTransport context frame).localPeerAdmitted = context.localPeerAdmitted ∧
-    (admitTransport context frame).replayFresh = context.replayFresh ∧
-    (admitTransport context frame).accepted =
-      ((admitTransport context frame).signatureValid &&
-       (admitTransport context frame).identityCurrent &&
-       (admitTransport context frame).localPeerAdmitted &&
-       (admitTransport context frame).senderMatchesVerified &&
-       (admitTransport context frame).routeAdmitted &&
-       (admitTransport context frame).replayFresh) ∧
+    ((admitTransport context frame).accepted = true →
+      (admitTransport context frame).signatureValid = true ∧
+      (admitTransport context frame).identityCurrent = true ∧
+      (admitTransport context frame).localPeerAdmitted = true ∧
+      (admitTransport context frame).senderMatchesVerified = true ∧
+      (admitTransport context frame).routeAdmitted = true ∧
+      (admitTransport context frame).replayFresh = true) ∧
+    ((admitTransport context frame).senderMatchesVerified = true →
+      frame.sender = context.verifiedSenderNodeId) ∧
     (admitTransport context frame).frame = frame := by
-  unfold admitTransport routeLocallyAdmitted
-  split <;> split <;> exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+  constructor
+  · intro accepted
+    unfold admitTransport at accepted ⊢
+    split
+    · cases hroute : routeLocallyAdmitted frame context <;>
+      cases context.signatureValid <;>
+      cases context.identityCurrent <;>
+      cases context.localPeerAdmitted <;>
+      cases context.replayFresh <;>
+      cases accepted <;>
+      exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+    · cases context.signatureValid <;>
+      cases context.identityCurrent <;>
+      cases context.localPeerAdmitted <;>
+      cases context.replayFresh <;>
+      cases accepted
+  · constructor
+    · intro matched
+      unfold admitTransport at matched
+      split
+      · next senderMatches => exact senderMatches
+      · cases matched
+    · unfold admitTransport
+      split <;> rfl
 
 theorem transport_preserves_message_identity
     (profile : TransportProfile) (frame : TransportFrame) :
