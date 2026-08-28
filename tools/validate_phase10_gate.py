@@ -20,8 +20,8 @@ PREIMPORT_BLOBS = {
     "claims/phase10.json": "7e72230c93fc5ca27500fc41ed3f4523e734d52a",
     "README4AI.md": "e44ccc1e280a6ed69482ff661a0879edd57e02c8",
     "FORMALIZATION.md": "2c5418755af2124f7547b08fd85539d558bd0139",
-    "QSOLFed/Model.lean": "7f71be6d88f6dfdf865c8214d77fed4990a16a85",
-    "QSOLFed/Theorems.lean": "850825c670428323235da86828a4295414c4d05d",
+    "QSOLFed/Model.lean": "6f28eb179f2fe84e10899e138c391132748d7587",
+    "QSOLFed/Theorems.lean": "5d9bbceb06afcd973b01866c30d4b84ea50681fa",
     "QSOLFed/TypeAudit.lean": "56ca469c0bec3e8cfafcd62eaa0523f3040d6591",
 }
 

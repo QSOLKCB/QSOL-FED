@@ -328,8 +328,15 @@ theorem transport_preserves_authenticated_identity
     exact ⟨rfl, rfl⟩
   constructor
   · intro accepted
-    cases hsender : String.decEq frame.sender context.verifiedSenderNodeId with
-    | isTrue senderEq =>
+    cases hsender : (frame.sender == context.verifiedSenderNodeId) with
+    | false =>
+        unfold admitTransport at accepted
+        rw [hsender] at accepted
+        have h1 := andTrue _ _ accepted
+        have h2 := andTrue _ _ h1.1
+        have h3 := andTrue _ _ h2.1
+        exact False.elim (Bool.false_ne_true h3.2)
+    | true =>
         unfold admitTransport at accepted
         rw [hsender] at accepted
         have h1 := andTrue _ _ accepted
@@ -346,27 +353,21 @@ theorem transport_preserves_authenticated_identity
           routeLocallyAdmitted frame context = true ∧
           context.replayFresh = true
         exact ⟨h5.1, h5.2, h4.2, rfl, h2.2, h1.2⟩
-    | isFalse senderNe =>
-        unfold admitTransport at accepted
-        rw [hsender] at accepted
-        have h1 := andTrue _ _ accepted
-        have h2 := andTrue _ _ h1.1
-        have h3 := andTrue _ _ h2.1
-        exact False.elim (Bool.false_ne_true h3.2)
   · constructor
     · intro matched
-      cases hsender : String.decEq frame.sender context.verifiedSenderNodeId with
-      | isTrue senderEq => exact senderEq
-      | isFalse senderNe =>
+      cases hsender : (frame.sender == context.verifiedSenderNodeId) with
+      | false =>
           unfold admitTransport at matched
           rw [hsender] at matched
           exact False.elim (Bool.false_ne_true matched)
-    · cases hsender : String.decEq frame.sender context.verifiedSenderNodeId with
-      | isTrue senderEq =>
+      | true =>
+          exact beq_iff_eq.mp hsender
+    · cases hsender : (frame.sender == context.verifiedSenderNodeId) with
+      | false =>
           unfold admitTransport
           rw [hsender]
           rfl
-      | isFalse senderNe =>
+      | true =>
           unfold admitTransport
           rw [hsender]
           rfl

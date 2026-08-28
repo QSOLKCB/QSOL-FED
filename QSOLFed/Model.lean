@@ -344,9 +344,9 @@ def forwardingProfile : TransportProfile → Bool
 
 def routeLocallyAdmitted
     (frame : TransportFrame) (context : TransportAdmissionContext) : Bool :=
-  match String.decEq frame.recipient context.localNodeId with
-  | isTrue _ => true
-  | isFalse _ => forwardingProfile frame.profile && context.relayAdmitted
+  match frame.recipient == context.localNodeId with
+  | true => true
+  | false => forwardingProfile frame.profile && context.relayAdmitted
 
 structure TransportAdmissionResult where
   signatureValid : Bool
@@ -364,8 +364,8 @@ and route admission are derived inside this operation from the independently ver
 sender, local node, profile and explicit relay admission, never supplied by the caller. -/
 def admitTransport
     (context : TransportAdmissionContext) (frame : TransportFrame) : TransportAdmissionResult :=
-  match String.decEq frame.sender context.verifiedSenderNodeId with
-  | isTrue _ =>
+  match frame.sender == context.verifiedSenderNodeId with
+  | true =>
       let routeAdmitted := routeLocallyAdmitted frame context
       { signatureValid := context.signatureValid
         identityCurrent := context.identityCurrent
@@ -380,7 +380,7 @@ def admitTransport
           routeAdmitted &&
           context.replayFresh
         frame := transport frame.profile frame }
-  | isFalse _ =>
+  | false =>
       let routeAdmitted := routeLocallyAdmitted frame context
       { signatureValid := context.signatureValid
         identityCurrent := context.identityCurrent
