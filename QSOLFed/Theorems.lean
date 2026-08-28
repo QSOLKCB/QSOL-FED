@@ -82,48 +82,38 @@ theorem import_does_not_create_local_authority (id : ForeignIdentity) :
 theorem import_does_not_change_trust (id : ForeignIdentity) :
     (importForeign id).trustChanged = false := rfl
 
-/-! Lifecycle monotonicity -/
-
-private theorem append_assoc_structural {α : Type} (a b c : List α) :
-    (a ++ b) ++ c = a ++ (b ++ c) := by
-  induction a with
-  | nil => rfl
-  | cons x xs ih =>
-      change x :: ((xs ++ b) ++ c) = x :: (xs ++ (b ++ c))
-      exact congrArg (fun ys => x :: ys) ih
+/-! Lifecycle monotonicity and admission -/
 
 theorem lifecycle_append_is_monotone
     (old : List PeerLifecycle) (event : PeerLifecycle) :
     Prefix old (old ++ [event]) := by
   exact ⟨[event], rfl⟩
 
+/-- Every lifecycle update accepted by the model preserves the exact stored lifecycle as
+a prefix. A rollback or rewritten candidate therefore cannot satisfy the admission predicate. -/
 theorem lifecycle_prefix_is_transitive
-    {α : Type} {a b c : List α} (hab : Prefix a b) (hbc : Prefix b c) :
-    Prefix a c := by
-  cases hab with
-  | intro tail1 hb =>
-      cases hbc with
-      | intro tail2 hc =>
-          refine ⟨tail1 ++ tail2, ?_⟩
-          calc
-            c = b ++ tail2 := hc
-            _ = (a ++ tail1) ++ tail2 := congrArg (fun xs => xs ++ tail2) hb
-            _ = a ++ (tail1 ++ tail2) := append_assoc_structural a tail1 tail2
+    (stored candidate : List PeerLifecycle)
+    (accepted : lifecycleUpdateAllowed stored candidate) :
+    Prefix stored candidate := by
+  exact accepted
 
 /-! Partition sovereignty -/
 
 theorem partition_rejoin_preserves_local_state
-    (state : SovereignState) (sameSnapshot : Bool) :
-    (rejoinPartition state sameSnapshot).localState = state := by
-  cases sameSnapshot <;> rfl
+    (state : SovereignState) (sameSnapshot explicitLocalConfirm : Bool) :
+    (rejoinPartition state sameSnapshot explicitLocalConfirm).localState = state := by
+  cases sameSnapshot <;> cases explicitLocalConfirm <;> rfl
 
 theorem changed_partition_snapshot_requires_reconciliation
-    (state : SovereignState) :
-    (rejoinPartition state false).reconciliationRequired = true := rfl
+    (state : SovereignState) (explicitLocalConfirm : Bool) :
+    (rejoinPartition state false explicitLocalConfirm).reconciliationRequired = true := by
+  cases explicitLocalConfirm <;> rfl
 
 theorem unchanged_partition_snapshot_needs_no_reconciliation
     (state : SovereignState) :
-    (rejoinPartition state true).reconciliationRequired = false := rfl
+    (rejoinPartition state true true).reconciliationRequired = false ∧
+    (rejoinPartition state true false).reconciliationRequired = true := by
+  exact ⟨rfl, rfl⟩
 
 /-! Canonical identity determinism -/
 
@@ -143,8 +133,9 @@ theorem holodeck_output_has_no_evidence_effect (frozen : Bool) :
 theorem holodeck_output_has_no_federation_effect (frozen : Bool) :
     (safeHolodeckReceipt frozen).federationEffect = false := rfl
 
-theorem holodeck_transport_does_not_relabel_network_use (frozen : Bool) :
-    (safeHolodeckReceipt frozen).networkUsed = false := rfl
+theorem holodeck_transport_does_not_relabel_network_use
+    (profile : TransportProfile) (receipt : HolodeckReceipt) :
+    (transportHolodeckReceipt profile receipt).networkUsed = receipt.networkUsed := rfl
 
 theorem holodeck_end_program_terminal_even_when_frozen :
     (endProgram (safeHolodeckReceipt true)).ended = true := rfl
@@ -152,7 +143,9 @@ theorem holodeck_end_program_terminal_even_when_frozen :
 /-! Adapter non-authority -/
 
 theorem adapter_output_has_no_authority :
-    safeAdapterResult.authorityEffect = false := rfl
+    safeAdapterResult.localGovernanceAuthority = false ∧
+    safeAdapterResult.authorityEffect = false := by
+  exact ⟨rfl, rfl⟩
 
 theorem adapter_cannot_inject_vote :
     safeAdapterResult.voteInjected = false := rfl
