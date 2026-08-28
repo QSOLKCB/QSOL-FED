@@ -327,42 +327,33 @@ theorem transport_preserves_authenticated_identity
     by_cases hsender : frame.sender = context.verifiedSenderNodeId
     · unfold admitTransport at accepted
       rw [if_pos hsender] at accepted
-      cases hroute : routeLocallyAdmitted frame context
-      · cases hsig : context.signatureValid
-        · cases accepted
-        · cases hid : context.identityCurrent
-          · cases accepted
-          · cases hpeer : context.localPeerAdmitted
-            · cases accepted
-            · cases accepted
-      · cases hsig : context.signatureValid
-        · cases accepted
-        · cases hid : context.identityCurrent
-          · cases accepted
-          · cases hpeer : context.localPeerAdmitted
-            · cases accepted
-            · cases hreplay : context.replayFresh
-              · cases accepted
-              · unfold admitTransport
-                rw [if_pos hsender]
-                rw [hroute, hsig, hid, hpeer, hreplay]
-                exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+      have h1 := Bool.and_eq_true_iff.mp accepted
+      have h2 := Bool.and_eq_true_iff.mp h1.1
+      have h3 := Bool.and_eq_true_iff.mp h2.1
+      have h4 := Bool.and_eq_true_iff.mp h3.1
+      have h5 := Bool.and_eq_true_iff.mp h4.1
+      unfold admitTransport
+      rw [if_pos hsender]
+      change context.signatureValid = true ∧
+        context.identityCurrent = true ∧
+        context.localPeerAdmitted = true ∧
+        true = true ∧
+        routeLocallyAdmitted frame context = true ∧
+        context.replayFresh = true
+      exact ⟨h5.1, h5.2, h4.2, rfl, h2.2, h1.2⟩
     · unfold admitTransport at accepted
       rw [if_neg hsender] at accepted
-      cases hsig : context.signatureValid
-      · cases accepted
-      · cases hid : context.identityCurrent
-        · cases accepted
-        · cases hpeer : context.localPeerAdmitted
-          · cases accepted
-          · cases accepted
+      have h1 := Bool.and_eq_true_iff.mp accepted
+      have h2 := Bool.and_eq_true_iff.mp h1.1
+      have h3 := Bool.and_eq_true_iff.mp h2.1
+      exact False.elim (Bool.false_ne_true h3.2)
   · constructor
     · intro matched
       by_cases hsender : frame.sender = context.verifiedSenderNodeId
       · exact hsender
       · unfold admitTransport at matched
         rw [if_neg hsender] at matched
-        cases matched
+        exact False.elim (Bool.false_ne_true matched)
     · by_cases hsender : frame.sender = context.verifiedSenderNodeId
       · unfold admitTransport
         rw [if_pos hsender]
