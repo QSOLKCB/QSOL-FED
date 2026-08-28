@@ -525,6 +525,7 @@
       "path": "QSOLFed/Theorems.lean",
       "source_refs": [
         "state/phase5a-holodeck.json",
+        "state/phase8.json",
         "invariants/fed-v1.json"
       ],
       "contract_ids": [

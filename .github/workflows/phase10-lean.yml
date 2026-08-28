@@ -145,12 +145,12 @@ jobs:
           found = []
           for path in sources:
               code = lean_code_only(path.read_text())
-              for match in re.finditer(r'\baxiom\b', code):
+              for match in re.finditer(r'\b(?:axiom|constant)\b', code):
                   line = code.count('\n', 0, match.start()) + 1
                   found.append(f'{path}:{line}')
 
           if found:
-              raise SystemExit('custom axiom declaration/token found in Phase 10 source: ' + ', '.join(found))
+              raise SystemExit('custom axiom/constant declaration token found in Phase 10 source: ' + ', '.join(found))
           PY
 
       - name: Revalidate after Lean build

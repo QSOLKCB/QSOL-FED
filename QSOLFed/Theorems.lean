@@ -97,12 +97,16 @@ theorem lifecycle_prefix_is_transitive
     Prefix stored candidate := by
   exact accepted
 
-/-! Partition sovereignty -/
+/-! Partition sovereignty and bundle-import preservation -/
 
+/-- Rejoin and bundle import are separate operations, but neither may overwrite the
+member's existing local sovereign state. -/
 theorem partition_rejoin_preserves_local_state
-    (state : SovereignState) (sameSnapshot explicitLocalConfirm : Bool) :
-    (rejoinPartition state sameSnapshot explicitLocalConfirm).localState = state := by
-  cases sameSnapshot <;> cases explicitLocalConfirm <;> rfl
+    (state : SovereignState) (sameSnapshot explicitLocalConfirm : Bool)
+    (bundle : PortableBundle) :
+    (rejoinPartition state sameSnapshot explicitLocalConfirm).localState = state ∧
+    (importBundle state bundle).localState = state := by
+  cases sameSnapshot <;> cases explicitLocalConfirm <;> exact ⟨rfl, rfl⟩
 
 theorem changed_partition_snapshot_requires_reconciliation
     (state : SovereignState) (explicitLocalConfirm : Bool) :

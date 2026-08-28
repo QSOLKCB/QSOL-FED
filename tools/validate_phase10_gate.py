@@ -42,7 +42,7 @@ EXPECTED_FROZEN_INPUTS = {
     "schemas/moriarty-report-v1.schema.json": "2c1992a796c48265309770653923effdb65b4f79",
 }
 PLACEHOLDER_RE = re.compile(r"\b(?:sorry|admit)\b")
-AXIOM_TOKEN_RE = re.compile(r"\baxiom\b")
+AXIOM_DECL_TOKEN_RE = re.compile(r"\b(?:axiom|constant)\b")
 DECL_RE_TEMPLATE = r"\btheorem\s+{name}\b"
 AXIOM_PRINT_RE = re.compile(r"(?m)^[ \t]*#print[ \t]+axioms[ \t]+QSOLFed\.([a-z][a-z0-9_]*)[ \t]*$")
 
@@ -81,7 +81,7 @@ SOURCE_BOUND_CONTRACT_REGISTRY = {
     "simulation_output_authority=none": ("state/phase5a-holodeck.json", "/sandbox/simulation_output_authority", "equals", "none"),
     "simulation_output_evidence_effect=none": ("state/phase5a-holodeck.json", "/sandbox/simulation_output_evidence_effect", "equals", "none"),
     "simulation_output_federation_effect=none": ("state/phase5a-holodeck.json", "/sandbox/simulation_output_federation_effect", "equals", "none"),
-    "transport_does_not_enter_holodeck_sandbox": ("state/phase5a-holodeck.json", "/sandbox/network_client_exposed", "equals", False),
+    "transport_does_not_enter_holodeck_sandbox": ("state/phase8.json", "/holodeck_transport_independence/transport_outside_sandbox_may_relabel_sandbox_network_use", "equals", False),
     "computer_end_program_terminal": ("state/phase5a-holodeck.json", "/computer_safeguards/end_program_available_while_frozen", "equals", True),
     "adapter_data_is_not_local_authority": ("state/phase5.json", "/prime_directive/adapter_may_create_local_governance_authority", "equals", False),
     "vote_injection=false": ("state/phase5.json", "/nexus/vote_injection", "equals", False),
@@ -422,7 +422,8 @@ def verify_theorems(manifest: dict, frozen_inputs: set[str]) -> None:
         path = theorem["path"]
         require(path == "QSOLFed/Theorems.lean", f"unexpected theorem path for {declaration}")
         if path not in file_cache:
-            file_cache[path] = (ROOT / path).read_text(encoding="utf-8")
+            source_path = ROOT / path
+            file_cache[path] = _lean_code_only(source_path.read_text(encoding="utf-8"), source_path)
         source = file_cache[path]
         require(re.search(DECL_RE_TEMPLATE.format(name=re.escape(declaration)), source) is not None, f"manifest declaration missing from Lean source: {declaration}")
         refs = theorem["source_refs"]
@@ -517,10 +518,10 @@ def verify_no_custom_axioms() -> None:
     found: list[str] = []
     for path in lean_files:
         code = _lean_code_only(path.read_text(encoding="utf-8"), path)
-        for match in AXIOM_TOKEN_RE.finditer(code):
+        for match in AXIOM_DECL_TOKEN_RE.finditer(code):
             line = code.count("\n", 0, match.start()) + 1
             found.append(f"{path.relative_to(ROOT)}:{line}")
-    require(not found, "custom axiom declaration/token found in Phase 10 source: " + ", ".join(found))
+    require(not found, "custom axiom/constant declaration token found in Phase 10 source: " + ", ".join(found))
 
 
 def verify_manifest_policy(manifest: dict) -> None:
@@ -589,6 +590,7 @@ def verify_phase10_contracts(manifest: dict, schema: dict) -> None:
     require(evidence.get("retained_report") == str(REPORT_PATH.relative_to(ROOT)) and evidence.get("retained_report_sha256") == "sha256:" + REPORT_SHA256, "Phase 10 state MORIARTY report binding drift")
 
     require(claims.get("document_type") == "qsol-fed-phase10-lean-claims" and claims.get("phase") == "10", "Phase 10 claim identity drift")
+    require(claims.get("runtime_override_allowed") is False, "Phase 10 runtime constitutional override must remain forbidden")
     require(claims.get("claim_surface_changed") is False, "Phase 10 must not change runtime capability claims")
     frozen_capabilities = frozen_phase9_claims.get("capabilities")
     require(isinstance(frozen_capabilities, dict), "frozen Phase 9 capability baseline missing")

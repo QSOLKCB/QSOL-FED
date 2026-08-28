@@ -126,6 +126,20 @@ structure RejoinResult where
   reconciliationRequired : Bool
   deriving DecidableEq, Repr
 
+structure PortableBundle where
+  bundleId : String
+  deriving DecidableEq, Repr
+
+structure BundleImportResult where
+  localState : SovereignState
+  importedBundle : PortableBundle
+  deriving DecidableEq, Repr
+
+/-- Bundle import may add foreign material but cannot overwrite the member's pre-existing
+local sovereign state in the formal model. -/
+def importBundle (state : SovereignState) (bundle : PortableBundle) : BundleImportResult :=
+  { localState := state, importedBundle := bundle }
+
 /-- Partition rejoin never rewrites local sovereign state. A same-snapshot rejoin clears
 reconciliation only after explicit local confirmation; changed or unconfirmed snapshots
 remain on the reconciliation path. -/
