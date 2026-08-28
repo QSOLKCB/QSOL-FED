@@ -563,7 +563,7 @@ def verify_frozen_roadmap_contract() -> None:
         "No unresolved `sorry`/`admit` is permitted in the graduation theorem set",
         "assumptions must be named and theorem-to-contract traceability complete",
         "LEAN THEOREM != DEPLOYMENT SECURITY PROOF",
-        "FORMAL MODEL != UNSTATED REAL-WORLD_ASSUMPTION",
+        "FORMAL MODEL != UNSTATED REAL-WORLD ASSUMPTION",
     ]
     for text in required:
         require(text in roadmap, f"frozen Phase 10 ROADMAP contract missing: {text}")
