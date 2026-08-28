@@ -322,16 +322,20 @@ theorem transport_preserves_authenticated_identity
     ((admitTransport context frame).senderMatchesVerified = true →
       frame.sender = context.verifiedSenderNodeId) ∧
     (admitTransport context frame).frame = frame := by
+  have andTrue : ∀ x y : Bool, x && y = true → x = true ∧ y = true := by
+    intro x y h
+    cases x <;> cases y <;> cases h
+    exact ⟨rfl, rfl⟩
   constructor
   · intro accepted
     by_cases hsender : frame.sender = context.verifiedSenderNodeId
     · unfold admitTransport at accepted
       rw [if_pos hsender] at accepted
-      have h1 := Bool.and_eq_true_iff.mp accepted
-      have h2 := Bool.and_eq_true_iff.mp h1.1
-      have h3 := Bool.and_eq_true_iff.mp h2.1
-      have h4 := Bool.and_eq_true_iff.mp h3.1
-      have h5 := Bool.and_eq_true_iff.mp h4.1
+      have h1 := andTrue _ _ accepted
+      have h2 := andTrue _ _ h1.1
+      have h3 := andTrue _ _ h2.1
+      have h4 := andTrue _ _ h3.1
+      have h5 := andTrue _ _ h4.1
       unfold admitTransport
       rw [if_pos hsender]
       change context.signatureValid = true ∧
@@ -343,9 +347,9 @@ theorem transport_preserves_authenticated_identity
       exact ⟨h5.1, h5.2, h4.2, rfl, h2.2, h1.2⟩
     · unfold admitTransport at accepted
       rw [if_neg hsender] at accepted
-      have h1 := Bool.and_eq_true_iff.mp accepted
-      have h2 := Bool.and_eq_true_iff.mp h1.1
-      have h3 := Bool.and_eq_true_iff.mp h2.1
+      have h1 := andTrue _ _ accepted
+      have h2 := andTrue _ _ h1.1
+      have h3 := andTrue _ _ h2.1
       exact False.elim (Bool.false_ne_true h3.2)
   · constructor
     · intro matched
