@@ -126,8 +126,15 @@ structure RejoinResult where
   reconciliationRequired : Bool
   deriving DecidableEq, Repr
 
+/-- One independent foreign provenance attribution carried by a portable bundle. -/
+structure BundleAttribution where
+  foreignIdentity : ForeignIdentity
+  sourceNode : String
+  deriving DecidableEq, Repr
+
 structure PortableBundle where
   bundleId : String
+  attributions : List BundleAttribution
   deriving DecidableEq, Repr
 
 structure BundleImportResult where
@@ -135,8 +142,8 @@ structure BundleImportResult where
   importedBundle : PortableBundle
   deriving DecidableEq, Repr
 
-/-- Bundle import may add foreign material but cannot overwrite the member's pre-existing
-local sovereign state in the formal model. -/
+/-- Bundle import preserves the complete bundle, including every independent provenance
+attribution, while leaving the member's pre-existing local sovereign state unchanged. -/
 def importBundle (state : SovereignState) (bundle : PortableBundle) : BundleImportResult :=
   { localState := state, importedBundle := bundle }
 

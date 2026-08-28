@@ -82,6 +82,25 @@ jobs:
             exit 1
           fi
           python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          manifest = json.loads(Path('machine/lean-phase10-manifest.json').read_text())
+          expected = [item['declaration'] for item in manifest['theorems']]
+          audit_output = Path(os.environ['RUNNER_TEMP'], 'phase10-axioms.txt').read_text()
+          observed = re.findall(
+              r"(?m)^'QSOLFed\.([a-z][a-z0-9_]*)' does not depend on any axioms$",
+              audit_output,
+          )
+          if observed != expected:
+              raise SystemExit(
+                  'Lean axiom-audit output coverage/order differs from theorem manifest: '
+                  f'expected {len(expected)} entries, observed {len(observed)}'
+              )
+          PY
+          python3 - <<'PY'
           from pathlib import Path
           import re
 

@@ -73,8 +73,13 @@ theorem capability_requires_authenticated_advertisement (peer localAllow : Bool)
 
 /-! Import non-authority and provenance preservation -/
 
-theorem import_preserves_foreign_identity (id : ForeignIdentity) :
-    (importForeign id).foreignIdentity = id := rfl
+/-- A direct foreign import preserves its identity, and a portable-bundle import preserves
+the complete ordered collection of independent foreign provenance attributions. -/
+theorem import_preserves_foreign_identity
+    (id : ForeignIdentity) (state : SovereignState) (bundle : PortableBundle) :
+    (importForeign id).foreignIdentity = id ∧
+    (importBundle state bundle).importedBundle.attributions = bundle.attributions := by
+  exact ⟨rfl, rfl⟩
 
 theorem import_does_not_create_local_authority (id : ForeignIdentity) :
     (importForeign id).localAuthority = false := rfl

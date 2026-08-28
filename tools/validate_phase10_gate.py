@@ -43,8 +43,10 @@ EXPECTED_FROZEN_INPUTS = {
 }
 PLACEHOLDER_RE = re.compile(r"\b(?:sorry|admit)\b")
 AXIOM_DECL_TOKEN_RE = re.compile(r"\b(?:axiom|constant)\b")
-DECL_RE_TEMPLATE = r"\btheorem\s+{name}\b"
 AXIOM_PRINT_RE = re.compile(r"(?m)^[ \t]*#print[ \t]+axioms[ \t]+QSOLFed\.([a-z][a-z0-9_]*)[ \t]*$")
+NAMESPACE_OPEN_RE = re.compile(r"^[ \t]*namespace[ \t]+([A-Za-z_][A-Za-z0-9_.]*)[ \t]*$")
+NAMESPACE_END_RE = re.compile(r"^[ \t]*end(?:[ \t]+([A-Za-z_][A-Za-z0-9_.]*))?[ \t]*$")
+THEOREM_LINE_RE = re.compile(r"^[ \t]*theorem[ \t]+([a-z][a-z0-9_]*)\b")
 
 # Every theorem-facing contract label is resolved to an exact location in one of the
 # theorem's immutable v0.11.0 source refs. Labels are therefore aliases only; the
@@ -405,9 +407,16 @@ def verify_theorems(manifest: dict, frozen_inputs: set[str]) -> None:
     require(isinstance(theorems, list), "theorems must be a list")
     require(manifest.get("theorem_count") == EXPECTED_THEOREM_COUNT == len(theorems), "theorem count drift")
 
+    source_path = ROOT / "QSOLFed/Theorems.lean"
+    owned_declarations = [name for name, _line in _lean_fully_qualified_theorems(source_path)]
+    expected_owned = [f"QSOLFed.{theorem['declaration']}" for theorem in theorems]
+    require(
+        owned_declarations == expected_owned,
+        "QSOLFed.Theorems declaration ownership/order differs from theorem manifest",
+    )
+
     ids: set[str] = set()
     declarations: set[str] = set()
-    file_cache: dict[str, str] = {}
     for index, theorem in enumerate(theorems, 1):
         required = {"id", "declaration", "module", "path", "source_refs", "contract_ids", "proof_status"}
         require(set(theorem) == required, f"theorem {index} field set drift")
@@ -421,11 +430,6 @@ def verify_theorems(manifest: dict, frozen_inputs: set[str]) -> None:
         require(theorem["module"] == "QSOLFed.Theorems", f"unexpected module for {declaration}")
         path = theorem["path"]
         require(path == "QSOLFed/Theorems.lean", f"unexpected theorem path for {declaration}")
-        if path not in file_cache:
-            source_path = ROOT / path
-            file_cache[path] = _lean_code_only(source_path.read_text(encoding="utf-8"), source_path)
-        source = file_cache[path]
-        require(re.search(DECL_RE_TEMPLATE.format(name=re.escape(declaration)), source) is not None, f"manifest declaration missing from Lean source: {declaration}")
         refs = theorem["source_refs"]
         require(isinstance(refs, list) and refs and len(refs) == len(set(refs)), f"invalid source_refs for {declaration}")
         for ref in refs:
@@ -438,7 +442,7 @@ def verify_theorems(manifest: dict, frozen_inputs: set[str]) -> None:
 
 def verify_axiom_audit_coverage(manifest: dict) -> None:
     require(AXIOM_AUDIT_PATH.is_file(), "Phase 10 axiom audit source missing")
-    audit_source = AXIOM_AUDIT_PATH.read_text(encoding="utf-8")
+    audit_source = _lean_code_only(AXIOM_AUDIT_PATH.read_text(encoding="utf-8"), AXIOM_AUDIT_PATH)
     audited = AXIOM_PRINT_RE.findall(audit_source)
     expected = [theorem["declaration"] for theorem in manifest.get("theorems", [])]
     require(len(audited) == EXPECTED_THEOREM_COUNT, "Phase 10 axiom audit theorem count drift")
@@ -510,6 +514,39 @@ def _lean_code_only(text: str, path: Path) -> str:
     require(block_depth == 0, f"unterminated Lean block comment while scanning {path.relative_to(ROOT)}")
     require(not in_string, f"unterminated Lean string while scanning {path.relative_to(ROOT)}")
     return "".join(out)
+
+
+def _lean_fully_qualified_theorems(path: Path) -> list[tuple[str, int]]:
+    code = _lean_code_only(path.read_text(encoding="utf-8"), path)
+    namespace_stack: list[str] = []
+    declarations: list[tuple[str, int]] = []
+    for line_number, line in enumerate(code.splitlines(), 1):
+        opened = NAMESPACE_OPEN_RE.fullmatch(line)
+        if opened:
+            namespace_stack.extend(opened.group(1).split("."))
+            continue
+
+        closed = NAMESPACE_END_RE.fullmatch(line)
+        if closed:
+            require(namespace_stack, f"unmatched Lean namespace end in {path.relative_to(ROOT)}:{line_number}")
+            label = closed.group(1)
+            if label:
+                parts = label.split(".")
+                require(
+                    len(namespace_stack) >= len(parts) and namespace_stack[-len(parts):] == parts,
+                    f"Lean namespace end mismatch in {path.relative_to(ROOT)}:{line_number}: {label}",
+                )
+                del namespace_stack[-len(parts):]
+            else:
+                namespace_stack.pop()
+            continue
+
+        theorem = THEOREM_LINE_RE.match(line)
+        if theorem:
+            declarations.append((".".join([*namespace_stack, theorem.group(1)]), line_number))
+
+    require(not namespace_stack, f"unclosed Lean namespace in {path.relative_to(ROOT)}: {'.'.join(namespace_stack)}")
+    return declarations
 
 
 def verify_no_custom_axioms() -> None:
@@ -597,6 +634,26 @@ def verify_phase10_contracts(manifest: dict, schema: dict) -> None:
     require(claims.get("capabilities") == frozen_capabilities, "Phase 10 capability map differs from immutable v0.11.0 Phase 9 baseline")
     require(phase9_claims.get("capabilities") == frozen_capabilities, "working Phase 9 capability map differs from immutable v0.11.0 baseline")
     require(phase8_claims.get("capabilities") == frozen_capabilities, "working Phase 8 capability map differs from immutable v0.11.0 baseline")
+
+    frozen_adversarial = frozen_phase9_claims.get("assurance")
+    require(isinstance(frozen_adversarial, dict), "frozen Phase 9 adversarial assurance baseline missing")
+    expected_adversarial = {
+        "moriarty_protocol": frozen_adversarial.get("moriarty_protocol"),
+        "exact_commit_binding": frozen_adversarial.get("exact_commit_binding"),
+        "source_release": TARGET_TAG,
+        "source_commit": TARGET_COMMIT,
+        "source_tree": TARGET_TREE,
+        "source_release_immutable": True,
+        "graduated": True,
+        "security_proof": frozen_adversarial.get("report_is_security_proof"),
+        "no_counterexample_found_means_none_exist": frozen_adversarial.get("no_counterexample_found_means_none_exist"),
+        "authority_effect": frozen_adversarial.get("authority_effect"),
+    }
+    require(
+        claims.get("adversarial_assurance") == expected_adversarial,
+        "Phase 10 adversarial assurance differs from immutable v0.11.0 Phase 9 assurance boundary",
+    )
+
     assurance = claims.get("formalization_assurance", {})
     require(assurance.get("theorem_count") == EXPECTED_THEOREM_COUNT, "Phase 10 formalization assurance theorem count drift")
     require(assurance.get("unresolved_sorry_or_admit") is False and assurance.get("custom_axioms") is False and assurance.get("graduation_theorem_kernel_axiom_dependencies") is False, "Phase 10 formalization assurance proof-discipline drift")
