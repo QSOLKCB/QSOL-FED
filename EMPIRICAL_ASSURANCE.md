@@ -99,8 +99,9 @@ Two operational findings were recorded but are not classified here as QSOL-FED c
 The empirical-assurance record is deliberately closed and CI-checked:
 
 ```text
+documentation:   EMPIRICAL_ASSURANCE.md
 machine record:  machine/empirical-assurance.json
-schema:          schemas/empirical-assurance-v1.schema.json
+ schema:          schemas/empirical-assurance-v1.schema.json
 claims:          claims/empirical-assurance.json
 validator:       tools/validate_empirical_assurance.py
 workflow:        .github/workflows/empirical-assurance.yml
