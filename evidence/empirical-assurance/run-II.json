@@ -12,6 +12,28 @@
     },
     "fed_rust_tests_passed": 131,
     "live_model_calls": 147,
+    "minority_report_survival": {
+      "source_world": "world_c1",
+      "source_session_ref": "object:84c20965698b880735f30bed2afa4249d21b2a4f5bf8be73205c7e280ef23e6a",
+      "source_report_count": 1,
+      "source_member_ids": [
+        "B"
+      ],
+      "source_choices": [
+        "ACCEPT_WITH_CHANGES"
+      ],
+      "projected_report_count": 1,
+      "projected_member_ids": [
+        "B"
+      ],
+      "projected_choices": [
+        "ACCEPT_WITH_CHANGES"
+      ],
+      "projection_preserved": true,
+      "projected_authority_effect": "none",
+      "projected_vote_injection": false,
+      "projected_evidence_promotion": false
+    },
     "nexus_fed_sovereignty_checks": {
       "passed": 122,
       "total": 122
@@ -50,7 +72,9 @@
     "RESULTS.json": "8ee38429f49d650bd0175f385a534f52595361e81a89e683dbd7b5ca1ca9e61d",
     "adversarial_tests/results.json": "b8f6c5626320f3a45bb5102ce880975b860daa6d9e5a963b51727eec499697df",
     "baseline_tests/summary.md": "0fd9f4d343554523f5fdbf4ee5fa1143adf00c12fbb0b02fe74750c602d4189f",
+    "fed_projections/c1_projection.json": "ef035f00541ab7a00f3a1c9fffa88f237a8fad9ab3983f185665b6d7c40999be",
     "fed_projections/invariant_checks.json": "7f2d5752a9c12a1b59689a392dd49fa8c26be60dea612c102290093ab618292b",
-    "fed_transport/transport_results.json": "49348a377aae3a6207e4f73f2f661743e5be4cd9b787681e9e5aa17342b2aa5d"
+    "fed_transport/transport_results.json": "49348a377aae3a6207e4f73f2f661743e5be4cd9b787681e9e5aa17342b2aa5d",
+    "world_c1/result.json": "3b803409f8da6a519a7fa8fb66465699b35be6993d434ea6c448d3a4727a51c9"
   }
 }
