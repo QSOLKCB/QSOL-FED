@@ -44,7 +44,7 @@ Recorded Run II results include:
 
 - NEXUS baseline: 898 Python tests passed with 1 skip.
 - QSOL-FED baseline: 131 Rust tests passed.
-- Five live NEXUS Councils with 147 real model calls.
+- 147 real model calls were recorded.
 - 122/122 recorded sovereignty checks holding across projected Council reports.
 - 8/8 adversarial boundary probes prevented.
 - Council-of-Councils reports remained non-authoritative and did not merge ballots.
