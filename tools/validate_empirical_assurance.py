@@ -481,7 +481,7 @@ def extract_fenced_tokens(text: str, heading: str, level: int) -> list[str]:
     rendered = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
     lines = rendered.splitlines()
     target = "#" * level + " " + heading
-    heading_indexes: list[int] = []
+    visible_headings: list[tuple[int, int, str]] = []
     in_fence = False
     fence_marker: str | None = None
 
@@ -496,19 +496,43 @@ def extract_fenced_tokens(text: str, heading: str, level: int) -> list[str]:
                 in_fence = False
                 fence_marker = None
             continue
-        if not in_fence and line == target:
-            heading_indexes.append(index)
+        if in_fence:
+            continue
+        match = re.fullmatch(r"(#{1,6}) (.+)", line)
+        if match:
+            visible_headings.append((index, len(match.group(1)), match.group(2)))
 
+    heading_indexes = [index for index, heading_level, title in visible_headings if heading_level == level and title == heading]
     require(len(heading_indexes) == 1, f"documentation requires exactly one visible section heading: {heading}")
-    cursor = heading_indexes[0] + 1
-    while cursor < len(lines) and not lines[cursor].strip():
-        cursor += 1
-    require(cursor < len(lines) and lines[cursor] == "```text", f"documentation section must have an adjacent text fence: {heading}")
-    body_start = cursor + 1
+    section_start = heading_indexes[0]
+    section_end = len(lines)
+    for index, heading_level, _title in visible_headings:
+        if index > section_start and heading_level <= level:
+            section_end = index
+            break
+
+    text_fences: list[int] = []
+    in_section_fence = False
+    section_marker: str | None = None
+    for index in range(section_start + 1, section_end):
+        stripped = lines[index].strip()
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            marker = stripped[:3]
+            if not in_section_fence:
+                if lines[index] == "```text":
+                    text_fences.append(index)
+                in_section_fence = True
+                section_marker = marker
+            elif marker == section_marker:
+                in_section_fence = False
+                section_marker = None
+
+    require(len(text_fences) == 1, f"documentation requires exactly one visible text fence in section: {heading}")
+    body_start = text_fences[0] + 1
     body_end = body_start
-    while body_end < len(lines) and lines[body_end] != "```":
+    while body_end < section_end and lines[body_end] != "```":
         body_end += 1
-    require(body_end < len(lines), f"documentation section missing closing fence: {heading}")
+    require(body_end < section_end, f"documentation section missing closing fence: {heading}")
     return [line.strip() for line in lines[body_start:body_end] if line.strip()]
 
 
