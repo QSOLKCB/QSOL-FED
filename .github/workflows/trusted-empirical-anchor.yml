@@ -2,43 +2,115 @@ name: trusted-empirical-anchor
 
 on:
   pull_request_target:
-    types: [opened, synchronize, reopened, ready_for_review, edited]
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
+  statuses: write
 
 jobs:
   verify-empirical-assurance-anchor:
-    if: github.event.pull_request.base.ref == 'main'
     runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    env:
+      TARGET_SHA: ${{ github.event.pull_request.head.sha }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      STATUS_CONTEXT: trusted-empirical-anchor/head
     steps:
-      - name: Checkout trusted base revision
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          ref: ${{ github.event.pull_request.base.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Verify PR-head empirical assurance blobs from trusted base workflow
+      - name: Publish pending status on reviewed head
         env:
-          TARGET_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           case "$TARGET_SHA" in
             ''|*[!0-9a-f]* ) echo "invalid PR head SHA" >&2; exit 1 ;;
           esac
           test "${#TARGET_SHA}" -eq 40
+          case "$PR_NUMBER" in
+            ''|*[!0-9]* ) echo "invalid PR number" >&2; exit 1 ;;
+          esac
+          python3 - <<'PY' > "$RUNNER_TEMP/trusted-anchor-status.json"
+          import json
+          import os
+          print(json.dumps({
+              "state": "pending",
+              "context": os.environ["STATUS_CONTEXT"],
+              "description": "Trusted base-branch empirical assurance verification is running",
+          }))
+          PY
+          curl --fail --silent --show-error --location --retry 2 --max-time 20 \
+            --proto '=https' --tlsv1.2 \
+            -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+            --data-binary @"$RUNNER_TEMP/trusted-anchor-status.json" >/dev/null
 
-          git fetch --no-tags --force origin "$TARGET_SHA"
-          test "$(git rev-parse FETCH_HEAD)" = "$TARGET_SHA"
+      - name: Checkout trusted base revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 1
+          filter: blob:none
+          persist-credentials: false
+
+      - name: Verify PR-head empirical assurance tree from trusted base workflow
+        run: |
+          set -euo pipefail
+          case "$TARGET_SHA" in
+            ''|*[!0-9a-f]* ) echo "invalid PR head SHA" >&2; exit 1 ;;
+          esac
+          test "${#TARGET_SHA}" -eq 40
+          case "$PR_NUMBER" in
+            ''|*[!0-9]* ) echo "invalid PR number" >&2; exit 1 ;;
+          esac
+
+          before_bytes="$(du -sb .git/objects | cut -f1)"
+          target_ref="refs/remotes/qsol-pr/${PR_NUMBER}/head"
+          timeout --kill-after=10s 60s \
+            git -c protocol.version=2 fetch \
+              --no-tags --depth=1 --filter=blob:none --force origin \
+              "+refs/pull/${PR_NUMBER}/head:${target_ref}"
+          observed_head="$(git rev-parse "${target_ref}^{commit}")"
+          test "$observed_head" = "$TARGET_SHA" || {
+            echo "fetched PR head mismatch: expected ${TARGET_SHA}, observed ${observed_head}" >&2
+            exit 1
+          }
+          after_bytes="$(du -sb .git/objects | cut -f1)"
+          added_bytes=$((after_bytes - before_bytes))
+          test "$added_bytes" -le 67108864 || {
+            echo "untrusted PR-head Git object fetch exceeded 64 MiB bound: ${added_bytes}" >&2
+            exit 1
+          }
 
           check_blob() {
             path="$1"
             expected="$2"
-            observed="$(git rev-parse "${TARGET_SHA}:${path}")"
-            test "$observed" = "$expected" || {
+            entry="$(git ls-tree "$TARGET_SHA" -- "$path")"
+            test -n "$entry" || {
+              echo "trusted empirical assurance path missing: ${path}" >&2
+              exit 1
+            }
+            meta="${entry%%$'\t'*}"
+            observed_path="${entry#*$'\t'}"
+            read -r mode type oid <<< "$meta"
+            test "$observed_path" = "$path" || {
+              echo "trusted empirical assurance tree path mismatch: ${path}" >&2
+              exit 1
+            }
+            test "$mode" = "100644" || {
+              echo "trusted empirical assurance path is not a regular non-executable file: ${path} (${mode})" >&2
+              exit 1
+            }
+            test "$type" = "blob" || {
+              echo "trusted empirical assurance path is not a blob: ${path} (${type})" >&2
+              exit 1
+            }
+            test "$oid" = "$expected" || {
               echo "trusted empirical assurance blob drift: ${path}" >&2
-              echo "expected ${expected}, observed ${observed}" >&2
+              echo "expected ${expected}, observed ${oid}" >&2
               exit 1
             }
           }
@@ -54,3 +126,47 @@ jobs:
           check_blob .github/workflows/empirical-assurance.yml 18f90533f3354165f938dabca7ce78b3561af295
 
           echo "Trusted empirical assurance anchor: OK"
+
+      - name: Publish trusted result on reviewed head
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          case "$TARGET_SHA" in
+            ''|*[!0-9a-f]* ) echo "invalid PR head SHA" >&2; exit 1 ;;
+          esac
+          test "${#TARGET_SHA}" -eq 40
+          case "$JOB_STATUS" in
+            success)
+              state=success
+              description="Trusted base-branch empirical assurance verification passed"
+              ;;
+            cancelled)
+              state=error
+              description="Trusted base-branch empirical assurance verification was cancelled"
+              ;;
+            *)
+              state=failure
+              description="Trusted base-branch empirical assurance verification failed"
+              ;;
+          esac
+          export state description
+          python3 - <<'PY' > "$RUNNER_TEMP/trusted-anchor-final-status.json"
+          import json
+          import os
+          print(json.dumps({
+              "state": os.environ["state"],
+              "context": os.environ["STATUS_CONTEXT"],
+              "description": os.environ["description"],
+          }))
+          PY
+          curl --fail --silent --show-error --location --retry 2 --max-time 20 \
+            --proto '=https' --tlsv1.2 \
+            -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+            --data-binary @"$RUNNER_TEMP/trusted-anchor-final-status.json" >/dev/null
