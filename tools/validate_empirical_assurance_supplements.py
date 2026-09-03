@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 RUN2 = ROOT / "evidence/empirical-assurance/run-II-transport-authority.json"
@@ -63,8 +64,17 @@ def require(condition: bool, message: str) -> None:
         raise RuntimeError(message)
 
 
+def _reject_duplicate_object_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise RuntimeError(f"duplicate JSON key rejected: {key}")
+        result[key] = value
+    return result
+
+
 def load(path: Path) -> dict:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_reject_duplicate_object_pairs)
 
 
 def sha256(path: Path) -> str:
