@@ -78,17 +78,17 @@ EXPECTED_CURRENT_AI_PHASE10 = {
     "source_release_rewritten": False,
     "formalization_merge_commit": "9bc0e33fc30ed14b5ca1a3bfbd2e7ecc5059452b",
     "formalization_merge_tree": "062ca7fd78c5ada08f0f54f7c822337e2fa081e0",
-}
-EXPECTED_CURRENT_AI_PHASE10_WORKFLOWS = {
     "merged_main_phase10_workflow": {"run_id": 33198458502, "run_number": 128, "conclusion": "success"},
     "merged_main_constitutional_moriarty_workflow": {"run_id": 33198458525, "run_number": 471, "conclusion": "success"},
-}
-EXPECTED_CURRENT_AI_ZENODO = {
-    "version": "1.0.0",
-    "doi": "10.5281/zenodo.22149263",
-    "title": "QSOL-FED Lean 4 Formalization: Machine-Checked Constitutional and Protocol Separation Invariants",
-    "record_license": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
-    "repository_license": "Apache-2.0 unchanged",
+    "integration_claim_record_note": "claims/phase10.json is an exact reviewed Phase 10 input and retains its integration-time pre-merge gate_status. Live post-merge completion is evidenced by the formalization merge commit and exact merged-main workflows recorded here; the immutable v0.11.0 theorem target is not rewritten.",
+    "zenodo_publication": {
+        "version": "1.0.0",
+        "doi": "10.5281/zenodo.22149263",
+        "title": "QSOL-FED Lean 4 Formalization: Machine-Checked Constitutional and Protocol Separation Invariants",
+        "citation": "Slade, T. (2026). QSOL-FED Lean 4 Formalization: Machine-Checked Constitutional and Protocol Separation Invariants (Version 1.0.0) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.22149263",
+        "record_license": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
+        "repository_license": "Apache-2.0 unchanged",
+    },
 }
 
 
@@ -227,19 +227,7 @@ def verify_ai_inventory() -> None:
     ai = json.loads((ROOT / "README4AI.md").read_text(encoding="utf-8"))
     require(ai.get("phase10_status") == "lean_formalization_merged_main_verified_and_zenodo_published", "README4AI Phase 10 status drift")
     require(ai.get("formalization_assurance_manifest") == "claims/phase10.json", "README4AI Phase 10 assurance-manifest drift")
-    phase10 = ai.get("phase10_lean")
-    require(isinstance(phase10, dict), "README4AI Phase 10 inventory missing")
-    for key, expected in EXPECTED_CURRENT_AI_PHASE10.items():
-        require(phase10.get(key) == expected, f"README4AI Phase 10 field drift: {key}")
-    for key, expected in EXPECTED_CURRENT_AI_PHASE10_WORKFLOWS.items():
-        require(phase10.get(key) == expected, f"README4AI Phase 10 workflow evidence drift: {key}")
-    publication = phase10.get("zenodo_publication")
-    require(isinstance(publication, dict), "README4AI Phase 10 Zenodo publication missing")
-    for key, expected in EXPECTED_CURRENT_AI_ZENODO.items():
-        require(publication.get(key) == expected, f"README4AI Phase 10 Zenodo field drift: {key}")
-    require(phase10.get("whole_implementation_verified") is False, "README4AI may not claim whole implementation verification")
-    require(phase10.get("deployment_security_proof") is False, "README4AI may not claim deployment security proof")
-    require(phase10.get("source_release_rewritten") is False, "README4AI may not claim the source release was rewritten")
+    require(ai.get("phase10_lean") == EXPECTED_CURRENT_AI_PHASE10, "README4AI complete Phase 10 inventory drift")
 
 
 def validate() -> dict:
