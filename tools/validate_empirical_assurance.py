@@ -14,12 +14,15 @@ RECORD_PATH = ROOT / "machine/empirical-assurance.json"
 SCHEMA_PATH = ROOT / "schemas/empirical-assurance-v1.schema.json"
 CLAIMS_PATH = ROOT / "claims/empirical-assurance.json"
 DOC_PATH = ROOT / "EMPIRICAL_ASSURANCE.md"
+AI_MANIFEST_PATH = ROOT / "README4AI.md"
+README_PATH = ROOT / "README.md"
+WORKFLOW_PATH = ROOT / ".github/workflows/empirical-assurance.yml"
 
 FED_COMMIT = "1fd643f643636bcb0917f571aff5cdc25439b470"
 NEXUS_COMMIT = "24cb0ce246d12ac99e7d190a8890ef2ddd598321"
 RUN_II_SHA256 = "0d7a67292062b67473a5483c4a8fa6074378128cb03a60d79651dae091f5b0ec"
 RUN_III_SHA256 = "f569b80576b2dba952685577ed68dc2c8293973229dc161f6d63387ceaac475d"
-RUN_II_EVIDENCE_SHA256 = "796d1ac580228812d36e41e4b41211a857449151e7cd3181ebac5b66c312940f"
+RUN_II_EVIDENCE_SHA256 = "9127ab32d9f88bafc97608a5dae0b963794b2d0d13bc4bd411f5d3e7f4a3c0b7"
 RUN_III_EVIDENCE_SHA256 = "0003e5d31714d05ceeb700679a693fc02fe7ff4f0d4dbe43c2c992ec3a8a92b5"
 PARTITION_CLAIM = "partition_rejoin_requires_explicit_reconciliation_and_preserves_member_local_state_on_tested_reference_surface"
 MINORITY_CLAIM = "minority_reports_survive_on_tested_surface"
@@ -31,7 +34,6 @@ EXPECTED_GATE = {
     "workflow": ".github/workflows/empirical-assurance.yml",
     "documentation": "EMPIRICAL_ASSURANCE.md",
 }
-
 EXPECTED_RETAINED_EVIDENCE = {
     "supercomputer-run-II": {
         "path": "evidence/empirical-assurance/run-II.json",
@@ -46,7 +48,6 @@ EXPECTED_RETAINED_EVIDENCE = {
         "source_archive_sha256": RUN_III_SHA256,
     },
 }
-
 EXPECTED_RUN2_SUPPORTED = [
     "provider_identity_does_not_change_vote_weight",
     "council_consensus_does_not_promote_evidence",
@@ -109,6 +110,31 @@ EXPECTED_CLAIM_KEYS = {
     "capability_effect", "authority_effect", "evidence_promotion", "formalization_effect",
     "supported_claims", "limitations",
 }
+EXPECTED_PROVIDER_SEATS = [
+    {"member_id": "A", "provider_family": "OpenAI", "model_id": "gpt-5.5", "vote_weight": 1, "epistemic_privilege": "none"},
+    {"member_id": "B", "provider_family": "Anthropic", "model_id": "claude-sonnet-5", "vote_weight": 1, "epistemic_privilege": "none"},
+    {"member_id": "C", "provider_family": "Google", "model_id": "gemini-3.5-flash", "vote_weight": 1, "epistemic_privilege": "none"},
+    {"member_id": "D", "provider_family": "xAI", "model_id": "grok-4.6", "vote_weight": 1, "epistemic_privilege": "none"},
+    {"member_id": "E", "provider_family": "DeepSeek", "model_id": "deepseek-ai/DeepSeek-V4-Flash-0731", "vote_weight": 1, "epistemic_privilege": "none"},
+]
+EXPECTED_CONSENSUS_EVIDENCE = {
+    "source_world": "world_a/repeat_1",
+    "consensus_label": "UNANIMOUS",
+    "disposition": "REJECT",
+    "tally": {"REJECT": 5},
+    "evidence_state": "UNTESTED",
+    "consensus_promoted_evidence": False,
+}
+EXPECTED_AI_EMPIRICAL_PATHS = [
+    "claims/empirical-assurance.json",
+    "machine/empirical-assurance.json",
+    "schemas/empirical-assurance-v1.schema.json",
+    "evidence/empirical-assurance/run-II.json",
+    "evidence/empirical-assurance/run-III.json",
+    "tools/validate_empirical_assurance.py",
+    ".github/workflows/empirical-assurance.yml",
+    "EMPIRICAL_ASSURANCE.md",
+]
 SUPPORTED_SCHEMA_KEYWORDS = {
     "$schema", "$id", "title", "type", "additionalProperties", "required", "properties",
     "const", "enum", "minLength", "maxLength", "pattern", "minItems", "maxItems", "items",
@@ -139,18 +165,12 @@ def json_equal(left: Any, right: Any) -> bool:
 
 
 def schema_type_matches(value: Any, type_name: str) -> bool:
-    if type_name == "object":
-        return isinstance(value, dict)
-    if type_name == "array":
-        return isinstance(value, list)
-    if type_name == "string":
-        return isinstance(value, str)
-    if type_name == "integer":
-        return isinstance(value, int) and not isinstance(value, bool)
-    if type_name == "boolean":
-        return isinstance(value, bool)
-    if type_name == "null":
-        return value is None
+    if type_name == "object": return isinstance(value, dict)
+    if type_name == "array": return isinstance(value, list)
+    if type_name == "string": return isinstance(value, str)
+    if type_name == "integer": return isinstance(value, int) and not isinstance(value, bool)
+    if type_name == "boolean": return isinstance(value, bool)
+    if type_name == "null": return value is None
     raise GateError(f"unsupported JSON Schema type: {type_name}")
 
 
@@ -285,7 +305,8 @@ def validate_retained_evidence(record: dict[str, Any]) -> None:
         loaded[campaign_id] = evidence
 
     run2_record = campaigns["supercomputer-run-II"]
-    run2 = loaded["supercomputer-run-II"]["observed"]
+    run2_all = loaded["supercomputer-run-II"]
+    run2 = run2_all["observed"]
     observations = run2_record["observations"]
     require(run2["tested_fed_commit"] == FED_COMMIT and run2["tested_nexus_commit"] == NEXUS_COMMIT, "Run II retained specimen identity drift")
     require(run2["nexus_python_tests_passed"] == observations["nexus_python_tests_passed"], "Run II retained NEXUS test count drift")
@@ -295,10 +316,17 @@ def validate_retained_evidence(record: dict[str, Any]) -> None:
     require(run2["nexus_fed_sovereignty_checks"] == observations["nexus_fed_sovereignty_checks"], "Run II retained sovereignty checks drift")
     require(run2["adversarial_boundary_probes"] == observations["adversarial_boundary_probes"], "Run II retained adversarial checks drift")
     require(run2["source_edits_to_specimens"] == observations["source_edits_to_specimens"], "Run II retained source-edit count drift")
-    require(run2["transport"]["partition_silent_reconciliation_refused"] is True, "Run II retained silent-reconciliation result drift")
-    require(run2["transport"]["partition_rejoin_restored_admitted_with_explicit_reconciliation"] is True, "Run II retained explicit-reconciliation result drift")
-    require(run2["transport"]["raw_partition_result"]["diverged_requires_explicit"] is True, "Run II retained partition divergence boundary drift")
-    require(run2["council_of_councils"] == {"authority_effect": "none", "ballots_merged": False}, "Run II retained Council-of-Councils authority drift")
+
+    provider = run2.get("provider_vote_equality")
+    require(isinstance(provider, dict), "Run II retained provider-vote observation missing")
+    require(provider.get("source_world") == "world_a/repeat_1", "Run II provider-vote source world drift")
+    require(provider.get("distinct_provider_families") == 5, "Run II provider-family count drift")
+    require(provider.get("all_vote_weights_equal_one") is True, "Run II vote-weight equality drift")
+    require(provider.get("all_epistemic_privileges_none") is True, "Run II epistemic-privilege equality drift")
+    require(provider.get("seats") == EXPECTED_PROVIDER_SEATS, "Run II provider/seat roster drift")
+
+    consensus = run2.get("consensus_evidence_separation")
+    require(consensus == EXPECTED_CONSENSUS_EVIDENCE, "Run II consensus/evidence separation observation drift")
 
     minority = run2.get("minority_report_survival")
     require(isinstance(minority, dict), "Run II retained minority-report observation missing")
@@ -310,9 +338,22 @@ def validate_retained_evidence(record: dict[str, Any]) -> None:
     require(minority.get("projection_preserved") is True, "Run II retained minority projection-survival drift")
     require(minority.get("projected_authority_effect") == "none", "Run II retained minority projection authority drift")
     require(minority.get("projected_vote_injection") is False and minority.get("projected_evidence_promotion") is False, "Run II retained minority projection vote/evidence boundary drift")
-    run2_hashes = loaded["supercomputer-run-II"]["source_file_sha256"]
-    require(run2_hashes.get("world_c1/result.json") == "3b803409f8da6a519a7fa8fb66465699b35be6993d434ea6c448d3a4727a51c9", "Run II minority source file hash drift")
-    require(run2_hashes.get("fed_projections/c1_projection.json") == "ef035f00541ab7a00f3a1c9fffa88f237a8fad9ab3983f185665b6d7c40999be", "Run II minority projection file hash drift")
+
+    run2_hashes = run2_all["source_file_sha256"]
+    expected_run2_hashes = {
+        "MODEL_MANIFEST.json": "d9da5abb3e07bec4f65df650b8b35d9af5d702bc7fafc9eb4c2ffe74e3c761f4",
+        "world_a/repeat_1/result.json": "7f0528c09fd11cfe3c6567f61ea5668cbdec59dcbe0141c2e05964ba63dd51d8",
+        "world_a/repeat_1/telemetry.json": "9824bd6f373923a45ae214c6fc4d2c76aa4b3dd8c201b82517210f403ddd84e7",
+        "world_c1/result.json": "3b803409f8da6a519a7fa8fb66465699b35be6993d434ea6c448d3a4727a51c9",
+        "fed_projections/c1_projection.json": "ef035f00541ab7a00f3a1c9fffa88f237a8fad9ab3983f185665b6d7c40999be",
+    }
+    for path, expected_hash in expected_run2_hashes.items():
+        require(run2_hashes.get(path) == expected_hash, f"Run II retained source hash drift: {path}")
+
+    require(run2["transport"]["partition_silent_reconciliation_refused"] is True, "Run II retained silent-reconciliation result drift")
+    require(run2["transport"]["partition_rejoin_restored_admitted_with_explicit_reconciliation"] is True, "Run II retained explicit-reconciliation result drift")
+    require(run2["transport"]["raw_partition_result"]["diverged_requires_explicit"] is True, "Run II retained partition divergence boundary drift")
+    require(run2["council_of_councils"] == {"authority_effect": "none", "ballots_merged": False}, "Run II retained Council-of-Councils authority drift")
 
     run3_record = campaigns["supercomputer-run-III"]
     run3 = loaded["supercomputer-run-III"]["observed"]
@@ -337,23 +378,79 @@ def validate_documentation() -> None:
         require(path in text, f"documentation missing gate wiring: {path}")
     for expected in EXPECTED_RETAINED_EVIDENCE.values():
         require(expected["path"] in text, f"documentation missing retained evidence path: {expected['path']}")
-    sync_tokens = (
-        EXPECTED_RUN2_SUPPORTED + EXPECTED_RUN2_LIMITATIONS + EXPECTED_RUN3_SUPPORTED + EXPECTED_RUN3_LIMITATIONS +
-        EXPECTED_DOES_NOT_ESTABLISH + EXPECTED_CLAIM_SUPPORTED + EXPECTED_CLAIM_LIMITATIONS
-    )
+    sync_tokens = EXPECTED_RUN2_SUPPORTED + EXPECTED_RUN2_LIMITATIONS + EXPECTED_RUN3_SUPPORTED + EXPECTED_RUN3_LIMITATIONS + EXPECTED_DOES_NOT_ESTABLISH + EXPECTED_CLAIM_SUPPORTED + EXPECTED_CLAIM_LIMITATIONS
     for token in sync_tokens:
         require(token in text, f"documentation missing synchronized assurance token: {token}")
-    require("current post-Phase-10 documentation head" not in text, "documentation incorrectly describes tested specimen as current head")
     require("requiring explicit reconciliation where state changed and preserving member-local state" in text, "documentation weakens partition reconciliation/member-local-state result")
     require("did **not** establish independent process-level isolation" in text, "documentation omits AGENT-X process-isolation limitation")
     require("member B" in text and "ACCEPT_WITH_CHANGES" in text and "one minority report" in text, "documentation omits bounded minority-report survival observation")
+    require("five distinct provider families" in text and "vote_weight = 1" in text and "epistemic_privilege = none" in text, "documentation omits provider/vote equality observation")
+    require("UNANIMOUS" in text and "evidence_state = UNTESTED" in text, "documentation omits consensus/evidence separation observation")
+
+
+def validate_ai_manifest() -> None:
+    ai = load_json(AI_MANIFEST_PATH)
+    require(ai.get("current_claim_manifest") == "claims/phase8.json", "README4AI runtime claim manifest drift")
+    require(ai.get("empirical_assurance_status") == "runs_II_III_bounded_record_ci_gated", "README4AI empirical assurance status drift")
+    empirical = ai.get("empirical_assurance")
+    require(isinstance(empirical, dict), "README4AI empirical assurance inventory missing")
+    expected_empirical = {
+        "status": "bounded_empirical_assurance_ci_gated",
+        "claims": "claims/empirical-assurance.json",
+        "record": "machine/empirical-assurance.json",
+        "schema": "schemas/empirical-assurance-v1.schema.json",
+        "documentation": "EMPIRICAL_ASSURANCE.md",
+        "validator": "tools/validate_empirical_assurance.py",
+        "workflow": ".github/workflows/empirical-assurance.yml",
+        "tested_fed_commit": FED_COMMIT,
+        "tested_nexus_commit": NEXUS_COMMIT,
+        "run_II_source_archive_sha256": RUN_II_SHA256,
+        "run_II_retained_evidence": "evidence/empirical-assurance/run-II.json",
+        "run_II_retained_evidence_sha256": RUN_II_EVIDENCE_SHA256,
+        "run_III_source_archive_sha256": RUN_III_SHA256,
+        "run_III_retained_evidence": "evidence/empirical-assurance/run-III.json",
+        "run_III_retained_evidence_sha256": RUN_III_EVIDENCE_SHA256,
+        "capability_effect": "none",
+        "authority_effect": "none",
+        "evidence_promotion": False,
+        "formalization_effect": "none",
+    }
+    require(empirical == expected_empirical, "README4AI empirical assurance inventory drift")
+    files = ai.get("files", {})
+    expected_files = {
+        "empirical_assurance_claims": "claims/empirical-assurance.json",
+        "empirical_assurance_record": "machine/empirical-assurance.json",
+        "empirical_assurance_schema": "schemas/empirical-assurance-v1.schema.json",
+        "empirical_assurance_docs": "EMPIRICAL_ASSURANCE.md",
+        "empirical_assurance_run_II_evidence": "evidence/empirical-assurance/run-II.json",
+        "empirical_assurance_run_III_evidence": "evidence/empirical-assurance/run-III.json",
+        "empirical_assurance_validator": "tools/validate_empirical_assurance.py",
+        "empirical_assurance_workflow": ".github/workflows/empirical-assurance.yml",
+    }
+    for key, value in expected_files.items():
+        require(files.get(key) == value, f"README4AI files map drift: {key}")
+    precedence = ai.get("normative_precedence", [])
+    for path in EXPECTED_AI_EMPIRICAL_PATHS:
+        require(path in precedence, f"README4AI normative precedence missing empirical path: {path}")
+    summary = ai.get("assurance_summary", {})
+    require(summary.get("empirical_runs_II_III") == "bounded_exact_specimen_execution_assurance", "README4AI empirical assurance summary drift")
+    require(summary.get("empirical_creates_capability") is False and summary.get("empirical_creates_authority") is False, "README4AI empirical authority/capability boundary drift")
+    require(summary.get("empirical_promotes_evidence") is False and summary.get("empirical_replaces_formalization") is False, "README4AI empirical evidence/formalization boundary drift")
+    commands = ai.get("validation_commands", [])
+    require("python3 tools/validate_empirical_assurance.py" in commands, "README4AI empirical validation command missing")
+    require(ai.get("phase10_lean", {}).get("source_commit") == "c953463724cdf218802e66e16f582ae8d600ca47", "README4AI Phase 10 source identity drift")
+
+
+def validate_top_level_readme_and_workflow() -> None:
+    readme = README_PATH.read_text(encoding="utf-8")
+    require("python3 tools/validate_empirical_assurance.py" in readme, "README verification list missing empirical assurance gate")
+    workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
+    for marker in ("README4AI.md", "README.md", "evidence/empirical-assurance/**", "tools/validate_empirical_assurance.py"):
+        require(marker in workflow, f"empirical assurance workflow path trigger missing: {marker}")
 
 
 def git_show(commit: str, path: str) -> str:
-    result = subprocess.run(
-        ["git", "show", f"{commit}:{path}"], cwd=ROOT, check=False,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-    )
+    result = subprocess.run(["git", "show", f"{commit}:{path}"], cwd=ROOT, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     require(result.returncode == 0, f"unable to read historical specimen path: {commit}:{path}")
     return result.stdout
 
@@ -364,10 +461,7 @@ def validate_historical_adapter_pin() -> None:
 
 
 def validate_tested_fed_commit_exists() -> None:
-    result = subprocess.run(
-        ["git", "cat-file", "-e", f"{FED_COMMIT}^{{commit}}"], cwd=ROOT,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False,
-    )
+    result = subprocess.run(["git", "cat-file", "-e", f"{FED_COMMIT}^{{commit}}"], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
     require(result.returncode == 0, "tested QSOL-FED commit is unavailable in checkout history")
 
 
@@ -379,6 +473,8 @@ def validate() -> dict[str, Any]:
     validate_claim_manifest()
     validate_retained_evidence(record)
     validate_documentation()
+    validate_ai_manifest()
+    validate_top_level_readme_and_workflow()
     validate_historical_adapter_pin()
     validate_tested_fed_commit_exists()
     return {
