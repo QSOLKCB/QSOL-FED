@@ -478,15 +478,38 @@ def validate_supplemental_evidence(record: dict[str, Any]) -> None:
 
 
 def extract_fenced_tokens(text: str, heading: str, level: int) -> list[str]:
-    prefix = "#" * level + " " + heading
-    start = text.find(prefix)
-    require(start >= 0, f"documentation missing section: {heading}")
-    fence = text.find("```text\n", start)
-    require(fence >= 0, f"documentation section missing text fence: {heading}")
-    body_start = fence + len("```text\n")
-    body_end = text.find("\n```", body_start)
-    require(body_end >= 0, f"documentation section missing closing fence: {heading}")
-    return [line.strip() for line in text[body_start:body_end].splitlines() if line.strip()]
+    rendered = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
+    lines = rendered.splitlines()
+    target = "#" * level + " " + heading
+    heading_indexes: list[int] = []
+    in_fence = False
+    fence_marker: str | None = None
+
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            marker = stripped[:3]
+            if not in_fence:
+                in_fence = True
+                fence_marker = marker
+            elif marker == fence_marker:
+                in_fence = False
+                fence_marker = None
+            continue
+        if not in_fence and line == target:
+            heading_indexes.append(index)
+
+    require(len(heading_indexes) == 1, f"documentation requires exactly one visible section heading: {heading}")
+    cursor = heading_indexes[0] + 1
+    while cursor < len(lines) and not lines[cursor].strip():
+        cursor += 1
+    require(cursor < len(lines) and lines[cursor] == "```text", f"documentation section must have an adjacent text fence: {heading}")
+    body_start = cursor + 1
+    body_end = body_start
+    while body_end < len(lines) and lines[body_end] != "```":
+        body_end += 1
+    require(body_end < len(lines), f"documentation section missing closing fence: {heading}")
+    return [line.strip() for line in lines[body_start:body_end] if line.strip()]
 
 
 def validate_documentation() -> None:
@@ -521,6 +544,7 @@ def validate_documentation() -> None:
     require("state_after_explicit_rejoin = Admitted" in text and "silent_reconciliation_refused = true" in text, "documentation omits bounded partition/rejoin observation")
     require("exactly five source-Council seats" in text, "documentation omits Run III exact seat-roster observation")
     require("restart inspection was read-only" in text and "does not infer a resumed post-restart voting authority state" in text, "documentation overstates Run III restart authority observation")
+    require("persistent-world restart checks preserving recorded object identity" not in text, "documentation reintroduces unsupported Run II restart assertion")
 
 
 def validate_ai_manifest() -> None:
