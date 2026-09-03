@@ -31,7 +31,7 @@
       "archive_sha256": "0d7a67292062b67473a5483c4a8fa6074378128cb03a60d79651dae091f5b0ec",
       "retained_evidence": {
         "path": "evidence/empirical-assurance/run-II.json",
-        "sha256": "b6f7175fc73bea822c76237cca574ebbfbb769ff050cfc841463174ff302271c",
+        "sha256": "9127ab32d9f88bafc97608a5dae0b963794b2d0d13bc4bd411f5d3e7f4a3c0b7",
         "scope": "bounded_extract_from_operator_supplied_source_archive"
       },
       "purpose": "heterogeneous frontier-model NEXUS and FED integration stress test",
