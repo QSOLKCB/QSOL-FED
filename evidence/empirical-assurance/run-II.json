@@ -1,0 +1,56 @@
+{
+  "campaign_id": "supercomputer-run-II",
+  "document_type": "qsol-fed-retained-empirical-evidence",
+  "observed": {
+    "adversarial_boundary_probes": {
+      "prevented": 8,
+      "total": 8
+    },
+    "council_of_councils": {
+      "authority_effect": "none",
+      "ballots_merged": false
+    },
+    "fed_rust_tests_passed": 131,
+    "live_model_calls": 147,
+    "nexus_fed_sovereignty_checks": {
+      "passed": 122,
+      "total": 122
+    },
+    "nexus_python_tests_passed": 898,
+    "nexus_python_tests_skipped": 1,
+    "source_edits_to_specimens": 0,
+    "tested_fed_commit": "1fd643f643636bcb0917f571aff5cdc25439b470",
+    "tested_nexus_commit": "24cb0ce246d12ac99e7d190a8890ef2ddd598321",
+    "transport": {
+      "drills_passed": 30,
+      "drills_total": 30,
+      "partition_rejoin_restored_admitted_with_explicit_reconciliation": true,
+      "partition_silent_reconciliation_refused": true,
+      "posture": "local-reference (driver declares unmodified qsol-fed as a Cargo path dependency; calls public API only)",
+      "raw_partition_result": {
+        "clean_is_clean": true,
+        "clean_snapshot_disposition": "Clean",
+        "diverged_requires_explicit": true,
+        "diverged_snapshot_disposition": "ExplicitReconciliationRequired",
+        "node_id": "fed:qsol:8fbf311d9bd830509a22b40926970621fd31ee14ef238c552517f6a567fbc69d",
+        "rejoin_restored_admitted": true,
+        "silent_reconciliation_refused": true,
+        "state_after_admit": "Admitted",
+        "state_after_explicit_rejoin": "Admitted",
+        "state_after_introduce": "Introduced",
+        "state_after_partition": "Disconnected",
+        "status": "EXECUTED"
+      }
+    }
+  },
+  "retention_scope": "bounded_extract_from_operator_supplied_source_archive",
+  "schema_version": 1,
+  "source_archive_sha256": "0d7a67292062b67473a5483c4a8fa6074378128cb03a60d79651dae091f5b0ec",
+  "source_file_sha256": {
+    "RESULTS.json": "8ee38429f49d650bd0175f385a534f52595361e81a89e683dbd7b5ca1ca9e61d",
+    "adversarial_tests/results.json": "b8f6c5626320f3a45bb5102ce880975b860daa6d9e5a963b51727eec499697df",
+    "baseline_tests/summary.md": "0fd9f4d343554523f5fdbf4ee5fa1143adf00c12fbb0b02fe74750c602d4189f",
+    "fed_projections/invariant_checks.json": "7f2d5752a9c12a1b59689a392dd49fa8c26be60dea612c102290093ab618292b",
+    "fed_transport/transport_results.json": "49348a377aae3a6207e4f73f2f661743e5be4cd9b787681e9e5aa17342b2aa5d"
+  }
+}
