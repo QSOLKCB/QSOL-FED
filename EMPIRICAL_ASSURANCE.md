@@ -19,7 +19,7 @@ The two recorded Supercomputer campaigns exercised the same frozen repository sp
 | QSOL-NEXUS | `24cb0ce246d12ac99e7d190a8890ef2ddd598321` |
 | QSOL-FED | `1fd643f643636bcb0917f571aff5cdc25439b470` |
 
-For QSOL-FED, the tested commit is this repository's current post-Phase-10 documentation head. The NEXUS identity exactly matches the commit pinned by `tools/nexus_live_adapter.py` for the native verifier/scrubber membrane.
+For QSOL-FED, the tested specimen is exactly commit `1fd643f643636bcb0917f571aff5cdc25439b470`, the documentation head immediately preceding this empirical-assurance PR. Empirical results in this record do **not** claim to cover the later commit that adds this record. The NEXUS identity exactly matches the commit pinned by `tools/nexus_live_adapter.py` for the native verifier/scrubber membrane.
 
 ## Run II — heterogeneous frontier-model federation
 
@@ -42,7 +42,7 @@ The run used real multi-provider inference through a loopback-only experimental 
 - Council-of-Councils report-level convergence without shared ballots or imported vote weight;
 - 8/8 adversarial boundary probes prevented;
 - persistent-world restart checks preserving recorded object identity;
-- local/reference FED transport and partition/rejoin drills preserving the stated authority boundaries.
+- local/reference FED transport and partition/rejoin drills requiring explicit reconciliation where state changed and preserving member-local state rather than silently overwriting it.
 
 Important limitations recorded by the experiment include: no deployed production federation was established; WebSocket/QUIC production backends were not claimed; provider token-cost accounting was incomplete on the native Council path; and one Phase 9 gate could not be executed cleanly because of the shared host permission posture.
 
@@ -93,6 +93,20 @@ Run III additionally recorded restart recovery with no authority gain and 12/12 
 The experiment established AGENT-X participation at the constitutional/integration layer. It did **not** establish independent process-level isolation between the Abacus operator and the AGENT-X wrapper. Participant-visible information was bounded by the experimental harness, but a separately sandboxed autonomous wrapper process was not proven.
 
 Two operational findings were recorded but are not classified here as QSOL-FED constitutional defects: a provider-side model substitution after an inference failure, and an experimental ballot token ceiling that caused reruns.
+
+## Gated record
+
+The empirical-assurance record is deliberately closed and CI-checked:
+
+```text
+machine record:  machine/empirical-assurance.json
+schema:          schemas/empirical-assurance-v1.schema.json
+claims:          claims/empirical-assurance.json
+validator:       tools/validate_empirical_assurance.py
+workflow:        .github/workflows/empirical-assurance.yml
+```
+
+The validator checks the closed schema, exact specimen and archive identities, bounded assurance/authority effects, the stronger partition-reconciliation/member-local-state statement, claims wiring, and synchronization of key facts between this document and the machine record.
 
 ## Relation to formal assurance
 
