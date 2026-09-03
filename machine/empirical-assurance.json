@@ -31,7 +31,7 @@
       "archive_sha256": "0d7a67292062b67473a5483c4a8fa6074378128cb03a60d79651dae091f5b0ec",
       "retained_evidence": {
         "path": "evidence/empirical-assurance/run-II.json",
-        "sha256": "9127ab32d9f88bafc97608a5dae0b963794b2d0d13bc4bd411f5d3e7f4a3c0b7",
+        "sha256": "f990c8299d73975b4d731de2ea0ae60a41d08cea27a2b4158511a4294d6eedc2",
         "scope": "bounded_extract_from_operator_supplied_source_archive"
       },
       "purpose": "heterogeneous frontier-model NEXUS and FED integration stress test",
@@ -56,13 +56,14 @@
         "minority_reports_survive",
         "nexus_council_reports_do_not_import_ballots_into_fed",
         "federation_transport_does_not_create_authority_on_tested_reference_surface",
-        "partition_rejoin_requires_explicit_reconciliation_and_preserves_member_local_state_on_tested_reference_surface"
+        "partition_rejoin_requires_explicit_reconciliation_and_restores_peer_lifecycle_state_on_tested_reference_surface"
       ],
       "limitations": [
         "no_deployed_production_federation_established",
         "websocket_and_quic_production_backends_not_claimed",
         "native_council_per_token_cost_accounting_incomplete",
-        "one_phase9_gate_blocked_by_shared_host_permission_posture"
+        "one_phase9_gate_blocked_by_shared_host_permission_posture",
+        "complete_member_local_governance_trust_evidence_state_preservation_not_observed_in_run_II"
       ]
     },
     {
