@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import copy
 import io
 import os
@@ -348,7 +349,7 @@ def validate_contract() -> None:
         require(operator[key] is False, f"MORIARTY operator boundary weakened: {key}")
 
     execution = state["execution_boundary"]
-    expected_execution_fields = {'fixed_repository_probe_map', 'production_credentials_allowed', 'probe_output_bounded', 'production_targets_allowed', 'target_is_exact_git_commit', 'report_output_external_private_exclusive', 'semantic_payload_execution_allowed', 'untracked_inputs_excluded', 'tracked_worktree_must_be_clean', 'cargo_target_outside_source', 'authority_effect', 'probe_process_group_isolated', 'arbitrary_command_execution', 'outbound_network_targeting_allowed', 'checked_out_head_must_equal_target', 'cargo_home_cache_only', 'exact_source_export', 'constitutional_bypass_allowed', 'target_commit_format', 'shell_execution', 'source_export_read_only', 'tool_exec_via_open_descriptor', 'probe_environment_allowlisted', 'probe_network_syscalls_denied', 'probe_proc_read_isolated', 'rust_toolchain_runtime_staged'}
+    expected_execution_fields = {'fixed_repository_probe_map', 'production_credentials_allowed', 'probe_output_bounded', 'production_targets_allowed', 'target_is_exact_git_commit', 'report_output_external_private_exclusive', 'semantic_payload_execution_allowed', 'untracked_inputs_excluded', 'tracked_worktree_must_be_clean', 'cargo_target_outside_source', 'authority_effect', 'probe_process_group_isolated', 'arbitrary_command_execution', 'outbound_network_targeting_allowed', 'checked_out_head_must_equal_target', 'cargo_home_cache_only', 'exact_source_export', 'constitutional_bypass_allowed', 'target_commit_format', 'shell_execution', 'source_export_read_only', 'tool_exec_via_open_descriptor', 'probe_environment_allowlisted', 'probe_network_syscalls_denied', 'probe_proc_read_isolated', 'probe_writable_scan_restarts_on_transient_enoent', 'probe_writable_scan_persistent_churn_rejects', 'probe_writable_scan_binds_queued_directory_identity', 'rust_toolchain_runtime_staged'}
     require(set(execution) == expected_execution_fields, "MORIARTY execution boundary field set is not closed")
     required_true = {
         "target_is_exact_git_commit", "checked_out_head_must_equal_target", "tracked_worktree_must_be_clean",
@@ -356,7 +357,9 @@ def validate_contract() -> None:
         "probe_output_bounded", "exact_source_export", "source_export_read_only",
         "untracked_inputs_excluded", "tool_exec_via_open_descriptor", "cargo_home_cache_only",
         "cargo_target_outside_source", "report_output_external_private_exclusive",
-        "probe_network_syscalls_denied", "probe_proc_read_isolated", "rust_toolchain_runtime_staged",
+        "probe_network_syscalls_denied", "probe_proc_read_isolated",
+        "probe_writable_scan_restarts_on_transient_enoent", "probe_writable_scan_persistent_churn_rejects",
+        "probe_writable_scan_binds_queued_directory_identity", "rust_toolchain_runtime_staged",
     }
     for key in required_true:
         require(execution[key] is True, f"MORIARTY exact/fixed execution boundary drift: {key}")
@@ -726,6 +729,7 @@ def validate_probe_map() -> None:
     require(0 < isolation.PROBE_RLIMIT_AS_BYTES <= 2 * 1024 * 1024 * 1024, "MORIARTY address-space ceiling invalid")
     require(0 < isolation.PROBE_RLIMIT_FSIZE_BYTES <= 512 * 1024 * 1024, "MORIARTY file-size ceiling invalid")
     require(0 < isolation.MAX_PROBE_WRITABLE_BYTES <= 2 * 1024 * 1024 * 1024, "MORIARTY aggregate writable-byte ceiling invalid")
+    require(isolation.PROBE_WRITABLE_SCAN_MAX_RESTARTS == 8, "MORIARTY writable-scan restart budget drift")
     require(0 < isolation.MAX_TOOLCHAIN_STAGE_BYTES <= 3 * 1024 * 1024 * 1024, "MORIARTY toolchain stage byte ceiling invalid")
     require(0 < isolation.MAX_TOOLCHAIN_STAGE_ENTRIES <= 32768, "MORIARTY toolchain stage entry ceiling invalid")
     system_reads = moriarty._system_read_paths()
@@ -857,6 +861,7 @@ def validate_docs_and_ci() -> None:
         "reopens the owning phase", "production credentials", "production targets",
         "cargo test --all-targets --frozen", "read-only exact-commit export",
         "fail-before/pass-after", "stable through resolution",
+        "persistent writable-tree churn fails closed",
     ):
         require(marker in docs, f"MORIARTY.md marker missing: {marker}")
 
@@ -1021,7 +1026,251 @@ def validate_counterexample_negative_tests(target: str) -> None:
     require(stable["counterexample_id"] == original_id, "counterexample identity changed through resolution")
 
 
+
+class _WritableScanVanishingEntry:
+    def __init__(self, path: Path) -> None:
+        self.name = path.name
+        self.path = str(path)
+
+    def stat(self, *, follow_symlinks: bool = False):
+        _ = follow_symlinks
+        raise FileNotFoundError(self.path)
+
+
+class _WritableScanEntries:
+    def __init__(self, entries: tuple[Any, ...]) -> None:
+        self._entries = entries
+
+    def __enter__(self):
+        return iter(self._entries)
+
+    def __exit__(self, exc_type, exc, traceback) -> bool:
+        _ = (exc_type, exc, traceback)
+        return False
+
+
+def validate_writable_scan_race_regressions() -> None:
+    isolation = moriarty._moriarty_isolation
+
+    with tempfile.TemporaryDirectory(prefix="moriarty-scan-entry-") as temp_dir:
+        root = Path(temp_dir).resolve(strict=True)
+        root_info = root.stat()
+        original_scandir = isolation.os.scandir
+        first = True
+
+        def disappearing_entry(path):
+            nonlocal first
+            matches_root = False
+            if isinstance(path, int):
+                opened = os.fstat(path)
+                matches_root = opened.st_dev == root_info.st_dev and opened.st_ino == root_info.st_ino
+            else:
+                matches_root = os.fspath(path) == os.fspath(root)
+            if first and matches_root:
+                first = False
+                return _WritableScanEntries((_WritableScanVanishingEntry(root / "gone.tmp"),))
+            return original_scandir(path)
+
+        try:
+            isolation.os.scandir = disappearing_entry
+            require(
+                isolation.probe_writable_tree_within_limits((root,)),
+                "one-time disappearing child entry did not converge after scan restart",
+            )
+        finally:
+            isolation.os.scandir = original_scandir
+
+    with tempfile.TemporaryDirectory(prefix="moriarty-scan-child-") as temp_dir:
+        root = Path(temp_dir).resolve(strict=True)
+        child = root / "child"
+        child.mkdir()
+        original_open = isolation.os.open
+        removed = False
+
+        def disappearing_child(path, flags, *args, **kwargs):
+            nonlocal removed
+            if not removed and os.fspath(path) == os.fspath(child):
+                removed = True
+                child.rmdir()
+                raise FileNotFoundError(os.fspath(child))
+            return original_open(path, flags, *args, **kwargs)
+
+        try:
+            isolation.os.open = disappearing_child
+            require(
+                isolation.probe_writable_tree_within_limits((root,)),
+                "one-time disappearing child directory did not converge after scan restart",
+            )
+        finally:
+            isolation.os.open = original_open
+
+    with tempfile.TemporaryDirectory(prefix="moriarty-scan-rename-") as temp_dir:
+        root = Path(temp_dir).resolve(strict=True)
+        old = root / "old"
+        new = root / "new"
+        old.mkdir()
+        oversized = old / "oversized"
+        oversized.write_bytes(b"")
+        os.truncate(oversized, isolation.MAX_PROBE_WRITABLE_BYTES + 1)
+        original_open = isolation.os.open
+        renamed = False
+
+        def rename_once(path, flags, *args, **kwargs):
+            nonlocal renamed
+            if not renamed and os.fspath(path) == os.fspath(old):
+                renamed = True
+                old.rename(new)
+                raise FileNotFoundError(os.fspath(old))
+            return original_open(path, flags, *args, **kwargs)
+
+        try:
+            isolation.os.open = rename_once
+            require(
+                not isolation.probe_writable_tree_within_limits((root,)),
+                "renamed oversized subtree escaped writable accounting",
+            )
+        finally:
+            isolation.os.open = original_open
+
+    with tempfile.TemporaryDirectory(prefix="moriarty-scan-substitution-") as temp_dir:
+        root = Path(temp_dir).resolve(strict=True)
+        old = root / "old"
+        moved = root / "moved"
+        old.mkdir()
+        oversized = old / "oversized"
+        oversized.write_bytes(b"")
+        os.truncate(oversized, isolation.MAX_PROBE_WRITABLE_BYTES + 1)
+        original_open = isolation.os.open
+        substituted = False
+
+        def substitute_before_open(path, flags, *args, **kwargs):
+            nonlocal substituted
+            if not substituted and os.fspath(path) == os.fspath(old):
+                substituted = True
+                old.rename(moved)
+                old.mkdir()
+            return original_open(path, flags, *args, **kwargs)
+
+        try:
+            isolation.os.open = substitute_before_open
+            require(
+                not isolation.probe_writable_tree_within_limits((root,)),
+                "replacement directory hid a moved oversized subtree",
+            )
+            require(substituted, "queued-directory substitution regression did not execute")
+        finally:
+            isolation.os.open = original_open
+
+    with tempfile.TemporaryDirectory(prefix="moriarty-scan-eio-") as temp_dir:
+        root = Path(temp_dir).resolve(strict=True)
+        child = root / "child"
+        child.mkdir()
+        original_scandir = isolation.os.scandir
+        injected = False
+
+        def descriptor_eio(path):
+            nonlocal injected
+            if isinstance(path, int) and not injected:
+                opened = os.fstat(path)
+                child_info = child.stat()
+                if opened.st_dev == child_info.st_dev and opened.st_ino == child_info.st_ino:
+                    injected = True
+                    raise OSError(errno.EIO, "synthetic descriptor scandir EIO")
+            return original_scandir(path)
+
+        try:
+            isolation.os.scandir = descriptor_eio
+            require(
+                not isolation.probe_writable_tree_within_limits((root,)),
+                "descriptor scandir EIO escaped the closed writable-scan result",
+            )
+            require(injected, "descriptor scandir EIO regression did not execute")
+        finally:
+            isolation.os.scandir = original_scandir
+
+    with tempfile.TemporaryDirectory(prefix="moriarty-scan-churn-") as temp_dir:
+        root = Path(temp_dir).resolve(strict=True)
+        left = root / "left"
+        right = root / "right"
+        left.mkdir()
+        original_open = isolation.os.open
+        churn_count = 0
+
+        def persistent_rename(path, flags, *args, **kwargs):
+            nonlocal churn_count
+            candidate = Path(os.fspath(path))
+            if candidate in {left, right} and candidate.exists():
+                destination = right if candidate == left else left
+                candidate.rename(destination)
+                churn_count += 1
+                raise FileNotFoundError(os.fspath(candidate))
+            return original_open(path, flags, *args, **kwargs)
+
+        try:
+            isolation.os.open = persistent_rename
+            require(
+                not isolation.probe_writable_tree_within_limits((root,)),
+                "persistent rename churn did not fail closed",
+            )
+            require(
+                churn_count == isolation.PROBE_WRITABLE_SCAN_MAX_RESTARTS + 1,
+                "writable-scan churn did not consume the closed restart budget",
+            )
+        finally:
+            isolation.os.open = original_open
+
+    with tempfile.TemporaryDirectory(prefix="moriarty-scan-root-") as temp_dir:
+        root = Path(temp_dir).resolve(strict=True)
+        original_open = isolation.os.open
+
+        def disappearing_root(path, flags, *args, **kwargs):
+            if os.fspath(path) == os.fspath(root):
+                root.rmdir()
+                raise FileNotFoundError(os.fspath(root))
+            return original_open(path, flags, *args, **kwargs)
+
+        try:
+            isolation.os.open = disappearing_root
+            require(
+                not isolation.probe_writable_tree_within_limits((root,)),
+                "root disappearance did not fail closed",
+            )
+        finally:
+            isolation.os.open = original_open
+
+    with tempfile.TemporaryDirectory(prefix="moriarty-scan-permission-") as temp_dir:
+        root = Path(temp_dir).resolve(strict=True)
+        child = root / "child"
+        child.mkdir()
+        original_open = isolation.os.open
+
+        def denied_child(path, flags, *args, **kwargs):
+            if os.fspath(path) == os.fspath(child):
+                raise PermissionError(os.fspath(child))
+            return original_open(path, flags, *args, **kwargs)
+
+        try:
+            isolation.os.open = denied_child
+            require(
+                not isolation.probe_writable_tree_within_limits((root,)),
+                "permission error was incorrectly treated as transient disappearance",
+            )
+        finally:
+            isolation.os.open = original_open
+
+    with tempfile.TemporaryDirectory(prefix="moriarty-scan-bound-") as temp_dir:
+        root = Path(temp_dir).resolve(strict=True)
+        oversized = root / "oversized"
+        oversized.write_bytes(b"")
+        os.truncate(oversized, isolation.MAX_PROBE_WRITABLE_BYTES + 1)
+        require(
+            not isolation.probe_writable_tree_within_limits((root,)),
+            "aggregate writable-byte ceiling was weakened",
+        )
+
+
 def validate_isolation_negative_tests(target: str) -> None:
+    validate_writable_scan_race_regressions()
     require(moriarty.harness_files_match_target(target, ("tools/validate_phase9_gate.py",)), "executed Phase 9 harness bytes do not match target")
 
     with tempfile.TemporaryDirectory(prefix="moriarty-cargo-auth-test-") as temp_dir:

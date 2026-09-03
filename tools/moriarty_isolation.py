@@ -37,6 +37,7 @@ MAX_PROBE_WRITABLE_BYTES = 2 * 1024 * 1024 * 1024
 MAX_PROBE_WRITABLE_ENTRIES = 65_536
 MAX_PROBE_WRITABLE_DEPTH = 64
 PROBE_WRITABLE_CHECK_INTERVAL_SECONDS = 1.0
+PROBE_WRITABLE_SCAN_MAX_RESTARTS = 8
 PROBE_CGROUP_MEMORY_BYTES = 2 * 1024 * 1024 * 1024
 PROBE_CGROUP_PIDS = 128
 MAX_TOOLCHAIN_STAGE_FILE_BYTES = 1024 * 1024 * 1024
@@ -387,41 +388,98 @@ def _apply_probe_resource_limits() -> None:
 
 
 def probe_writable_tree_within_limits(paths: tuple[Path, ...]) -> bool:
-    total_bytes = 0
-    total_entries = 0
+    roots: list[tuple[Path, int, int]] = []
     for supplied in paths:
         try:
             root = Path(supplied).resolve(strict=True)
+            info = root.stat()
         except OSError:
             return False
-        if not root.is_dir():
+        if not stat.S_ISDIR(info.st_mode):
             return False
-        stack: list[tuple[Path, int]] = [(root, 0)]
-        while stack:
-            current, depth = stack.pop()
-            if depth > MAX_PROBE_WRITABLE_DEPTH:
-                return False
-            try:
-                with os.scandir(current) as iterator:
-                    for entry in iterator:
-                        total_entries += 1
-                        if total_entries > MAX_PROBE_WRITABLE_ENTRIES:
+        roots.append((root, info.st_dev, info.st_ino))
+
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
+    for _attempt in range(PROBE_WRITABLE_SCAN_MAX_RESTARTS + 1):
+        total_bytes = 0
+        total_entries = 0
+        restart = False
+        for root, root_dev, root_ino in roots:
+            stack: list[tuple[Path, int, int, int]] = [(root, 0, root_dev, root_ino)]
+            while stack:
+                current, depth, expected_dev, expected_ino = stack.pop()
+                if depth > MAX_PROBE_WRITABLE_DEPTH:
+                    return False
+                try:
+                    current_fd = os.open(current, directory_flags)
+                except FileNotFoundError:
+                    if current == root:
+                        return False
+                    restart = True
+                    break
+                except OSError:
+                    return False
+                try:
+                    opened = os.fstat(current_fd)
+                    if (
+                        not stat.S_ISDIR(opened.st_mode)
+                        or opened.st_dev != expected_dev
+                        or opened.st_ino != expected_ino
+                    ):
+                        if current == root:
                             return False
-                        try:
-                            info = entry.stat(follow_symlinks=False)
-                        except OSError:
+                        # The queued pathname was replaced after discovery.
+                        # Restart from the bound roots so a moved subtree is
+                        # re-enumerated instead of scanning the replacement.
+                        restart = True
+                        break
+                    try:
+                        with os.scandir(current_fd) as iterator:
+                            for entry in iterator:
+                                total_entries += 1
+                                if total_entries > MAX_PROBE_WRITABLE_ENTRIES:
+                                    return False
+                                try:
+                                    info = entry.stat(follow_symlinks=False)
+                                except FileNotFoundError:
+                                    # A concurrent unlink/rename invalidates this
+                                    # accounting pass. Restart from the bound roots
+                                    # so a renamed subtree cannot escape counting.
+                                    restart = True
+                                    break
+                                except OSError:
+                                    return False
+                                if stat.S_ISDIR(info.st_mode):
+                                    stack.append(
+                                        (current / entry.name, depth + 1, info.st_dev, info.st_ino)
+                                    )
+                                elif stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode):
+                                    total_bytes += info.st_size
+                                    if total_bytes > MAX_PROBE_WRITABLE_BYTES:
+                                        return False
+                                else:
+                                    return False
+                    except FileNotFoundError:
+                        if current == root:
                             return False
-                        if stat.S_ISDIR(info.st_mode):
-                            stack.append((Path(entry.path), depth + 1))
-                        elif stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode):
-                            total_bytes += info.st_size
-                            if total_bytes > MAX_PROBE_WRITABLE_BYTES:
-                                return False
-                        else:
-                            return False
-            except OSError:
-                return False
-    return True
+                        # Descriptor enumeration raced with transient child
+                        # disappearance. Rebuild accounting from the bound roots.
+                        restart = True
+                    except OSError:
+                        # Enumeration failures such as EIO are closed resource-scan
+                        # failures, not exceptions that may escape run_probe().
+                        return False
+                finally:
+                    os.close(current_fd)
+                if restart:
+                    break
+            if restart:
+                break
+        if not restart:
+            return True
+    # Persistent mutation can otherwise keep producing incomplete
+    # snapshots. Bounded churn therefore fails closed.
+    return False
 
 
 def _mountinfo_unescape(value: str) -> str:
