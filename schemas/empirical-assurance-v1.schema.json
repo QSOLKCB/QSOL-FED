@@ -62,11 +62,21 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "date", "archive_sha256", "purpose", "supported_separations", "limitations"],
+        "required": ["id", "date", "archive_sha256", "retained_evidence", "purpose", "supported_separations", "limitations"],
         "properties": {
           "id": {"enum": ["supercomputer-run-II", "supercomputer-run-III"]},
           "date": {"const": "2026-09-03"},
           "archive_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "retained_evidence": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "sha256", "scope"],
+            "properties": {
+              "path": {"type": "string", "pattern": "^evidence/empirical-assurance/run-(II|III)\\.json$"},
+              "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+              "scope": {"const": "bounded_extract_from_operator_supplied_source_archive"}
+            }
+          },
           "purpose": {"type": "string", "minLength": 1, "maxLength": 256},
           "observations": {
             "type": "object",
