@@ -35,7 +35,7 @@ The full operator-supplied source archive is identified by that digest but is no
 
 ```text
 evidence/empirical-assurance/run-II.json
-sha256: 9127ab32d9f88bafc97608a5dae0b963794b2d0d13bc4bd411f5d3e7f4a3c0b7
+sha256: f990c8299d73975b4d731de2ea0ae60a41d08cea27a2b4158511a4294d6eedc2
 ```
 
 The retained extract records the source archive identity, hashes of the source files from which it was derived, and the bounded observations consumed by this assurance record.
@@ -49,7 +49,7 @@ Recorded Run II results include:
 - 8/8 adversarial boundary probes prevented.
 - Council-of-Councils report-level convergence without shared ballots or imported vote weight.
 - persistent-world restart checks preserving recorded object identity.
-- local/reference FED transport and partition/rejoin drills requiring explicit reconciliation where state changed and preserving member-local state rather than silently overwriting it.
+- local/reference FED transport and partition/rejoin drills refusing silent reconciliation, requiring explicit reconciliation after snapshot divergence, and restoring the tested peer lifecycle state to `Admitted`.
 
 ### Bounded provider/vote-equality observation
 
@@ -97,7 +97,21 @@ authority_effect   = none
 
 The retained extract pins the source-file SHA-256 values for both `world_c1/result.json` and `fed_projections/c1_projection.json`, and CI requires the source and projected report counts, member identity, choice, and non-authority fields to match exactly.
 
-Important Run II limitations include: no deployed production federation was established; WebSocket/QUIC production backends were not claimed; provider token-cost accounting was incomplete on the native Council path; and one Phase 9 gate could not be executed cleanly because of the shared host permission posture.
+### Bounded partition/rejoin observation
+
+The original Run II transport driver is retained by hash as `fed_transport/driver/src/main.rs` (`a4a52ea309497f867699adb3cf9501706ce047ef01dbe3f9d509bc6dc719adb5`) and its emitted partition result as `fed_transport/partition_rejoin.json` (`2b0f188d6a1c94e358d0543505fa046c67acea4b16924ecf463b89fbe1fca443`). The executed path observed:
+
+```text
+state_after_admit = Admitted
+state_after_partition = Disconnected
+diverged_snapshot_disposition = ExplicitReconciliationRequired
+silent_reconciliation_refused = true
+state_after_explicit_rejoin = Admitted
+```
+
+This supports the narrower empirical statement that snapshot divergence requires explicit reconciliation and that the tested peer lifecycle state was restored. The Run II driver did **not** capture before/after hashes or values for the complete member-local governance, trust, evidence, capability, history, citizenship, or other sovereign state surfaces. Accordingly, this empirical record does not claim that broader preservation result from Run II. The broader modeled sovereignty property remains separately addressed by Phase 10 formal assurance.
+
+Important Run II limitations include: no deployed production federation was established; WebSocket/QUIC production backends were not claimed; provider token-cost accounting was incomplete on the native Council path; one Phase 9 gate could not be executed cleanly because of the shared host permission posture; and complete member-local governance/trust/evidence-state preservation was not observed by the Run II partition driver.
 
 ## Run III — agent-wrapper capability asymmetry
 
@@ -162,7 +176,7 @@ The validator checks the closed schema, exact specimen and source-archive identi
 
 ## Machine-synchronized assurance tokens
 
-The following literal tokens are included so CI can fail closed on additions, removals, or substitutions.
+The following fenced sections are parsed independently by CI and compared as exact token arrays. A token appearing elsewhere in this document cannot satisfy a missing token in the required section.
 
 ### Run II supported separations
 
@@ -172,7 +186,7 @@ council_consensus_does_not_promote_evidence
 minority_reports_survive
 nexus_council_reports_do_not_import_ballots_into_fed
 federation_transport_does_not_create_authority_on_tested_reference_surface
-partition_rejoin_requires_explicit_reconciliation_and_preserves_member_local_state_on_tested_reference_surface
+partition_rejoin_requires_explicit_reconciliation_and_restores_peer_lifecycle_state_on_tested_reference_surface
 ```
 
 ### Run II limitations
@@ -182,6 +196,7 @@ no_deployed_production_federation_established
 websocket_and_quic_production_backends_not_claimed
 native_council_per_token_cost_accounting_incomplete
 one_phase9_gate_blocked_by_shared_host_permission_posture
+complete_member_local_governance_trust_evidence_state_preservation_not_observed_in_run_II
 ```
 
 ### Run III supported separations
@@ -211,7 +226,7 @@ council_consensus_does_not_promote_evidence_on_tested_surface
 minority_reports_survive_on_tested_surface
 nexus_council_reports_do_not_import_ballots_into_fed_on_tested_surface
 federation_transport_does_not_create_authority_on_tested_reference_surface
-partition_rejoin_requires_explicit_reconciliation_and_preserves_member_local_state_on_tested_reference_surface
+partition_rejoin_requires_explicit_reconciliation_and_restores_peer_lifecycle_state_on_tested_reference_surface
 agent_wrapper_does_not_create_extra_council_seats_on_tested_surface
 tool_access_does_not_create_governance_authority_on_tested_surface
 agent_wrapper_projection_does_not_import_votes_or_authority_into_fed_on_tested_surface
@@ -226,6 +241,7 @@ no_production_networking_claim
 no_deployed_interoperable_federation_claim
 no_whole_program_formal_verification_claim
 independent_process_level_agent_wrapper_isolation_not_established
+complete_member_local_governance_trust_evidence_state_preservation_not_observed_in_run_II
 ```
 
 ## Relation to formal assurance
