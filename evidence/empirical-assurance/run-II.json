@@ -117,28 +117,6 @@
         "state_after_introduce": "Introduced",
         "state_after_partition": "Disconnected",
         "status": "EXECUTED"
-      },
-      "authority_observation": {
-        "source_file": "fed_transport/transport_results.json",
-        "profile_spec_count": 5,
-        "profile_names": [
-          "offline_sneakernet",
-          "quic",
-          "store_forward",
-          "unix_ipc",
-          "web_socket"
-        ],
-        "all_profile_specs_authority_effect_none": true,
-        "drill_report_count": 30,
-        "all_drill_reports_passed": true,
-        "all_drill_reports_authority_effect_none": true,
-        "all_drill_reports_authority_promoted_false": true,
-        "offline_package_authority_effect": "none",
-        "offline_frame_authority_effect": "none",
-        "offline_relay_authority_effects": [
-          "none",
-          "none"
-        ]
       }
     }
   },
