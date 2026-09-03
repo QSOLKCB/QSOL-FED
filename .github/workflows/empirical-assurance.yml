@@ -3,24 +3,30 @@ name: empirical-assurance
 on:
   pull_request:
     paths:
+      - "README.md"
+      - "README4AI.md"
       - "EMPIRICAL_ASSURANCE.md"
       - "machine/empirical-assurance.json"
       - "claims/empirical-assurance.json"
       - "schemas/empirical-assurance-v1.schema.json"
       - "evidence/empirical-assurance/**"
       - "tools/validate_empirical_assurance.py"
+      - "tools/validate_phase10_gate.py"
       - ".github/workflows/empirical-assurance.yml"
       - "tools/nexus_live_adapter.py"
   push:
     branches:
       - main
     paths:
+      - "README.md"
+      - "README4AI.md"
       - "EMPIRICAL_ASSURANCE.md"
       - "machine/empirical-assurance.json"
       - "claims/empirical-assurance.json"
       - "schemas/empirical-assurance-v1.schema.json"
       - "evidence/empirical-assurance/**"
       - "tools/validate_empirical_assurance.py"
+      - "tools/validate_phase10_gate.py"
       - ".github/workflows/empirical-assurance.yml"
       - "tools/nexus_live_adapter.py"
 
