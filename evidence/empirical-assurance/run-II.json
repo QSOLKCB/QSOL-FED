@@ -24,15 +24,24 @@
     "live_model_calls": 147,
     "minority_report_survival": {
       "projected_authority_effect": "none",
-      "projected_choice": "ACCEPT_WITH_CHANGES",
+      "projected_choices": [
+        "ACCEPT_WITH_CHANGES"
+      ],
       "projected_evidence_promotion": false,
-      "projected_member_id": "B",
+      "projected_member_ids": [
+        "B"
+      ],
       "projected_report_count": 1,
       "projected_vote_injection": false,
       "projection_preserved": true,
-      "source_choice": "ACCEPT_WITH_CHANGES",
-      "source_member_id": "B",
+      "source_choices": [
+        "ACCEPT_WITH_CHANGES"
+      ],
+      "source_member_ids": [
+        "B"
+      ],
       "source_report_count": 1,
+      "source_session_ref": "object:84c20965698b880735f30bed2afa4249d21b2a4f5bf8be73205c7e280ef23e6a",
       "source_world": "world_c1"
     },
     "nexus_fed_sovereignty_checks": {
