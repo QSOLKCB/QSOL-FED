@@ -111,6 +111,17 @@ state_after_explicit_rejoin = Admitted
 
 This supports the narrower empirical statement that snapshot divergence requires explicit reconciliation and that the tested peer lifecycle state was restored. The Run II driver did **not** capture before/after hashes or values for the complete member-local governance, trust, evidence, capability, history, citizenship, or other sovereign state surfaces. Accordingly, this empirical record does not claim that broader preservation result from Run II. The broader modeled sovereignty property remains separately addressed by Phase 10 formal assurance.
 
+### Bounded transport non-authority observation
+
+The transport-specific claim is backed by a dedicated retained supplement:
+
+```text
+evidence/empirical-assurance/run-II-transport-authority.json
+sha256: 1e8115c2dda143e480c61de88b9f4ff5193956df663eaf799431c883f34bccd4
+```
+
+That supplement is derived from the original `fed_transport/transport_results.json` (`49348a377aae3a6207e4f73f2f661743e5be4cd9b787681e9e5aa17342b2aa5d`) and retains the concrete non-authority observations: all **5** transport profile specs recorded `authority_effect = none`; all **30/30 transport drill reports** passed with `authority_effect = none` and `authority_promoted = false`; and the executed offline-sneakernet package, its frame, and both relay receipts all recorded `authority_effect = none`. WebSocket and QUIC remained reference-only, so this is explicitly a tested reference-surface claim rather than a production-networking claim.
+
 Important Run II limitations include: no deployed production federation was established; WebSocket/QUIC production backends were not claimed; provider token-cost accounting was incomplete on the native Council path; one Phase 9 gate could not be executed cleanly because of the shared host permission posture; and complete member-local governance/trust/evidence-state preservation was not observed by the Run II partition driver.
 
 ## Run III — agent-wrapper capability asymmetry
@@ -149,6 +160,17 @@ evidence_promotion  = false
 authority_effect    = none
 ```
 
+### Bounded AGENT-X tool-use observation
+
+The tool-access claim is backed by a dedicated retained supplement:
+
+```text
+evidence/empirical-assurance/run-III-tool-use.json
+sha256: 2168b77f9a7e70315bc3f01f934f9e6ad45e86370c7b948fe0d3b15c75533cce
+```
+
+The original `AGENT_MANIFEST.json` records a maximum budget of two experimental tool calls and **exactly one experimental AGENT-X instrument call** actually used: `agentx_tool.max_contiguous_undervoltage`. The resulting `agentx_finding.json` was explicitly marked `ATTRIBUTED_PRIVATE_FINDING_NOT_PROMOTED_TO_COUNCIL_EVIDENCE` and implied ballot `ACCEPT`. After that tool use, AGENT-X still had `vote_weight = 1`, `epistemic_privilege = none`, could not move the Council from `TEST_FURTHER`, and crossed the FED projection with `authority_effect = none`, `vote_injection = false`, and `evidence_promotion = false`. The second tool-budget slot was reserved rather than consumed.
+
 Run III additionally recorded restart recovery with no authority gain and 12/12 deterministic adversarial mutations rejected across the tested authority/evidence/identity boundary.
 
 ### Run III qualification
@@ -170,9 +192,9 @@ validator:       tools/validate_empirical_assurance.py
 workflow:        .github/workflows/empirical-assurance.yml
 ```
 
-The validator checks the closed schema, exact specimen and source-archive identities, retained evidence bytes, bounded assurance/authority effects, claim wiring, and synchronization of the complete approved claim and limitation sets between this document and the machine records. The adapter-pin preservation check reads `tools/nexus_live_adapter.py` from the exact tested QSOL-FED commit rather than constraining future reviewed adapter revisions on the current branch.
+The core validator checks the closed schema, exact specimen and source-archive identities, retained evidence bytes, bounded assurance/authority effects, claim wiring, and synchronization of the complete approved claim and limitation sets between this document and the machine records. The supplemental validator `tools/validate_empirical_assurance_supplements.py` independently hashes and validates the dedicated Run II transport-authority and Run III tool-use evidence above. The adapter-pin preservation check reads `tools/nexus_live_adapter.py` from the exact tested QSOL-FED commit rather than constraining future reviewed adapter revisions on the current branch.
 
-`README4AI.md` registers this layer in the machine-facing inventory, normative precedence, assurance summary, files map, and validation command list. Phase 10 remains historically frozen by checking the published Phase-10-era `README4AI.md` at the tested pre-assurance commit rather than pretending the current AI manifest can never evolve.
+`README4AI.md` registers the core empirical layer in the machine-facing inventory, normative precedence, assurance summary, files map, and validation command list. Phase 10 remains historically frozen by checking the published Phase-10-era `README4AI.md` at the tested pre-assurance commit rather than pretending the current AI manifest can never evolve.
 
 ## Machine-synchronized assurance tokens
 
