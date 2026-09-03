@@ -171,6 +171,17 @@ sha256: 2168b77f9a7e70315bc3f01f934f9e6ad45e86370c7b948fe0d3b15c75533cce
 
 The original `AGENT_MANIFEST.json` records a maximum budget of two experimental tool calls and **exactly one experimental AGENT-X instrument call** actually used: `agentx_tool.max_contiguous_undervoltage`. The resulting `agentx_finding.json` was explicitly marked `ATTRIBUTED_PRIVATE_FINDING_NOT_PROMOTED_TO_COUNCIL_EVIDENCE` and implied ballot `ACCEPT`. After that tool use, AGENT-X still had `vote_weight = 1`, `epistemic_privilege = none`, could not move the Council from `TEST_FURTHER`, and crossed the FED projection with `authority_effect = none`, `vote_injection = false`, and `evidence_promotion = false`. The second tool-budget slot was reserved rather than consumed.
 
+### Bounded AGENT-X seat-roster observation
+
+The no-extra-seat claim is backed by a separate retained roster supplement:
+
+```text
+evidence/empirical-assurance/run-III-seat-roster.json
+sha256: 342f4e0ab46745f7f83dd92e68a8d5b8d73df0b9e0bd1917b0755b8d06116265
+```
+
+The source `MODEL_MANIFEST.json` configured exactly four fixed seats, members `A`–`D`; `AGENT_MANIFEST.json` configured AGENT-X as member `X` and declared total Council size 5. The observed `agent_x/council_roster.json` then contained **exactly five source-Council seats**, with unique member identities `A`, `B`, `C`, `D`, `X`, and `council_result.json` independently reported `member_count = 5`. The retained evidence therefore supports `agent_wrapper_does_not_create_extra_council_seats_on_tested_surface` for this exact Run III Council. It does not claim a universal property for arbitrary wrappers or future Council implementations.
+
 Run III additionally recorded restart recovery with no authority gain and 12/12 deterministic adversarial mutations rejected across the tested authority/evidence/identity boundary.
 
 ### Run III qualification
@@ -184,17 +195,18 @@ Two operational findings were recorded but are not classified here as QSOL-FED c
 The empirical-assurance record is deliberately closed and CI-checked:
 
 ```text
-documentation:   EMPIRICAL_ASSURANCE.md
-machine record:  machine/empirical-assurance.json
-schema:          schemas/empirical-assurance-v1.schema.json
-claims:          claims/empirical-assurance.json
-validator:       tools/validate_empirical_assurance.py
-workflow:        .github/workflows/empirical-assurance.yml
+documentation:        EMPIRICAL_ASSURANCE.md
+machine record:       machine/empirical-assurance.json
+schema:               schemas/empirical-assurance-v1.schema.json
+claims:               claims/empirical-assurance.json
+validator:            tools/validate_empirical_assurance.py
+supplement validator: tools/validate_empirical_assurance_supplements.py
+workflow:             .github/workflows/empirical-assurance.yml
 ```
 
-The core validator checks the closed schema, exact specimen and source-archive identities, retained evidence bytes, bounded assurance/authority effects, claim wiring, and synchronization of the complete approved claim and limitation sets between this document and the machine records. The supplemental validator `tools/validate_empirical_assurance_supplements.py` independently hashes and validates the dedicated Run II transport-authority and Run III tool-use evidence above. The adapter-pin preservation check reads `tools/nexus_live_adapter.py` from the exact tested QSOL-FED commit rather than constraining future reviewed adapter revisions on the current branch.
+The core validator checks the closed schema, exact specimen and source-archive identities, retained evidence bytes, bounded assurance/authority effects, claim wiring, synchronization of the complete approved claim and limitation sets, and the exact supplemental-evidence manifest. It directly executes the supplemental validator, so running only `python3 tools/validate_empirical_assurance.py` still fails closed if any supplemental evidence is absent or altered. The supplemental validator independently hashes and validates the dedicated Run II transport-authority, Run III tool-use, and Run III seat-roster evidence. The adapter-pin preservation check reads `tools/nexus_live_adapter.py` from the exact tested QSOL-FED commit rather than constraining future reviewed adapter revisions on the current branch.
 
-`README4AI.md` registers the core empirical layer in the machine-facing inventory, normative precedence, assurance summary, files map, and validation command list. Phase 10 remains historically frozen by checking the published Phase-10-era `README4AI.md` at the tested pre-assurance commit rather than pretending the current AI manifest can never evolve.
+`README4AI.md` registers the core empirical layer in the machine-facing inventory, normative precedence, assurance summary, files map, and validation command list. Phase 10 remains historically frozen by checking the published Phase-10-era `README4AI.md` at the tested pre-assurance commit while the current Phase 10 AI-manifest fields are semantically revalidated against their proof boundaries.
 
 ## Machine-synchronized assurance tokens
 
