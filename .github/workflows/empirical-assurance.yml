@@ -12,6 +12,7 @@ on:
       - "schemas/empirical-assurance-v1.schema.json"
       - "evidence/empirical-assurance/**"
       - "tools/validate_empirical_assurance.py"
+      - "tools/validate_empirical_assurance_supplements.py"
       - "tools/validate_phase10_gate.py"
       - ".github/workflows/empirical-assurance.yml"
       - "tools/nexus_live_adapter.py"
@@ -28,6 +29,7 @@ on:
       - "schemas/empirical-assurance-v1.schema.json"
       - "evidence/empirical-assurance/**"
       - "tools/validate_empirical_assurance.py"
+      - "tools/validate_empirical_assurance_supplements.py"
       - "tools/validate_phase10_gate.py"
       - ".github/workflows/empirical-assurance.yml"
       - "tools/nexus_live_adapter.py"
@@ -52,3 +54,4 @@ jobs:
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
           python3 tools/validate_empirical_assurance.py
           python3 tools/validate_empirical_assurance.py --json | tee "$RUNNER_TEMP/empirical-assurance-gate.json"
+          python3 tools/validate_empirical_assurance_supplements.py
