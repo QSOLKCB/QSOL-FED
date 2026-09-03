@@ -6,6 +6,16 @@
       "prevented": 8,
       "total": 8
     },
+    "consensus_evidence_separation": {
+      "consensus_label": "UNANIMOUS",
+      "consensus_promoted_evidence": false,
+      "disposition": "REJECT",
+      "evidence_state": "UNTESTED",
+      "source_world": "world_a/repeat_1",
+      "tally": {
+        "REJECT": 5
+      }
+    },
     "council_of_councils": {
       "authority_effect": "none",
       "ballots_merged": false
@@ -13,26 +23,17 @@
     "fed_rust_tests_passed": 131,
     "live_model_calls": 147,
     "minority_report_survival": {
-      "source_world": "world_c1",
-      "source_session_ref": "object:84c20965698b880735f30bed2afa4249d21b2a4f5bf8be73205c7e280ef23e6a",
-      "source_report_count": 1,
-      "source_member_ids": [
-        "B"
-      ],
-      "source_choices": [
-        "ACCEPT_WITH_CHANGES"
-      ],
-      "projected_report_count": 1,
-      "projected_member_ids": [
-        "B"
-      ],
-      "projected_choices": [
-        "ACCEPT_WITH_CHANGES"
-      ],
-      "projection_preserved": true,
       "projected_authority_effect": "none",
+      "projected_choice": "ACCEPT_WITH_CHANGES",
+      "projected_evidence_promotion": false,
+      "projected_member_id": "B",
+      "projected_report_count": 1,
       "projected_vote_injection": false,
-      "projected_evidence_promotion": false
+      "projection_preserved": true,
+      "source_choice": "ACCEPT_WITH_CHANGES",
+      "source_member_id": "B",
+      "source_report_count": 1,
+      "source_world": "world_c1"
     },
     "nexus_fed_sovereignty_checks": {
       "passed": 122,
@@ -40,6 +41,49 @@
     },
     "nexus_python_tests_passed": 898,
     "nexus_python_tests_skipped": 1,
+    "provider_vote_equality": {
+      "all_epistemic_privileges_none": true,
+      "all_vote_weights_equal_one": true,
+      "distinct_provider_families": 5,
+      "seats": [
+        {
+          "epistemic_privilege": "none",
+          "member_id": "A",
+          "model_id": "gpt-5.5",
+          "provider_family": "OpenAI",
+          "vote_weight": 1
+        },
+        {
+          "epistemic_privilege": "none",
+          "member_id": "B",
+          "model_id": "claude-sonnet-5",
+          "provider_family": "Anthropic",
+          "vote_weight": 1
+        },
+        {
+          "epistemic_privilege": "none",
+          "member_id": "C",
+          "model_id": "gemini-3.5-flash",
+          "provider_family": "Google",
+          "vote_weight": 1
+        },
+        {
+          "epistemic_privilege": "none",
+          "member_id": "D",
+          "model_id": "grok-4.6",
+          "provider_family": "xAI",
+          "vote_weight": 1
+        },
+        {
+          "epistemic_privilege": "none",
+          "member_id": "E",
+          "model_id": "deepseek-ai/DeepSeek-V4-Flash-0731",
+          "provider_family": "DeepSeek",
+          "vote_weight": 1
+        }
+      ],
+      "source_world": "world_a/repeat_1"
+    },
     "source_edits_to_specimens": 0,
     "tested_fed_commit": "1fd643f643636bcb0917f571aff5cdc25439b470",
     "tested_nexus_commit": "24cb0ce246d12ac99e7d190a8890ef2ddd598321",
@@ -69,12 +113,15 @@
   "schema_version": 1,
   "source_archive_sha256": "0d7a67292062b67473a5483c4a8fa6074378128cb03a60d79651dae091f5b0ec",
   "source_file_sha256": {
+    "MODEL_MANIFEST.json": "d9da5abb3e07bec4f65df650b8b35d9af5d702bc7fafc9eb4c2ffe74e3c761f4",
     "RESULTS.json": "8ee38429f49d650bd0175f385a534f52595361e81a89e683dbd7b5ca1ca9e61d",
     "adversarial_tests/results.json": "b8f6c5626320f3a45bb5102ce880975b860daa6d9e5a963b51727eec499697df",
     "baseline_tests/summary.md": "0fd9f4d343554523f5fdbf4ee5fa1143adf00c12fbb0b02fe74750c602d4189f",
     "fed_projections/c1_projection.json": "ef035f00541ab7a00f3a1c9fffa88f237a8fad9ab3983f185665b6d7c40999be",
     "fed_projections/invariant_checks.json": "7f2d5752a9c12a1b59689a392dd49fa8c26be60dea612c102290093ab618292b",
     "fed_transport/transport_results.json": "49348a377aae3a6207e4f73f2f661743e5be4cd9b787681e9e5aa17342b2aa5d",
+    "world_a/repeat_1/result.json": "7f0528c09fd11cfe3c6567f61ea5668cbdec59dcbe0141c2e05964ba63dd51d8",
+    "world_a/repeat_1/telemetry.json": "9824bd6f373923a45ae214c6fc4d2c76aa4b3dd8c201b82517210f403ddd84e7",
     "world_c1/result.json": "3b803409f8da6a519a7fa8fb66465699b35be6993d434ea6c448d3a4727a51c9"
   }
 }
