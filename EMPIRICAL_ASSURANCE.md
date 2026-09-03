@@ -48,7 +48,6 @@ Recorded Run II results include:
 - 122/122 recorded sovereignty checks holding across projected Council reports.
 - 8/8 adversarial boundary probes prevented.
 - Council-of-Councils reports remained non-authoritative and did not merge ballots.
-- persistent-world restart checks preserving recorded object identity.
 - local/reference FED transport and partition/rejoin drills refusing silent reconciliation, requiring explicit reconciliation after snapshot divergence, and restoring the tested peer lifecycle state to `Admitted`.
 
 ### Bounded provider/vote-equality observation
