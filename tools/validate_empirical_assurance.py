@@ -38,6 +38,20 @@ EXPECTED_GATE = {
     "workflow": ".github/workflows/empirical-assurance.yml",
     "documentation": "EMPIRICAL_ASSURANCE.md",
 }
+EXPECTED_TOP_LEVEL_SEMANTICS = {
+    "document_type": "qsol-fed-integrated-empirical-assurance",
+    "schema_version": 1,
+    "assurance_effect": "empirical_record_only",
+    "capability_effect": "none",
+    "authority_effect": "none",
+    "evidence_promotion": False,
+    "formalization_relation": "complementary_not_replacement",
+}
+EXPECTED_FORMAL_ASSURANCE = {
+    "phase10_remains_separate": True,
+    "reference": "FORMALIZATION.md",
+    "rule": "empirical_execution_does_not_reprove_or_replace_lean_theorems",
+}
 
 EXPECTED_SUPPLEMENTS = [
     {
@@ -290,6 +304,9 @@ def validate_closed_schema(record: dict[str, Any]) -> None:
 
 
 def validate_record_semantics(record: dict[str, Any]) -> None:
+    for key, expected in EXPECTED_TOP_LEVEL_SEMANTICS.items():
+        require(record.get(key) == expected, f"empirical top-level semantic drift: {key}")
+    require(record.get("formal_assurance") == EXPECTED_FORMAL_ASSURANCE, "empirical/formal assurance relationship drift")
     require(record.get("gate") == EXPECTED_GATE, "empirical assurance gate wiring drift")
     require(record.get("supplemental_evidence") == EXPECTED_SUPPLEMENTS, "empirical assurance supplemental-evidence binding drift")
     specimens = record["tested_specimens"]
@@ -318,9 +335,6 @@ def validate_record_semantics(record: dict[str, Any]) -> None:
     result = run3["canonical_result"]
     require(result["ground_truth_matching_participant"] == "AGENT-X" and result["ground_truth_matching_ballot"] == "ACCEPT", "Run III ground-truth result drift")
     require(result["agent_x_extra_authority_observed"] is False, "Run III agent authority observation drift")
-    require(record["capability_effect"] == "none" and record["authority_effect"] == "none", "empirical record authority/capability effect drift")
-    require(record["evidence_promotion"] is False, "empirical record must not promote evidence")
-    require(record["formal_assurance"]["phase10_remains_separate"] is True, "Phase 10 separation drift")
 
 
 def validate_claim_manifest() -> None:
