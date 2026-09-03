@@ -15,6 +15,7 @@ jobs:
     timeout-minutes: 3
     env:
       TARGET_SHA: ${{ github.event.pull_request.head.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
       STATUS_CONTEXT: trusted-empirical-anchor/head
     steps:
@@ -27,6 +28,10 @@ jobs:
             ''|*[!0-9a-f]* ) echo "invalid PR head SHA" >&2; exit 1 ;;
           esac
           test "${#TARGET_SHA}" -eq 40
+          case "$BASE_SHA" in
+            ''|*[!0-9a-f]* ) echo "invalid PR base SHA" >&2; exit 1 ;;
+          esac
+          test "${#BASE_SHA}" -eq 40
           case "$PR_NUMBER" in
             ''|*[!0-9]* ) echo "invalid PR number" >&2; exit 1 ;;
           esac
@@ -63,6 +68,14 @@ jobs:
             ''|*[!0-9a-f]* ) echo "invalid PR head SHA" >&2; exit 1 ;;
           esac
           test "${#TARGET_SHA}" -eq 40
+          case "$BASE_SHA" in
+            ''|*[!0-9a-f]* ) echo "invalid PR base SHA" >&2; exit 1 ;;
+          esac
+          test "${#BASE_SHA}" -eq 40
+          test "$(git rev-parse HEAD)" = "$BASE_SHA" || {
+            echo "trusted checkout does not match event base SHA" >&2
+            exit 1
+          }
           case "$PR_NUMBER" in
             ''|*[!0-9]* ) echo "invalid PR number" >&2; exit 1 ;;
           esac
@@ -114,6 +127,29 @@ jobs:
               exit 1
             }
           }
+
+          trusted_anchor_path=.github/workflows/trusted-empirical-anchor.yml
+          trusted_anchor_entry="$(git ls-tree "$BASE_SHA" -- "$trusted_anchor_path")"
+          test -n "$trusted_anchor_entry" || {
+            echo "trusted base anchor workflow missing: ${trusted_anchor_path}" >&2
+            exit 1
+          }
+          trusted_anchor_meta="${trusted_anchor_entry%%$'\t'*}"
+          trusted_anchor_observed_path="${trusted_anchor_entry#*$'\t'}"
+          read -r trusted_anchor_mode trusted_anchor_type trusted_anchor_oid <<< "$trusted_anchor_meta"
+          test "$trusted_anchor_observed_path" = "$trusted_anchor_path"
+          test "$trusted_anchor_mode" = "100644" || {
+            echo "trusted base anchor workflow has unexpected mode: ${trusted_anchor_mode}" >&2
+            exit 1
+          }
+          test "$trusted_anchor_type" = "blob" || {
+            echo "trusted base anchor workflow is not a blob: ${trusted_anchor_type}" >&2
+            exit 1
+          }
+
+          # The executing base-branch workflow is its own root of trust. A PR may
+          # not delete, replace, make executable, or otherwise alter this path.
+          check_blob "$trusted_anchor_path" "$trusted_anchor_oid"
 
           check_blob tools/validate_empirical_assurance.py 77ead89c0579fb5316cd3ea6e14724486beaadb0
           check_blob tools/validate_empirical_assurance_core.py 2add32386ef5e435bb9e4bde0684ea6b2eefcb3e
