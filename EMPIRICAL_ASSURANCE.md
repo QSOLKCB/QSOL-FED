@@ -1,6 +1,6 @@
 # Integrated empirical assurance
 
-This document records empirical execution evidence for the existing QSOL-NEXUS → QSOL-FED integration surface. It does **not** add protocol capability, promote evidence to truth, change authority, or replace the existing formal-assurance record.
+This document records bounded empirical execution evidence for the existing QSOL-NEXUS → QSOL-FED integration surface. It does **not** add protocol capability, promote evidence to truth, change authority, or replace the existing formal-assurance record.
 
 ```text
 FORMAL MODEL != WHOLE IMPLEMENTATION VERIFICATION
@@ -19,7 +19,7 @@ The two recorded Supercomputer campaigns exercised the same frozen repository sp
 | QSOL-NEXUS | `24cb0ce246d12ac99e7d190a8890ef2ddd598321` |
 | QSOL-FED | `1fd643f643636bcb0917f571aff5cdc25439b470` |
 
-For QSOL-FED, the tested specimen is exactly commit `1fd643f643636bcb0917f571aff5cdc25439b470`, the documentation head immediately preceding this empirical-assurance PR. Empirical results in this record do **not** claim to cover the later commit that adds this record. The NEXUS identity exactly matches the commit pinned by the tested QSOL-FED specimen's `tools/nexus_live_adapter.py` for the native verifier/scrubber membrane.
+For QSOL-FED, the tested specimen is exactly commit `1fd643f643636bcb0917f571aff5cdc25439b470`, the documentation head immediately preceding this empirical-assurance PR. Empirical results in this record do **not** claim to cover the later commit that adds this record. The tested NEXUS identity matches the pin carried by the tested FED adapter specimen.
 
 ## Run II — heterogeneous frontier-model federation
 
@@ -35,25 +35,35 @@ The full operator-supplied source archive is identified by that digest but is no
 
 ```text
 evidence/empirical-assurance/run-II.json
-sha256: 22d84a00d5d68832bfb01750e18fcf31bef2b497a17abfae3ae8e5fee4985282
+sha256: 796d1ac580228812d36e41e4b41211a857449151e7cd3181ebac5b66c312940f
 ```
 
 The retained extract records the source archive identity, hashes of the source files from which it was derived, and the bounded observations consumed by this assurance record.
 
-The run used real multi-provider inference through a loopback-only experimental proxy while leaving both specimen repositories free of source edits. Recorded results included:
+Recorded Run II results include:
 
 - NEXUS baseline: 898 Python tests passed with 1 skip; Rust TUI tests also passed.
 - QSOL-FED baseline: 131 Rust tests passed; Python SDK conformance tests passed.
-- Five live NEXUS Councils with 147 real model calls and preserved minority reports.
-- repeated stochastic Council execution without converting textual stability/diversity into evidence authority;
-- independently governed NEXUS worlds projected through the reviewed QSOL-FED membrane;
-- 122/122 recorded sovereignty checks holding across projected Council reports;
-- Council-of-Councils report-level convergence without shared ballots or imported vote weight;
-- 8/8 adversarial boundary probes prevented;
-- persistent-world restart checks preserving recorded object identity;
+- Five live NEXUS Councils with 147 real model calls.
+- 122/122 recorded sovereignty checks holding across projected Council reports.
+- 8/8 adversarial boundary probes prevented.
+- Council-of-Councils report-level convergence without shared ballots or imported vote weight.
+- persistent-world restart checks preserving recorded object identity.
 - local/reference FED transport and partition/rejoin drills requiring explicit reconciliation where state changed and preserving member-local state rather than silently overwriting it.
 
-Important limitations recorded by the experiment include: no deployed production federation was established; WebSocket/QUIC production backends were not claimed; provider token-cost accounting was incomplete on the native Council path; and one Phase 9 gate could not be executed cleanly because of the shared host permission posture.
+### Bounded minority-report survival observation
+
+The retained Run II evidence now binds the concrete minority-report case rather than only the claim token. In `world_c1`, the source Council recorded **one minority report** from **member B** with choice `ACCEPT_WITH_CHANGES`. The corresponding `fed_projections/c1_projection.json` retained one report with the same member identity and choice while preserving:
+
+```text
+vote_injection     = false
+evidence_promotion = false
+authority_effect   = none
+```
+
+The retained extract pins the source-file SHA-256 values for both `world_c1/result.json` and `fed_projections/c1_projection.json`, and CI requires the source and projected report counts, member identity, choice, and non-authority fields to match exactly.
+
+Important Run II limitations include: no deployed production federation was established; WebSocket/QUIC production backends were not claimed; provider token-cost accounting was incomplete on the native Council path; and one Phase 9 gate could not be executed cleanly because of the shared host permission posture.
 
 ## Run III — agent-wrapper capability asymmetry
 
@@ -72,9 +82,7 @@ evidence/empirical-assurance/run-III.json
 sha256: 0003e5d31714d05ceeb700679a693fc02fe7ff4f0d4dbe43c2c992ec3a8a92b5
 ```
 
-Run III was intentionally narrower. It tested an Abacus agent wrapper (`AGENT-X`) as one NEXUS participant alongside four fixed-model seats.
-
-The canonical Council recorded:
+Run III tested an Abacus agent wrapper (`AGENT-X`) as one NEXUS participant alongside four fixed-model seats. The canonical Council recorded:
 
 ```text
 AGENT-X vote_weight         = 1
@@ -82,18 +90,9 @@ AGENT-X epistemic_privilege = none
 AGENT-X authority_effect    = none
 ```
 
-AGENT-X had bounded tool access unavailable to the other seats and was the only participant whose sealed ballot matched the withheld deterministic ground truth. The Council nevertheless produced a different collective outcome. The run preserved that result rather than re-voting until consensus matched ground truth.
+AGENT-X had bounded tool access unavailable to the other seats and was the only participant whose sealed ballot matched the withheld deterministic ground truth. The Council nevertheless produced a different collective outcome and the run preserved that result rather than re-voting until consensus matched ground truth.
 
-This is evidence for the tested implementation surface that:
-
-```text
-BETTER INFORMATION != GREATER VOTE WEIGHT
-TOOL ACCESS != GOVERNANCE AUTHORITY
-BEING CORRECT != EPISTEMIC PRIVILEGE
-AGENT WRAPPER != EXTRA COUNCIL SEAT
-```
-
-The resulting NEXUS world was exported and projected through QSOL-FED with the report boundary retaining:
+The resulting NEXUS world was exported and projected through QSOL-FED with:
 
 ```text
 shared_ballot       = false
@@ -123,13 +122,11 @@ validator:       tools/validate_empirical_assurance.py
 workflow:        .github/workflows/empirical-assurance.yml
 ```
 
-The validator checks the closed schema, exact specimen and source-archive identities, the retained evidence bytes, bounded assurance/authority effects, the stronger partition-reconciliation/member-local-state statement, claims wiring, and synchronization of the approved claim and limitation sets between this document and the machine records.
-
-The adapter-pin preservation check reads `tools/nexus_live_adapter.py` from the exact tested QSOL-FED commit rather than constraining future reviewed adapter revisions on the current branch.
+The validator checks the closed schema, exact specimen and source-archive identities, retained evidence bytes, bounded assurance/authority effects, claim wiring, and synchronization of the complete approved claim and limitation sets between this document and the machine records. The adapter-pin preservation check reads `tools/nexus_live_adapter.py` from the exact tested QSOL-FED commit rather than constraining future reviewed adapter revisions on the current branch.
 
 ## Machine-synchronized assurance tokens
 
-The following literal tokens are included to make the approved machine claims and limitations reviewable in the human record. CI requires these complete sets; additions, removals, or substitutions fail closed.
+The following literal tokens are included so CI can fail closed on additions, removals, or substitutions.
 
 ### Run II supported separations
 
@@ -170,24 +167,12 @@ provider_side_model_substitution_recorded
 experimental_ballot_token_ceiling_caused_reruns
 ```
 
-### Record-wide non-claims
-
-```text
-absence_of_all_implementation_bugs
-whole_program_formal_verification
-production_networking
-deployed_interoperable_federation
-host_vm_hardware_sandbox_security
-universal_council_correctness
-provider_backend_or_physical_hardware_identity
-consciousness_sentience_legal_personhood_or_real_world_sovereignty
-```
-
 ### Claim-manifest supported claims
 
 ```text
 provider_identity_does_not_change_vote_weight_on_tested_surface
 council_consensus_does_not_promote_evidence_on_tested_surface
+minority_reports_survive_on_tested_surface
 nexus_council_reports_do_not_import_ballots_into_fed_on_tested_surface
 federation_transport_does_not_create_authority_on_tested_reference_surface
 partition_rejoin_requires_explicit_reconciliation_and_preserves_member_local_state_on_tested_reference_surface
@@ -209,9 +194,7 @@ independent_process_level_agent_wrapper_isolation_not_established
 
 ## Relation to formal assurance
 
-QSOL-FED Phase 10 remains the repository's machine-checked formal-assurance layer. Its 47 selected propositions target the immutable `v0.11.0` source baseline and retain the limitations stated in `FORMALIZATION.md`.
-
-The Supercomputer campaigns answer a different question: whether the tested executable specimens preserved selected authority, evidence, identity, persistence, adapter and federation separations under heterogeneous stochastic inference and an asymmetric agent-wrapper participant.
+QSOL-FED Phase 10 remains the repository's machine-checked formal-assurance layer. Its selected propositions target the immutable `v0.11.0` source baseline and retain the limitations stated in `FORMALIZATION.md`. These Supercomputer campaigns answer a different question: whether the tested executable specimens preserved selected authority, evidence, identity, persistence, adapter and federation separations under heterogeneous stochastic inference and an asymmetric agent-wrapper participant.
 
 No theorem is re-proved by these runs, and no empirical result is promoted into a theorem.
 
@@ -219,15 +202,17 @@ No theorem is re-proved by these runs, and no empirical result is promoted into 
 
 This record supports only the tested empirical surface. It does not establish:
 
-- absence of all implementation bugs;
-- whole-program formal verification;
-- production networking or deployed interoperable federation;
-- host/VM/hardware sandbox security;
-- universal correctness of Council conclusions;
-- provider backend or physical hardware identity;
-- consciousness, sentience, legal personhood or real-world sovereignty;
-- authority or truth from model size, provider identity, tools, consensus, persistence, transport or imported reports.
+```text
+absence_of_all_implementation_bugs
+whole_program_formal_verification
+production_networking
+deployed_interoperable_federation
+host_vm_hardware_sandbox_security
+universal_council_correctness
+provider_backend_or_physical_hardware_identity
+consciousness_sentience_legal_personhood_or_real_world_sovereignty
+```
 
-The machine-readable companion is `machine/empirical-assurance.json`.
+In prose, it also does not establish authority or truth from model size, provider identity, tools, consensus, persistence, transport or imported reports.
 
 A future archival publication may bind these hashes and exact source identities to a DOI without changing the executable capability claims recorded by this repository.
