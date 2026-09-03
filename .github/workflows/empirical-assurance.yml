@@ -5,6 +5,7 @@ on:
     paths:
       - "README.md"
       - "README4AI.md"
+      - "AGENTS.md"
       - "EMPIRICAL_ASSURANCE.md"
       - "machine/empirical-assurance.json"
       - "claims/empirical-assurance.json"
@@ -20,6 +21,7 @@ on:
     paths:
       - "README.md"
       - "README4AI.md"
+      - "AGENTS.md"
       - "EMPIRICAL_ASSURANCE.md"
       - "machine/empirical-assurance.json"
       - "claims/empirical-assurance.json"
