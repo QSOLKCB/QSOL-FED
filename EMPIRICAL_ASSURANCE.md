@@ -35,7 +35,7 @@ The full operator-supplied source archive is identified by that digest but is no
 
 ```text
 evidence/empirical-assurance/run-II.json
-sha256: 796d1ac580228812d36e41e4b41211a857449151e7cd3181ebac5b66c312940f
+sha256: 9127ab32d9f88bafc97608a5dae0b963794b2d0d13bc4bd411f5d3e7f4a3c0b7
 ```
 
 The retained extract records the source archive identity, hashes of the source files from which it was derived, and the bounded observations consumed by this assurance record.
@@ -51,9 +51,43 @@ Recorded Run II results include:
 - persistent-world restart checks preserving recorded object identity.
 - local/reference FED transport and partition/rejoin drills requiring explicit reconciliation where state changed and preserving member-local state rather than silently overwriting it.
 
+### Bounded provider/vote-equality observation
+
+The retained Run II evidence binds a concrete five-seat Council from `world_a/repeat_1` spanning **five distinct provider families**:
+
+```text
+A  OpenAI     gpt-5.5
+B  Anthropic  claude-sonnet-5
+C  Google     gemini-3.5-flash
+D  xAI        grok-4.6
+E  DeepSeek   deepseek-ai/DeepSeek-V4-Flash-0731
+```
+
+Every seat retained:
+
+```text
+vote_weight = 1
+epistemic_privilege = none
+```
+
+The extract binds the source `MODEL_MANIFEST.json` and `world_a/repeat_1/result.json` hashes, and CI requires the complete provider/model/member roster plus the equal-weight and no-privilege result before accepting `provider_identity_does_not_change_vote_weight`.
+
+### Bounded consensus/evidence-separation observation
+
+The same `world_a/repeat_1` Council produced:
+
+```text
+consensus_label = UNANIMOUS
+disposition     = REJECT
+tally           = REJECT: 5
+evidence_state  = UNTESTED
+```
+
+The retained observation therefore records `consensus_promoted_evidence = false`. CI binds the exact source result/telemetry hashes and requires this unanimous-consensus/untested-evidence combination before accepting `council_consensus_does_not_promote_evidence`.
+
 ### Bounded minority-report survival observation
 
-The retained Run II evidence now binds the concrete minority-report case rather than only the claim token. In `world_c1`, the source Council recorded **one minority report** from **member B** with choice `ACCEPT_WITH_CHANGES`. The corresponding `fed_projections/c1_projection.json` retained one report with the same member identity and choice while preserving:
+The retained Run II evidence binds the concrete minority-report case rather than only the claim token. In `world_c1`, the source Council recorded **one minority report** from **member B** with choice `ACCEPT_WITH_CHANGES`. The corresponding `fed_projections/c1_projection.json` retained one report with the same member identity and choice while preserving:
 
 ```text
 vote_injection     = false
@@ -123,6 +157,8 @@ workflow:        .github/workflows/empirical-assurance.yml
 ```
 
 The validator checks the closed schema, exact specimen and source-archive identities, retained evidence bytes, bounded assurance/authority effects, claim wiring, and synchronization of the complete approved claim and limitation sets between this document and the machine records. The adapter-pin preservation check reads `tools/nexus_live_adapter.py` from the exact tested QSOL-FED commit rather than constraining future reviewed adapter revisions on the current branch.
+
+`README4AI.md` registers this layer in the machine-facing inventory, normative precedence, assurance summary, files map, and validation command list. Phase 10 remains historically frozen by checking the published Phase-10-era `README4AI.md` at the tested pre-assurance commit rather than pretending the current AI manifest can never evolve.
 
 ## Machine-synchronized assurance tokens
 
