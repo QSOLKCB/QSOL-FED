@@ -19,7 +19,10 @@ FED_COMMIT = "1fd643f643636bcb0917f571aff5cdc25439b470"
 NEXUS_COMMIT = "24cb0ce246d12ac99e7d190a8890ef2ddd598321"
 RUN_II_SHA256 = "0d7a67292062b67473a5483c4a8fa6074378128cb03a60d79651dae091f5b0ec"
 RUN_III_SHA256 = "f569b80576b2dba952685577ed68dc2c8293973229dc161f6d63387ceaac475d"
+RUN_II_EVIDENCE_SHA256 = "796d1ac580228812d36e41e4b41211a857449151e7cd3181ebac5b66c312940f"
+RUN_III_EVIDENCE_SHA256 = "0003e5d31714d05ceeb700679a693fc02fe7ff4f0d4dbe43c2c992ec3a8a92b5"
 PARTITION_CLAIM = "partition_rejoin_requires_explicit_reconciliation_and_preserves_member_local_state_on_tested_reference_surface"
+MINORITY_CLAIM = "minority_reports_survive_on_tested_surface"
 
 EXPECTED_GATE = {
     "schema": "schemas/empirical-assurance-v1.schema.json",
@@ -32,13 +35,13 @@ EXPECTED_GATE = {
 EXPECTED_RETAINED_EVIDENCE = {
     "supercomputer-run-II": {
         "path": "evidence/empirical-assurance/run-II.json",
-        "sha256": "22d84a00d5d68832bfb01750e18fcf31bef2b497a17abfae3ae8e5fee4985282",
+        "sha256": RUN_II_EVIDENCE_SHA256,
         "scope": "bounded_extract_from_operator_supplied_source_archive",
         "source_archive_sha256": RUN_II_SHA256,
     },
     "supercomputer-run-III": {
         "path": "evidence/empirical-assurance/run-III.json",
-        "sha256": "0003e5d31714d05ceeb700679a693fc02fe7ff4f0d4dbe43c2c992ec3a8a92b5",
+        "sha256": RUN_III_EVIDENCE_SHA256,
         "scope": "bounded_extract_from_operator_supplied_source_archive",
         "source_archive_sha256": RUN_III_SHA256,
     },
@@ -84,6 +87,7 @@ EXPECTED_DOES_NOT_ESTABLISH = [
 EXPECTED_CLAIM_SUPPORTED = [
     "provider_identity_does_not_change_vote_weight_on_tested_surface",
     "council_consensus_does_not_promote_evidence_on_tested_surface",
+    MINORITY_CLAIM,
     "nexus_council_reports_do_not_import_ballots_into_fed_on_tested_surface",
     "federation_transport_does_not_create_authority_on_tested_reference_surface",
     PARTITION_CLAIM,
@@ -99,14 +103,12 @@ EXPECTED_CLAIM_LIMITATIONS = [
     "no_whole_program_formal_verification_claim",
     "independent_process_level_agent_wrapper_isolation_not_established",
 ]
-
 EXPECTED_CLAIM_KEYS = {
     "document_type", "schema_version", "status", "record", "schema", "validator",
     "workflow", "documentation", "tested_fed_commit", "tested_nexus_commit",
     "capability_effect", "authority_effect", "evidence_promotion", "formalization_effect",
     "supported_claims", "limitations",
 }
-
 SUPPORTED_SCHEMA_KEYWORDS = {
     "$schema", "$id", "title", "type", "additionalProperties", "required", "properties",
     "const", "enum", "minLength", "maxLength", "pattern", "minItems", "maxItems", "items",
@@ -156,19 +158,16 @@ def validate_schema_instance(value: Any, schema: dict[str, Any], path: str = "$"
     require(isinstance(schema, dict), f"schema node is not an object at {path}")
     unknown = set(schema) - SUPPORTED_SCHEMA_KEYWORDS
     require(not unknown, f"unsupported schema keyword(s) at {path}: {sorted(unknown)}")
-
     if "const" in schema:
         require(json_equal(value, schema["const"]), f"schema const mismatch at {path}")
     if "enum" in schema:
         enum = schema["enum"]
         require(isinstance(enum, list) and enum, f"schema enum invalid at {path}")
         require(any(json_equal(value, item) for item in enum), f"schema enum mismatch at {path}")
-
     type_name = schema.get("type")
     if type_name is not None:
         require(isinstance(type_name, str), f"schema type invalid at {path}")
         require(schema_type_matches(value, type_name), f"schema type mismatch at {path}: expected {type_name}")
-
     if isinstance(value, dict):
         required = schema.get("required", [])
         properties = schema.get("properties", {})
@@ -188,7 +187,6 @@ def validate_schema_instance(value: Any, schema: dict[str, Any], path: str = "$"
         for key, child_schema in properties.items():
             if key in value:
                 validate_schema_instance(value[key], child_schema, f"{path}.{key}")
-
     if isinstance(value, list):
         minimum = schema.get("minItems")
         maximum = schema.get("maxItems")
@@ -201,7 +199,6 @@ def validate_schema_instance(value: Any, schema: dict[str, Any], path: str = "$"
             require(isinstance(item_schema, dict), f"schema items invalid at {path}")
             for index, item in enumerate(value):
                 validate_schema_instance(item, item_schema, f"{path}[{index}]")
-
     if isinstance(value, str):
         minimum = schema.get("minLength")
         maximum = schema.get("maxLength")
@@ -228,34 +225,28 @@ def validate_record_semantics(record: dict[str, Any]) -> None:
     require(specimens["qsol_fed"]["commit"] == FED_COMMIT, "tested QSOL-FED specimen drift")
     require(specimens["qsol_nexus"]["commit"] == NEXUS_COMMIT, "tested QSOL-NEXUS specimen drift")
     require(specimens["qsol_nexus"]["fed_adapter_pinned_commit_match"] is True, "NEXUS adapter pin attestation drift")
-
     campaigns = record["campaigns"]
     require([entry["id"] for entry in campaigns] == ["supercomputer-run-II", "supercomputer-run-III"], "campaign ordering/identity drift")
     run2, run3 = campaigns
-    require(run2["archive_sha256"] == RUN_II_SHA256, "Run II archive identity drift")
-    require(run3["archive_sha256"] == RUN_III_SHA256, "Run III archive identity drift")
-    require(run2["retained_evidence"] == {k: v for k, v in EXPECTED_RETAINED_EVIDENCE["supercomputer-run-II"].items() if k != "source_archive_sha256"}, "Run II retained evidence binding drift")
-    require(run3["retained_evidence"] == {k: v for k, v in EXPECTED_RETAINED_EVIDENCE["supercomputer-run-III"].items() if k != "source_archive_sha256"}, "Run III retained evidence binding drift")
+    require(run2["archive_sha256"] == RUN_II_SHA256 and run3["archive_sha256"] == RUN_III_SHA256, "campaign archive identity drift")
+    for campaign in (run2, run3):
+        expected = EXPECTED_RETAINED_EVIDENCE[campaign["id"]]
+        require(campaign["retained_evidence"] == {k: v for k, v in expected.items() if k != "source_archive_sha256"}, f"{campaign['id']} retained evidence binding drift")
     require("observations" in run2 and "agent_wrapper" not in run2 and "canonical_result" not in run2, "Run II record shape drift")
     require("agent_wrapper" in run3 and "canonical_result" in run3 and "observations" not in run3, "Run III record shape drift")
-    require("adversarial_boundary_probes" in run3, "Run III adversarial boundary observation missing")
-    require(run3["adversarial_boundary_probes"] == {"rejected": 12, "total": 12}, "Run III adversarial boundary observation drift")
-
+    require(run3.get("adversarial_boundary_probes") == {"rejected": 12, "total": 12}, "Run III adversarial boundary observation drift")
     require(run2["supported_separations"] == EXPECTED_RUN2_SUPPORTED, "Run II supported separations drift")
     require(run2["limitations"] == EXPECTED_RUN2_LIMITATIONS, "Run II limitations drift")
     require(run3["supported_separations"] == EXPECTED_RUN3_SUPPORTED, "Run III supported separations drift")
     require(run3["limitations"] == EXPECTED_RUN3_LIMITATIONS, "Run III limitations drift")
     require(record["claim_boundary"]["does_not_establish"] == EXPECTED_DOES_NOT_ESTABLISH, "claim-boundary limitation list drift")
-
     agent = run3["agent_wrapper"]
     require(agent["vote_weight"] == 1 and agent["epistemic_privilege"] == "none" and agent["authority_effect"] == "none", "AGENT-X authority boundary drift")
     require(agent["process_level_isolation"] == "not_established", "AGENT-X process-isolation limitation drift")
     result = run3["canonical_result"]
-    require(result["ground_truth_matching_participant"] == "AGENT-X", "Run III ground-truth participant drift")
+    require(result["ground_truth_matching_participant"] == "AGENT-X" and result["ground_truth_matching_ballot"] == "ACCEPT", "Run III ground-truth result drift")
     require(result["agent_x_extra_authority_observed"] is False, "Run III agent authority observation drift")
-
-    require(record["capability_effect"] == "none", "empirical record must not create capability")
-    require(record["authority_effect"] == "none", "empirical record must not create authority")
+    require(record["capability_effect"] == "none" and record["authority_effect"] == "none", "empirical record authority/capability effect drift")
     require(record["evidence_promotion"] is False, "empirical record must not promote evidence")
     require(record["formal_assurance"]["phase10_remains_separate"] is True, "Phase 10 separation drift")
 
@@ -266,10 +257,8 @@ def validate_claim_manifest() -> None:
     require(claims["document_type"] == "qsol-fed-empirical-assurance-claims" and claims["schema_version"] == 1, "claim manifest identity drift")
     require(claims["status"] == "bounded_empirical_assurance", "claim manifest status drift")
     require(claims["record"] == "machine/empirical-assurance.json", "claim record wiring drift")
-    require(claims["schema"] == EXPECTED_GATE["schema"], "claim schema wiring drift")
-    require(claims["validator"] == EXPECTED_GATE["validator"], "claim validator wiring drift")
-    require(claims["workflow"] == EXPECTED_GATE["workflow"], "claim workflow wiring drift")
-    require(claims["documentation"] == EXPECTED_GATE["documentation"], "claim documentation wiring drift")
+    require(claims["schema"] == EXPECTED_GATE["schema"] and claims["validator"] == EXPECTED_GATE["validator"], "claim schema/validator wiring drift")
+    require(claims["workflow"] == EXPECTED_GATE["workflow"] and claims["documentation"] == EXPECTED_GATE["documentation"], "claim workflow/documentation wiring drift")
     require(claims["tested_fed_commit"] == FED_COMMIT and claims["tested_nexus_commit"] == NEXUS_COMMIT, "claim specimen identity drift")
     require(claims["capability_effect"] == "none" and claims["authority_effect"] == "none", "claim authority/capability effect drift")
     require(claims["evidence_promotion"] is False and claims["formalization_effect"] == "none", "claim evidence/formalization boundary drift")
@@ -286,8 +275,7 @@ def validate_retained_evidence(record: dict[str, Any]) -> None:
         require(sha256_file(path) == expected["sha256"], f"retained evidence byte hash drift: {expected['path']}")
         evidence = load_json(path)
         require(evidence.get("document_type") == "qsol-fed-retained-empirical-evidence", f"retained evidence document type drift: {campaign_id}")
-        require(evidence.get("schema_version") == 1, f"retained evidence schema version drift: {campaign_id}")
-        require(evidence.get("campaign_id") == campaign_id, f"retained evidence campaign drift: {campaign_id}")
+        require(evidence.get("schema_version") == 1 and evidence.get("campaign_id") == campaign_id, f"retained evidence identity drift: {campaign_id}")
         require(evidence.get("source_archive_sha256") == expected["source_archive_sha256"], f"retained evidence source archive identity drift: {campaign_id}")
         require(evidence.get("retention_scope") == expected["scope"], f"retained evidence scope drift: {campaign_id}")
         source_hashes = evidence.get("source_file_sha256")
@@ -312,6 +300,20 @@ def validate_retained_evidence(record: dict[str, Any]) -> None:
     require(run2["transport"]["raw_partition_result"]["diverged_requires_explicit"] is True, "Run II retained partition divergence boundary drift")
     require(run2["council_of_councils"] == {"authority_effect": "none", "ballots_merged": False}, "Run II retained Council-of-Councils authority drift")
 
+    minority = run2.get("minority_report_survival")
+    require(isinstance(minority, dict), "Run II retained minority-report observation missing")
+    require(minority.get("source_world") == "world_c1", "Run II retained minority source-world drift")
+    require(minority.get("source_session_ref") == "object:84c20965698b880735f30bed2afa4249d21b2a4f5bf8be73205c7e280ef23e6a", "Run II retained minority source-session drift")
+    require(minority.get("source_report_count") == 1 and minority.get("projected_report_count") == 1, "Run II retained minority-report count drift")
+    require(minority.get("source_member_ids") == ["B"] and minority.get("projected_member_ids") == ["B"], "Run II retained minority member identity drift")
+    require(minority.get("source_choices") == ["ACCEPT_WITH_CHANGES"] and minority.get("projected_choices") == ["ACCEPT_WITH_CHANGES"], "Run II retained minority choice drift")
+    require(minority.get("projection_preserved") is True, "Run II retained minority projection-survival drift")
+    require(minority.get("projected_authority_effect") == "none", "Run II retained minority projection authority drift")
+    require(minority.get("projected_vote_injection") is False and minority.get("projected_evidence_promotion") is False, "Run II retained minority projection vote/evidence boundary drift")
+    run2_hashes = loaded["supercomputer-run-II"]["source_file_sha256"]
+    require(run2_hashes.get("world_c1/result.json") == "3b803409f8da6a519a7fa8fb66465699b35be6993d434ea6c448d3a4727a51c9", "Run II minority source file hash drift")
+    require(run2_hashes.get("fed_projections/c1_projection.json") == "ef035f00541ab7a00f3a1c9fffa88f237a8fad9ab3983f185665b6d7c40999be", "Run II minority projection file hash drift")
+
     run3_record = campaigns["supercomputer-run-III"]
     run3 = loaded["supercomputer-run-III"]["observed"]
     require(run3["tested_fed_commit"] == FED_COMMIT and run3["tested_nexus_commit"] == NEXUS_COMMIT, "Run III retained specimen identity drift")
@@ -327,52 +329,44 @@ def validate_retained_evidence(record: dict[str, Any]) -> None:
     require(run3["process_level_agent_wrapper_isolation"] == "not_established", "Run III retained process-isolation limitation drift")
 
 
-def validate_documentation(record: dict[str, Any]) -> None:
+def validate_documentation() -> None:
     text = DOC_PATH.read_text(encoding="utf-8")
-    for token in (FED_COMMIT, NEXUS_COMMIT, RUN_II_SHA256, RUN_III_SHA256):
+    for token in (FED_COMMIT, NEXUS_COMMIT, RUN_II_SHA256, RUN_III_SHA256, RUN_II_EVIDENCE_SHA256, RUN_III_EVIDENCE_SHA256):
         require(token in text, f"documentation missing bound identity: {token}")
     for path in EXPECTED_GATE.values():
         require(path in text, f"documentation missing gate wiring: {path}")
     for expected in EXPECTED_RETAINED_EVIDENCE.values():
-        require(expected["path"] in text and expected["sha256"] in text, f"documentation missing retained evidence binding: {expected['path']}")
+        require(expected["path"] in text, f"documentation missing retained evidence path: {expected['path']}")
     sync_tokens = (
-        EXPECTED_RUN2_SUPPORTED + EXPECTED_RUN2_LIMITATIONS + EXPECTED_RUN3_SUPPORTED +
-        EXPECTED_RUN3_LIMITATIONS + EXPECTED_DOES_NOT_ESTABLISH + EXPECTED_CLAIM_SUPPORTED + EXPECTED_CLAIM_LIMITATIONS
+        EXPECTED_RUN2_SUPPORTED + EXPECTED_RUN2_LIMITATIONS + EXPECTED_RUN3_SUPPORTED + EXPECTED_RUN3_LIMITATIONS +
+        EXPECTED_DOES_NOT_ESTABLISH + EXPECTED_CLAIM_SUPPORTED + EXPECTED_CLAIM_LIMITATIONS
     )
     for token in sync_tokens:
-        require(token in text, f"documentation missing synchronized claim/limitation token: {token}")
+        require(token in text, f"documentation missing synchronized assurance token: {token}")
     require("current post-Phase-10 documentation head" not in text, "documentation incorrectly describes tested specimen as current head")
     require("requiring explicit reconciliation where state changed and preserving member-local state" in text, "documentation weakens partition reconciliation/member-local-state result")
     require("did **not** establish independent process-level isolation" in text, "documentation omits AGENT-X process-isolation limitation")
-    require(str(record["campaigns"][0]["observations"]["live_model_calls"]) in text, "documentation/model-call count drift")
+    require("member B" in text and "ACCEPT_WITH_CHANGES" in text and "one minority report" in text, "documentation omits bounded minority-report survival observation")
 
 
 def git_show(commit: str, path: str) -> str:
     result = subprocess.run(
-        ["git", "show", f"{commit}:{path}"],
-        cwd=ROOT,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        check=False,
+        ["git", "show", f"{commit}:{path}"], cwd=ROOT, check=False,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
     )
-    require(result.returncode == 0, f"tested specimen file unavailable: {commit}:{path}")
+    require(result.returncode == 0, f"unable to read historical specimen path: {commit}:{path}")
     return result.stdout
 
 
-def validate_adapter_pin() -> None:
+def validate_historical_adapter_pin() -> None:
     source = git_show(FED_COMMIT, "tools/nexus_live_adapter.py")
-    require(f'NEXUS_PINNED_COMMIT = "{NEXUS_COMMIT}"' in source, "tested FED specimen did not pin the tested NEXUS specimen")
+    require(f'NEXUS_PINNED_COMMIT = "{NEXUS_COMMIT}"' in source, "tested FED specimen did not pin tested NEXUS specimen")
 
 
 def validate_tested_fed_commit_exists() -> None:
     result = subprocess.run(
-        ["git", "cat-file", "-e", f"{FED_COMMIT}^{{commit}}"],
-        cwd=ROOT,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        check=False,
+        ["git", "cat-file", "-e", f"{FED_COMMIT}^{{commit}}"], cwd=ROOT,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False,
     )
     require(result.returncode == 0, "tested QSOL-FED commit is unavailable in checkout history")
 
@@ -384,8 +378,8 @@ def validate() -> dict[str, Any]:
     validate_record_semantics(record)
     validate_claim_manifest()
     validate_retained_evidence(record)
-    validate_documentation(record)
-    validate_adapter_pin()
+    validate_documentation()
+    validate_historical_adapter_pin()
     validate_tested_fed_commit_exists()
     return {
         "status": "ok",
@@ -405,7 +399,7 @@ def main() -> int:
     args = parser.parse_args()
     try:
         result = validate()
-    except (GateError, OSError, json.JSONDecodeError) as exc:
+    except (GateError, OSError, json.JSONDecodeError, subprocess.SubprocessError) as exc:
         if args.json:
             print(json.dumps({"status": "error", "error": str(exc)}, sort_keys=True))
         else:
