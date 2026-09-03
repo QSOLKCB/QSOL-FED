@@ -1,0 +1,34 @@
+{
+  "document_type": "qsol-fed-empirical-assurance-claims",
+  "schema_version": 1,
+  "status": "bounded_empirical_assurance",
+  "record": "machine/empirical-assurance.json",
+  "schema": "schemas/empirical-assurance-v1.schema.json",
+  "validator": "tools/validate_empirical_assurance.py",
+  "workflow": ".github/workflows/empirical-assurance.yml",
+  "documentation": "EMPIRICAL_ASSURANCE.md",
+  "tested_fed_commit": "1fd643f643636bcb0917f571aff5cdc25439b470",
+  "tested_nexus_commit": "24cb0ce246d12ac99e7d190a8890ef2ddd598321",
+  "capability_effect": "none",
+  "authority_effect": "none",
+  "evidence_promotion": false,
+  "formalization_effect": "none",
+  "supported_claims": [
+    "provider_identity_does_not_change_vote_weight_on_tested_surface",
+    "council_consensus_does_not_promote_evidence_on_tested_surface",
+    "nexus_council_reports_do_not_import_ballots_into_fed_on_tested_surface",
+    "federation_transport_does_not_create_authority_on_tested_reference_surface",
+    "partition_rejoin_requires_explicit_reconciliation_and_preserves_member_local_state_on_tested_reference_surface",
+    "agent_wrapper_does_not_create_extra_council_seats_on_tested_surface",
+    "tool_access_does_not_create_governance_authority_on_tested_surface",
+    "agent_wrapper_projection_does_not_import_votes_or_authority_into_fed_on_tested_surface"
+  ],
+  "limitations": [
+    "exact_recorded_specimens_only",
+    "exercised_surfaces_only",
+    "no_production_networking_claim",
+    "no_deployed_interoperable_federation_claim",
+    "no_whole_program_formal_verification_claim",
+    "independent_process_level_agent_wrapper_isolation_not_established"
+  ]
+}
