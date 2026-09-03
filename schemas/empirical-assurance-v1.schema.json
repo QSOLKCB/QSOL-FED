@@ -108,7 +108,7 @@
               "vote_weight": {"const": 1},
               "epistemic_privilege": {"const": "none"},
               "authority_effect": {"const": "none"},
-              "bounded_tool_calls_used": {"const": 2},
+              "bounded_tool_calls_used": {"const": 1},
               "process_level_isolation": {"const": "not_established"}
             }
           },
