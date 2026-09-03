@@ -18,6 +18,7 @@ AI_MANIFEST_PATH = ROOT / "README4AI.md"
 README_PATH = ROOT / "README.md"
 AGENTS_PATH = ROOT / "AGENTS.md"
 WORKFLOW_PATH = ROOT / ".github/workflows/empirical-assurance.yml"
+SUPPLEMENT_VALIDATOR_PATH = ROOT / "tools/validate_empirical_assurance_supplements.py"
 
 FED_COMMIT = "1fd643f643636bcb0917f571aff5cdc25439b470"
 NEXUS_COMMIT = "24cb0ce246d12ac99e7d190a8890ef2ddd598321"
@@ -33,9 +34,31 @@ EXPECTED_GATE = {
     "schema": "schemas/empirical-assurance-v1.schema.json",
     "claims": "claims/empirical-assurance.json",
     "validator": "tools/validate_empirical_assurance.py",
+    "supplement_validator": "tools/validate_empirical_assurance_supplements.py",
     "workflow": ".github/workflows/empirical-assurance.yml",
     "documentation": "EMPIRICAL_ASSURANCE.md",
 }
+
+EXPECTED_SUPPLEMENTS = [
+    {
+        "id": "run-II-transport-authority",
+        "path": "evidence/empirical-assurance/run-II-transport-authority.json",
+        "sha256": "1e8115c2dda143e480c61de88b9f4ff5193956df663eaf799431c883f34bccd4",
+        "claim_supported": "federation_transport_does_not_create_authority_on_tested_reference_surface",
+    },
+    {
+        "id": "run-III-tool-use",
+        "path": "evidence/empirical-assurance/run-III-tool-use.json",
+        "sha256": "2168b77f9a7e70315bc3f01f934f9e6ad45e86370c7b948fe0d3b15c75533cce",
+        "claim_supported": "tool_access_does_not_create_governance_authority_on_tested_surface",
+    },
+    {
+        "id": "run-III-seat-roster",
+        "path": "evidence/empirical-assurance/run-III-seat-roster.json",
+        "sha256": "342f4e0ab46745f7f83dd92e68a8d5b8d73df0b9e0bd1917b0755b8d06116265",
+        "claim_supported": "agent_wrapper_does_not_create_extra_council_seats_on_tested_surface",
+    },
+]
 
 EXPECTED_RETAINED_EVIDENCE = {
     "supercomputer-run-II": {
@@ -268,6 +291,7 @@ def validate_closed_schema(record: dict[str, Any]) -> None:
 
 def validate_record_semantics(record: dict[str, Any]) -> None:
     require(record.get("gate") == EXPECTED_GATE, "empirical assurance gate wiring drift")
+    require(record.get("supplemental_evidence") == EXPECTED_SUPPLEMENTS, "empirical assurance supplemental-evidence binding drift")
     specimens = record["tested_specimens"]
     require(specimens["qsol_fed"]["commit"] == FED_COMMIT, "tested QSOL-FED specimen drift")
     require(specimens["qsol_nexus"]["commit"] == NEXUS_COMMIT, "tested QSOL-NEXUS specimen drift")
@@ -289,6 +313,7 @@ def validate_record_semantics(record: dict[str, Any]) -> None:
     require(record["claim_boundary"]["does_not_establish"] == EXPECTED_DOES_NOT_ESTABLISH, "claim-boundary limitation list drift")
     agent = run3["agent_wrapper"]
     require(agent["vote_weight"] == 1 and agent["epistemic_privilege"] == "none" and agent["authority_effect"] == "none", "AGENT-X authority boundary drift")
+    require(agent["bounded_tool_calls_used"] == 1, "AGENT-X used-tool count drift")
     require(agent["process_level_isolation"] == "not_established", "AGENT-X process-isolation limitation drift")
     result = run3["canonical_result"]
     require(result["ground_truth_matching_participant"] == "AGENT-X" and result["ground_truth_matching_ballot"] == "ACCEPT", "Run III ground-truth result drift")
@@ -408,6 +433,27 @@ def validate_retained_evidence(record: dict[str, Any]) -> None:
     require(run3["process_level_agent_wrapper_isolation"] == "not_established", "Run III retained process-isolation limitation drift")
 
 
+def validate_supplemental_evidence(record: dict[str, Any]) -> None:
+    require(record.get("supplemental_evidence") == EXPECTED_SUPPLEMENTS, "supplemental evidence record drift")
+    for expected in EXPECTED_SUPPLEMENTS:
+        path = ROOT / expected["path"]
+        require(path.is_file(), f"supplemental evidence missing: {expected['path']}")
+        require(sha256_file(path) == expected["sha256"], f"supplemental evidence byte hash drift: {expected['path']}")
+    require(SUPPLEMENT_VALIDATOR_PATH.is_file(), "supplement validator missing")
+    result = subprocess.run(
+        ["python3", str(SUPPLEMENT_VALIDATOR_PATH)],
+        cwd=ROOT,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    require(
+        result.returncode == 0,
+        "supplement validator failed: " + (result.stdout.strip() or result.stderr.strip()),
+    )
+
+
 def extract_fenced_tokens(text: str, heading: str, level: int) -> list[str]:
     prefix = "#" * level + " " + heading
     start = text.find(prefix)
@@ -428,6 +474,9 @@ def validate_documentation() -> None:
         require(path in text, f"documentation missing gate wiring: {path}")
     for expected in EXPECTED_RETAINED_EVIDENCE.values():
         require(expected["path"] in text, f"documentation missing retained evidence path: {expected['path']}")
+    for expected in EXPECTED_SUPPLEMENTS:
+        require(expected["path"] in text, f"documentation missing supplemental evidence path: {expected['path']}")
+        require(expected["sha256"] in text, f"documentation missing supplemental evidence hash: {expected['id']}")
 
     exact_sections = {
         ("Run II supported separations", 3): EXPECTED_RUN2_SUPPORTED,
@@ -447,6 +496,7 @@ def validate_documentation() -> None:
     require("UNANIMOUS" in text and "evidence_state = UNTESTED" in text, "documentation omits consensus/evidence separation observation")
     require("complete member-local governance/trust/evidence-state preservation was not observed" in text, "documentation omits Run II partition scope limitation")
     require("state_after_explicit_rejoin = Admitted" in text and "silent_reconciliation_refused = true" in text, "documentation omits bounded partition/rejoin observation")
+    require("exactly five source-Council seats" in text, "documentation omits Run III exact seat-roster observation")
 
 
 def validate_ai_manifest() -> None:
@@ -520,7 +570,7 @@ def validate_top_level_docs_and_workflow() -> None:
     require("python3 tools/validate_empirical_assurance.py" in agents, "AGENTS.md empirical assurance validation command missing")
     require(PARTITION_LIMITATION in agents, "AGENTS.md missing Run II partition scope limitation")
     workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
-    for marker in ("README4AI.md", "README.md", "AGENTS.md", "evidence/empirical-assurance/**", "tools/validate_empirical_assurance.py"):
+    for marker in ("README4AI.md", "README.md", "AGENTS.md", "evidence/empirical-assurance/**", "tools/validate_empirical_assurance.py", "tools/validate_empirical_assurance_supplements.py"):
         require(marker in workflow, f"empirical assurance workflow path trigger missing: {marker}")
 
 
@@ -547,6 +597,7 @@ def validate() -> dict[str, Any]:
     validate_record_semantics(record)
     validate_claim_manifest()
     validate_retained_evidence(record)
+    validate_supplemental_evidence(record)
     validate_documentation()
     validate_ai_manifest()
     validate_top_level_docs_and_workflow()
