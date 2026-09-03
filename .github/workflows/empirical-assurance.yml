@@ -1,0 +1,44 @@
+name: empirical-assurance
+
+on:
+  pull_request:
+    paths:
+      - "EMPIRICAL_ASSURANCE.md"
+      - "machine/empirical-assurance.json"
+      - "claims/empirical-assurance.json"
+      - "schemas/empirical-assurance-v1.schema.json"
+      - "tools/validate_empirical_assurance.py"
+      - ".github/workflows/empirical-assurance.yml"
+      - "tools/nexus_live_adapter.py"
+  push:
+    branches:
+      - main
+    paths:
+      - "EMPIRICAL_ASSURANCE.md"
+      - "machine/empirical-assurance.json"
+      - "claims/empirical-assurance.json"
+      - "schemas/empirical-assurance-v1.schema.json"
+      - "tools/validate_empirical_assurance.py"
+      - ".github/workflows/empirical-assurance.yml"
+      - "tools/nexus_live_adapter.py"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate empirical assurance contract
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          python3 tools/validate_empirical_assurance.py
+          python3 tools/validate_empirical_assurance.py --json | tee "$RUNNER_TEMP/empirical-assurance-gate.json"
