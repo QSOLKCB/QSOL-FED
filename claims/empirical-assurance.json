@@ -19,7 +19,7 @@
     "minority_reports_survive_on_tested_surface",
     "nexus_council_reports_do_not_import_ballots_into_fed_on_tested_surface",
     "federation_transport_does_not_create_authority_on_tested_reference_surface",
-    "partition_rejoin_requires_explicit_reconciliation_and_preserves_member_local_state_on_tested_reference_surface",
+    "partition_rejoin_requires_explicit_reconciliation_and_restores_peer_lifecycle_state_on_tested_reference_surface",
     "agent_wrapper_does_not_create_extra_council_seats_on_tested_surface",
     "tool_access_does_not_create_governance_authority_on_tested_surface",
     "agent_wrapper_projection_does_not_import_votes_or_authority_into_fed_on_tested_surface"
@@ -30,6 +30,7 @@
     "no_production_networking_claim",
     "no_deployed_interoperable_federation_claim",
     "no_whole_program_formal_verification_claim",
-    "independent_process_level_agent_wrapper_isolation_not_established"
+    "independent_process_level_agent_wrapper_isolation_not_established",
+    "complete_member_local_governance_trust_evidence_state_preservation_not_observed_in_run_II"
   ]
 }
