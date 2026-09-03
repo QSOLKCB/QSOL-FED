@@ -14,9 +14,9 @@ EXPECTED_FROZEN_BLOBS = {
     "tools/validate_empirical_assurance_core.py": "2add32386ef5e435bb9e4bde0684ea6b2eefcb3e",
     "machine/empirical-assurance.json": "e3d55db78c358dab5a28dc9018b7fd7aa37117b6",
     "schemas/empirical-assurance-v1.schema.json": "4dc82d0f704c62fce7d7aa4aaaa7f84e7871882b",
-    "EMPIRICAL_ASSURANCE.md": "7bf43bf806ae0f91945b5dc13dddcd6f63b19056",
-    "README4AI.md": "64806ea18e1cf3f303726f9928f0b54312bb1af2",
-    "AGENTS.md": "185a1cebfdee85f9575f5d8647277e70fd3e21c0",
+    "EMPIRICAL_ASSURANCE.md": "0ff80c611eace6d03935e5edb9b11b1ec564755b",
+    "README4AI.md": "dfa5fb07aa81ffbb0d5c1f46b445f5555632a4c5",
+    "AGENTS.md": "73ce42a5b0e1517c556a63527f3ae89ab6fe95db",
     ".github/workflows/empirical-assurance.yml": "18f90533f3354165f938dabca7ce78b3561af295",
 }
 EXPECTED_RECORD_KEYS = {
