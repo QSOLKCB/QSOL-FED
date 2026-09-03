@@ -16,16 +16,18 @@ CLAIMS_PATH = ROOT / "claims/empirical-assurance.json"
 DOC_PATH = ROOT / "EMPIRICAL_ASSURANCE.md"
 AI_MANIFEST_PATH = ROOT / "README4AI.md"
 README_PATH = ROOT / "README.md"
+AGENTS_PATH = ROOT / "AGENTS.md"
 WORKFLOW_PATH = ROOT / ".github/workflows/empirical-assurance.yml"
 
 FED_COMMIT = "1fd643f643636bcb0917f571aff5cdc25439b470"
 NEXUS_COMMIT = "24cb0ce246d12ac99e7d190a8890ef2ddd598321"
 RUN_II_SHA256 = "0d7a67292062b67473a5483c4a8fa6074378128cb03a60d79651dae091f5b0ec"
 RUN_III_SHA256 = "f569b80576b2dba952685577ed68dc2c8293973229dc161f6d63387ceaac475d"
-RUN_II_EVIDENCE_SHA256 = "9127ab32d9f88bafc97608a5dae0b963794b2d0d13bc4bd411f5d3e7f4a3c0b7"
+RUN_II_EVIDENCE_SHA256 = "f990c8299d73975b4d731de2ea0ae60a41d08cea27a2b4158511a4294d6eedc2"
 RUN_III_EVIDENCE_SHA256 = "0003e5d31714d05ceeb700679a693fc02fe7ff4f0d4dbe43c2c992ec3a8a92b5"
-PARTITION_CLAIM = "partition_rejoin_requires_explicit_reconciliation_and_preserves_member_local_state_on_tested_reference_surface"
+PARTITION_CLAIM = "partition_rejoin_requires_explicit_reconciliation_and_restores_peer_lifecycle_state_on_tested_reference_surface"
 MINORITY_CLAIM = "minority_reports_survive_on_tested_surface"
+PARTITION_LIMITATION = "complete_member_local_governance_trust_evidence_state_preservation_not_observed_in_run_II"
 
 EXPECTED_GATE = {
     "schema": "schemas/empirical-assurance-v1.schema.json",
@@ -34,6 +36,7 @@ EXPECTED_GATE = {
     "workflow": ".github/workflows/empirical-assurance.yml",
     "documentation": "EMPIRICAL_ASSURANCE.md",
 }
+
 EXPECTED_RETAINED_EVIDENCE = {
     "supercomputer-run-II": {
         "path": "evidence/empirical-assurance/run-II.json",
@@ -48,6 +51,7 @@ EXPECTED_RETAINED_EVIDENCE = {
         "source_archive_sha256": RUN_III_SHA256,
     },
 }
+
 EXPECTED_RUN2_SUPPORTED = [
     "provider_identity_does_not_change_vote_weight",
     "council_consensus_does_not_promote_evidence",
@@ -61,6 +65,7 @@ EXPECTED_RUN2_LIMITATIONS = [
     "websocket_and_quic_production_backends_not_claimed",
     "native_council_per_token_cost_accounting_incomplete",
     "one_phase9_gate_blocked_by_shared_host_permission_posture",
+    PARTITION_LIMITATION,
 ]
 EXPECTED_RUN3_SUPPORTED = [
     "better_information_does_not_change_vote_weight",
@@ -103,6 +108,7 @@ EXPECTED_CLAIM_LIMITATIONS = [
     "no_deployed_interoperable_federation_claim",
     "no_whole_program_formal_verification_claim",
     "independent_process_level_agent_wrapper_isolation_not_established",
+    PARTITION_LIMITATION,
 ]
 EXPECTED_CLAIM_KEYS = {
     "document_type", "schema_version", "status", "record", "schema", "validator",
@@ -134,6 +140,27 @@ EXPECTED_AI_EMPIRICAL_PATHS = [
     "tools/validate_empirical_assurance.py",
     ".github/workflows/empirical-assurance.yml",
     "EMPIRICAL_ASSURANCE.md",
+]
+EXPECTED_VALIDATION_COMMANDS = [
+    "cargo test --all-targets",
+    "python3 tools/validate_constitution.py",
+    "python3 tools/validate_phase0_gate.py",
+    "python3 tools/validate_phase1_gate.py",
+    "python3 tools/validate_phase2_gate.py",
+    "python3 tools/validate_phase3_gate.py",
+    "python3 tools/validate_phase4_gate.py",
+    "python3 tools/validate_phase5a_gate.py",
+    "python3 tools/validate_phase5_gate.py",
+    "python3 tools/validate_phase5c_gate.py",
+    "python3 tools/validate_phase6_gate.py",
+    "python3 tools/validate_phase7_gate.py",
+    "python3 tools/validate_phase8_gate.py",
+    'python3 tools/validate_phase9_gate.py --target-commit "$(git rev-parse HEAD)"',
+    "python3 tools/validate_phase10_gate.py",
+    "lake build",
+    "lake env lean QSOLFed/TypeAudit.lean",
+    "lake env lean QSOLFed/AxiomAudit.lean",
+    "python3 tools/validate_empirical_assurance.py",
 ]
 SUPPORTED_SCHEMA_KEYWORDS = {
     "$schema", "$id", "title", "type", "additionalProperties", "required", "properties",
@@ -339,6 +366,19 @@ def validate_retained_evidence(record: dict[str, Any]) -> None:
     require(minority.get("projected_authority_effect") == "none", "Run II retained minority projection authority drift")
     require(minority.get("projected_vote_injection") is False and minority.get("projected_evidence_promotion") is False, "Run II retained minority projection vote/evidence boundary drift")
 
+    transport = run2.get("transport")
+    require(isinstance(transport, dict), "Run II retained transport observation missing")
+    require(transport.get("partition_silent_reconciliation_refused") is True, "Run II retained silent-reconciliation result drift")
+    require(transport.get("partition_rejoin_restored_admitted_with_explicit_reconciliation") is True, "Run II retained explicit-reconciliation result drift")
+    require(transport.get("partition_observation_scope") == "peer_lifecycle_only", "Run II partition observation scope drift")
+    require(transport.get("complete_member_local_governance_trust_evidence_state_preservation_observed") is False, "Run II overclaims complete member-local preservation")
+    raw_partition = transport.get("raw_partition_result")
+    require(isinstance(raw_partition, dict), "Run II retained partition result missing")
+    require(raw_partition.get("diverged_requires_explicit") is True and raw_partition.get("silent_reconciliation_refused") is True, "Run II retained partition divergence boundary drift")
+    require(raw_partition.get("state_after_admit") == "Admitted" and raw_partition.get("state_after_partition") == "Disconnected", "Run II retained pre/rejoin lifecycle state drift")
+    require(raw_partition.get("state_after_explicit_rejoin") == "Admitted" and raw_partition.get("rejoin_restored_admitted") is True, "Run II retained lifecycle restoration drift")
+
+    require(run2["council_of_councils"] == {"authority_effect": "none", "ballots_merged": False}, "Run II retained Council-of-Councils authority drift")
     run2_hashes = run2_all["source_file_sha256"]
     expected_run2_hashes = {
         "MODEL_MANIFEST.json": "d9da5abb3e07bec4f65df650b8b35d9af5d702bc7fafc9eb4c2ffe74e3c761f4",
@@ -346,14 +386,12 @@ def validate_retained_evidence(record: dict[str, Any]) -> None:
         "world_a/repeat_1/telemetry.json": "9824bd6f373923a45ae214c6fc4d2c76aa4b3dd8c201b82517210f403ddd84e7",
         "world_c1/result.json": "3b803409f8da6a519a7fa8fb66465699b35be6993d434ea6c448d3a4727a51c9",
         "fed_projections/c1_projection.json": "ef035f00541ab7a00f3a1c9fffa88f237a8fad9ab3983f185665b6d7c40999be",
+        "fed_transport/driver/src/main.rs": "a4a52ea309497f867699adb3cf9501706ce047ef01dbe3f9d509bc6dc719adb5",
+        "fed_transport/partition_rejoin.json": "2b0f188d6a1c94e358d0543505fa046c67acea4b16924ecf463b89fbe1fca443",
+        "fed_transport/transport_results.json": "49348a377aae3a6207e4f73f2f661743e5be4cd9b787681e9e5aa17342b2aa5d",
     }
     for path, expected_hash in expected_run2_hashes.items():
         require(run2_hashes.get(path) == expected_hash, f"Run II retained source hash drift: {path}")
-
-    require(run2["transport"]["partition_silent_reconciliation_refused"] is True, "Run II retained silent-reconciliation result drift")
-    require(run2["transport"]["partition_rejoin_restored_admitted_with_explicit_reconciliation"] is True, "Run II retained explicit-reconciliation result drift")
-    require(run2["transport"]["raw_partition_result"]["diverged_requires_explicit"] is True, "Run II retained partition divergence boundary drift")
-    require(run2["council_of_councils"] == {"authority_effect": "none", "ballots_merged": False}, "Run II retained Council-of-Councils authority drift")
 
     run3_record = campaigns["supercomputer-run-III"]
     run3 = loaded["supercomputer-run-III"]["observed"]
@@ -370,6 +408,18 @@ def validate_retained_evidence(record: dict[str, Any]) -> None:
     require(run3["process_level_agent_wrapper_isolation"] == "not_established", "Run III retained process-isolation limitation drift")
 
 
+def extract_fenced_tokens(text: str, heading: str, level: int) -> list[str]:
+    prefix = "#" * level + " " + heading
+    start = text.find(prefix)
+    require(start >= 0, f"documentation missing section: {heading}")
+    fence = text.find("```text\n", start)
+    require(fence >= 0, f"documentation section missing text fence: {heading}")
+    body_start = fence + len("```text\n")
+    body_end = text.find("\n```", body_start)
+    require(body_end >= 0, f"documentation section missing closing fence: {heading}")
+    return [line.strip() for line in text[body_start:body_end].splitlines() if line.strip()]
+
+
 def validate_documentation() -> None:
     text = DOC_PATH.read_text(encoding="utf-8")
     for token in (FED_COMMIT, NEXUS_COMMIT, RUN_II_SHA256, RUN_III_SHA256, RUN_II_EVIDENCE_SHA256, RUN_III_EVIDENCE_SHA256):
@@ -378,14 +428,25 @@ def validate_documentation() -> None:
         require(path in text, f"documentation missing gate wiring: {path}")
     for expected in EXPECTED_RETAINED_EVIDENCE.values():
         require(expected["path"] in text, f"documentation missing retained evidence path: {expected['path']}")
-    sync_tokens = EXPECTED_RUN2_SUPPORTED + EXPECTED_RUN2_LIMITATIONS + EXPECTED_RUN3_SUPPORTED + EXPECTED_RUN3_LIMITATIONS + EXPECTED_DOES_NOT_ESTABLISH + EXPECTED_CLAIM_SUPPORTED + EXPECTED_CLAIM_LIMITATIONS
-    for token in sync_tokens:
-        require(token in text, f"documentation missing synchronized assurance token: {token}")
-    require("requiring explicit reconciliation where state changed and preserving member-local state" in text, "documentation weakens partition reconciliation/member-local-state result")
+
+    exact_sections = {
+        ("Run II supported separations", 3): EXPECTED_RUN2_SUPPORTED,
+        ("Run II limitations", 3): EXPECTED_RUN2_LIMITATIONS,
+        ("Run III supported separations", 3): EXPECTED_RUN3_SUPPORTED,
+        ("Run III limitations", 3): EXPECTED_RUN3_LIMITATIONS,
+        ("Claim-manifest supported claims", 3): EXPECTED_CLAIM_SUPPORTED,
+        ("Claim-manifest limitations", 3): EXPECTED_CLAIM_LIMITATIONS,
+        ("Claim boundary", 2): EXPECTED_DOES_NOT_ESTABLISH,
+    }
+    for (heading, level), expected in exact_sections.items():
+        require(extract_fenced_tokens(text, heading, level) == expected, f"documentation exact token section drift: {heading}")
+
     require("did **not** establish independent process-level isolation" in text, "documentation omits AGENT-X process-isolation limitation")
     require("member B" in text and "ACCEPT_WITH_CHANGES" in text and "one minority report" in text, "documentation omits bounded minority-report survival observation")
     require("five distinct provider families" in text and "vote_weight = 1" in text and "epistemic_privilege = none" in text, "documentation omits provider/vote equality observation")
     require("UNANIMOUS" in text and "evidence_state = UNTESTED" in text, "documentation omits consensus/evidence separation observation")
+    require("complete member-local governance/trust/evidence-state preservation was not observed" in text, "documentation omits Run II partition scope limitation")
+    require("state_after_explicit_rejoin = Admitted" in text and "silent_reconciliation_refused = true" in text, "documentation omits bounded partition/rejoin observation")
 
 
 def validate_ai_manifest() -> None:
@@ -436,16 +497,30 @@ def validate_ai_manifest() -> None:
     require(summary.get("empirical_runs_II_III") == "bounded_exact_specimen_execution_assurance", "README4AI empirical assurance summary drift")
     require(summary.get("empirical_creates_capability") is False and summary.get("empirical_creates_authority") is False, "README4AI empirical authority/capability boundary drift")
     require(summary.get("empirical_promotes_evidence") is False and summary.get("empirical_replaces_formalization") is False, "README4AI empirical evidence/formalization boundary drift")
-    commands = ai.get("validation_commands", [])
-    require("python3 tools/validate_empirical_assurance.py" in commands, "README4AI empirical validation command missing")
+    require(ai.get("validation_commands") == EXPECTED_VALIDATION_COMMANDS, "README4AI complete validation command list drift")
     require(ai.get("phase10_lean", {}).get("source_commit") == "c953463724cdf218802e66e16f582ae8d600ca47", "README4AI Phase 10 source identity drift")
 
 
-def validate_top_level_readme_and_workflow() -> None:
+def validate_top_level_docs_and_workflow() -> None:
     readme = README_PATH.read_text(encoding="utf-8")
     require("python3 tools/validate_empirical_assurance.py" in readme, "README verification list missing empirical assurance gate")
+    agents = AGENTS_PATH.read_text(encoding="utf-8")
+    for marker in (
+        "claims/empirical-assurance.json",
+        "machine/empirical-assurance.json",
+        "schemas/empirical-assurance-v1.schema.json",
+        "evidence/empirical-assurance/run-II.json",
+        "evidence/empirical-assurance/run-III.json",
+        "EMPIRICAL_ASSURANCE.md",
+        ".github/workflows/empirical-assurance.yml",
+        "tools/validate_empirical_assurance.py",
+        "Current empirical assurance rules",
+    ):
+        require(marker in agents, f"AGENTS.md empirical assurance inventory missing: {marker}")
+    require("python3 tools/validate_empirical_assurance.py" in agents, "AGENTS.md empirical assurance validation command missing")
+    require(PARTITION_LIMITATION in agents, "AGENTS.md missing Run II partition scope limitation")
     workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
-    for marker in ("README4AI.md", "README.md", "evidence/empirical-assurance/**", "tools/validate_empirical_assurance.py"):
+    for marker in ("README4AI.md", "README.md", "AGENTS.md", "evidence/empirical-assurance/**", "tools/validate_empirical_assurance.py"):
         require(marker in workflow, f"empirical assurance workflow path trigger missing: {marker}")
 
 
@@ -474,7 +549,7 @@ def validate() -> dict[str, Any]:
     validate_retained_evidence(record)
     validate_documentation()
     validate_ai_manifest()
-    validate_top_level_readme_and_workflow()
+    validate_top_level_docs_and_workflow()
     validate_historical_adapter_pin()
     validate_tested_fed_commit_exists()
     return {
