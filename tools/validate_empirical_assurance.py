@@ -30,6 +30,16 @@ PARTITION_CLAIM = "partition_rejoin_requires_explicit_reconciliation_and_restore
 MINORITY_CLAIM = "minority_reports_survive_on_tested_surface"
 PARTITION_LIMITATION = "complete_member_local_governance_trust_evidence_state_preservation_not_observed_in_run_II"
 
+EXPECTED_PRESERVATION_BLOBS = {
+    "README4AI.md": "64806ea18e1cf3f303726f9928f0b54312bb1af2",
+    "AGENTS.md": "185a1cebfdee85f9575f5d8647277e70fd3e21c0",
+    ".github/workflows/empirical-assurance.yml": "c5dc640518d959b42561056f6aafc0d0cfe79fd5",
+}
+EXPECTED_CAMPAIGN_PURPOSES = {
+    "supercomputer-run-II": "heterogeneous frontier-model NEXUS and FED integration stress test",
+    "supercomputer-run-III": "agent-wrapper capability-asymmetry delta test",
+}
+
 EXPECTED_GATE = {
     "schema": "schemas/empirical-assurance-v1.schema.json",
     "claims": "claims/empirical-assurance.json",
@@ -222,8 +232,17 @@ def require(condition: bool, message: str) -> None:
         raise GateError(message)
 
 
+def _reject_duplicate_object_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise GateError(f"duplicate JSON key rejected: {key}")
+        result[key] = value
+    return result
+
+
 def load_json(path: Path) -> Any:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_reject_duplicate_object_pairs)
 
 
 def sha256_file(path: Path) -> str:
@@ -326,6 +345,8 @@ def validate_record_semantics(record: dict[str, Any]) -> None:
     campaigns = record["campaigns"]
     require([entry["id"] for entry in campaigns] == ["supercomputer-run-II", "supercomputer-run-III"], "campaign ordering/identity drift")
     run2, run3 = campaigns
+    require(run2.get("purpose") == EXPECTED_CAMPAIGN_PURPOSES["supercomputer-run-II"], "Run II campaign purpose drift")
+    require(run3.get("purpose") == EXPECTED_CAMPAIGN_PURPOSES["supercomputer-run-III"], "Run III campaign purpose drift")
     require(run2["archive_sha256"] == RUN_II_SHA256 and run3["archive_sha256"] == RUN_III_SHA256, "campaign archive identity drift")
     for campaign in (run2, run3):
         expected = EXPECTED_RETAINED_EVIDENCE[campaign["id"]]
@@ -462,6 +483,7 @@ def validate_supplemental_evidence(record: dict[str, Any]) -> None:
         path = ROOT / expected["path"]
         require(path.is_file(), f"supplemental evidence missing: {expected['path']}")
         require(sha256_file(path) == expected["sha256"], f"supplemental evidence byte hash drift: {expected['path']}")
+        load_json(path)
     require(SUPPLEMENT_VALIDATOR_PATH.is_file(), "supplement validator missing")
     result = subprocess.run(
         ["python3", str(SUPPLEMENT_VALIDATOR_PATH)],
@@ -569,6 +591,39 @@ def validate_documentation() -> None:
     require("exactly five source-Council seats" in text, "documentation omits Run III exact seat-roster observation")
     require("restart inspection was read-only" in text and "does not infer a resumed post-restart voting authority state" in text, "documentation overstates Run III restart authority observation")
     require("persistent-world restart checks preserving recorded object identity" not in text, "documentation reintroduces unsupported Run II restart assertion")
+    require("Five live NEXUS Councils" not in text, "documentation reintroduces unsupported Run II live-Council count")
+
+
+def _git_blob_identity(path: Path) -> tuple[str, str]:
+    relative = str(path.relative_to(ROOT))
+    committed = subprocess.run(
+        ["git", "rev-parse", f"HEAD:{relative}"],
+        cwd=ROOT,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    require(committed.returncode == 0, f"unable to resolve committed blob identity: {relative}")
+    working = subprocess.run(
+        ["git", "hash-object", str(path)],
+        cwd=ROOT,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    require(working.returncode == 0, f"unable to hash working-tree preservation file: {relative}")
+    return committed.stdout.strip(), working.stdout.strip()
+
+
+def validate_preservation_blobs() -> None:
+    for relative, expected in EXPECTED_PRESERVATION_BLOBS.items():
+        path = ROOT / relative
+        require(path.is_file(), f"required preservation file missing: {relative}")
+        committed, working = _git_blob_identity(path)
+        require(committed == expected, f"committed preservation blob drift: {relative}")
+        require(working == expected, f"working-tree preservation blob drift: {relative}")
 
 
 def validate_ai_manifest() -> None:
@@ -624,6 +679,7 @@ def validate_ai_manifest() -> None:
 
 
 def validate_top_level_docs_and_workflow() -> None:
+    validate_preservation_blobs()
     readme = README_PATH.read_text(encoding="utf-8")
     require("python3 tools/validate_empirical_assurance.py" in readme, "README verification list missing empirical assurance gate")
     agents = AGENTS_PATH.read_text(encoding="utf-8")
@@ -642,8 +698,15 @@ def validate_top_level_docs_and_workflow() -> None:
     require("python3 tools/validate_empirical_assurance.py" in agents, "AGENTS.md empirical assurance validation command missing")
     require(PARTITION_LIMITATION in agents, "AGENTS.md missing Run II partition scope limitation")
     workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
-    for marker in ("README4AI.md", "README.md", "AGENTS.md", "evidence/empirical-assurance/**", "tools/validate_empirical_assurance.py", "tools/validate_empirical_assurance_supplements.py"):
-        require(marker in workflow, f"empirical assurance workflow path trigger missing: {marker}")
+    for marker in (
+        "README4AI.md", "README.md", "AGENTS.md", "EMPIRICAL_ASSURANCE.md",
+        "machine/empirical-assurance.json", "claims/empirical-assurance.json",
+        "schemas/empirical-assurance-v1.schema.json", "evidence/empirical-assurance/**",
+        "tools/validate_empirical_assurance.py", "tools/validate_empirical_assurance_supplements.py",
+        "tools/validate_phase10_gate.py", ".github/workflows/empirical-assurance.yml",
+        "tools/nexus_live_adapter.py",
+    ):
+        require(workflow.count(marker) >= 2, f"empirical assurance workflow must preserve pull_request and push triggers: {marker}")
 
 
 def git_show(commit: str, path: str) -> str:
