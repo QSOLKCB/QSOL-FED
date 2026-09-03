@@ -290,6 +290,12 @@ lake env lean QSOLFed/TypeAudit.lean
 lake env lean QSOLFed/AxiomAudit.lean
 ```
 
+Empirical assurance:
+
+```bash
+python3 tools/validate_empirical_assurance.py
+```
+
 ## Status
 
 Constitutional bootstrap lineage `qsol-fed/0`; frozen wire protocol `qsol-fed/1`; software release `v0.11.0` / crate `0.11.0`.
