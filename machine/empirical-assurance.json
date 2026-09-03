@@ -31,7 +31,7 @@
       "archive_sha256": "0d7a67292062b67473a5483c4a8fa6074378128cb03a60d79651dae091f5b0ec",
       "retained_evidence": {
         "path": "evidence/empirical-assurance/run-II.json",
-        "sha256": "77e3d3338af7f7910cf0b14d5a1f785fb7d51ef242f748f2dd3f2f8b77e5bf2c",
+        "sha256": "f990c8299d73975b4d731de2ea0ae60a41d08cea27a2b4158511a4294d6eedc2",
         "scope": "bounded_extract_from_operator_supplied_source_archive"
       },
       "purpose": "heterogeneous frontier-model NEXUS and FED integration stress test",
@@ -72,7 +72,7 @@
       "archive_sha256": "f569b80576b2dba952685577ed68dc2c8293973229dc161f6d63387ceaac475d",
       "retained_evidence": {
         "path": "evidence/empirical-assurance/run-III.json",
-        "sha256": "ed772500e7456d384f6c02dc61ceed66daf7d320cce4866d8a205ad220cf823b",
+        "sha256": "0003e5d31714d05ceeb700679a693fc02fe7ff4f0d4dbe43c2c992ec3a8a92b5",
         "scope": "bounded_extract_from_operator_supplied_source_archive"
       },
       "purpose": "agent-wrapper capability-asymmetry delta test",
