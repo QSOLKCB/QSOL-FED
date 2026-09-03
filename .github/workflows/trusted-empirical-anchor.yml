@@ -9,6 +9,10 @@ name: trusted-empirical-anchor
 # This workflow is intentionally read-only and executes no PR-head code. It
 # authenticates only Git tree metadata from the reviewed head and protects its
 # own workflow path against in-band replacement.
+#
+# For pull_request_target, github.sha identifies the base-branch commit whose
+# trusted workflow definition is executing. Do not use pull_request.base.sha as
+# the trust root: long-lived PR payloads may retain an older base SHA.
 
 on:
   pull_request_target:
@@ -24,13 +28,13 @@ jobs:
     timeout-minutes: 3
     env:
       TARGET_SHA: ${{ github.event.pull_request.head.sha }}
-      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      BASE_SHA: ${{ github.sha }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
     steps:
       - name: Checkout trusted base revision
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 1
           filter: blob:none
           persist-credentials: false
@@ -43,11 +47,11 @@ jobs:
           esac
           test "${#TARGET_SHA}" -eq 40
           case "$BASE_SHA" in
-            ''|*[!0-9a-f]* ) echo "invalid PR base SHA" >&2; exit 1 ;;
+            ''|*[!0-9a-f]* ) echo "invalid trusted base SHA" >&2; exit 1 ;;
           esac
           test "${#BASE_SHA}" -eq 40
           test "$(git rev-parse HEAD)" = "$BASE_SHA" || {
-            echo "trusted checkout does not match event base SHA" >&2
+            echo "trusted checkout does not match executing base SHA" >&2
             exit 1
           }
           case "$PR_NUMBER" in
