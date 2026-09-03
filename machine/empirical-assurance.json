@@ -120,8 +120,7 @@
         "tool_access_does_not_create_governance_authority",
         "being_correct_does_not_create_epistemic_privilege",
         "agent_wrapper_does_not_create_extra_council_seats",
-        "agent_wrapper_projection_does_not_import_votes_or_authority_into_fed",
-        "restart_does_not_promote_agent_authority"
+        "agent_wrapper_projection_does_not_import_votes_or_authority_into_fed"
       ],
       "limitations": [
         "independent_process_level_agent_wrapper_isolation_not_established",
