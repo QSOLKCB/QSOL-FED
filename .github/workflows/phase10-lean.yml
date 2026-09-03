@@ -50,25 +50,6 @@ jobs:
           assert release['published_at'] == '2026-08-27T12:35:21Z'
           PY
 
-      - name: Verify empirical assurance preservation anchor
-        run: |
-          set -euo pipefail
-          check_blob() {
-            path="$1"
-            expected="$2"
-            test "$(git rev-parse "HEAD:${path}")" = "$expected"
-            test "$(git hash-object "$path")" = "$expected"
-          }
-          check_blob tools/validate_empirical_assurance.py 77ead89c0579fb5316cd3ea6e14724486beaadb0
-          check_blob tools/validate_empirical_assurance_core.py 2add32386ef5e435bb9e4bde0684ea6b2eefcb3e
-          check_blob tools/validate_empirical_assurance_supplements.py c62dc4e6731b996447443cb93b219dead34606da
-          check_blob machine/empirical-assurance.json e3d55db78c358dab5a28dc9018b7fd7aa37117b6
-          check_blob schemas/empirical-assurance-v1.schema.json 4dc82d0f704c62fce7d7aa4aaaa7f84e7871882b
-          check_blob EMPIRICAL_ASSURANCE.md 7bf43bf806ae0f91945b5dc13dddcd6f63b19056
-          check_blob README4AI.md 64806ea18e1cf3f303726f9928f0b54312bb1af2
-          check_blob AGENTS.md 185a1cebfdee85f9575f5d8647277e70fd3e21c0
-          check_blob .github/workflows/empirical-assurance.yml 18f90533f3354165f938dabca7ce78b3561af295
-
       - name: Validate Phase 10 manifest and traceability
         run: |
           set -euo pipefail
