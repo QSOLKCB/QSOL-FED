@@ -47,7 +47,7 @@ Recorded Run II results include:
 - Five live NEXUS Councils with 147 real model calls.
 - 122/122 recorded sovereignty checks holding across projected Council reports.
 - 8/8 adversarial boundary probes prevented.
-- Council-of-Councils report-level convergence without shared ballots or imported vote weight.
+- Council-of-Councils reports remained non-authoritative and did not merge ballots.
 - persistent-world restart checks preserving recorded object identity.
 - local/reference FED transport and partition/rejoin drills refusing silent reconciliation, requiring explicit reconciliation after snapshot divergence, and restoring the tested peer lifecycle state to `Admitted`.
 
@@ -182,7 +182,7 @@ sha256: 342f4e0ab46745f7f83dd92e68a8d5b8d73df0b9e0bd1917b0755b8d06116265
 
 The source `MODEL_MANIFEST.json` configured exactly four fixed seats, members `A`–`D`; `AGENT_MANIFEST.json` configured AGENT-X as member `X` and declared total Council size 5. The observed `agent_x/council_roster.json` then contained **exactly five source-Council seats**, with unique member identities `A`, `B`, `C`, `D`, `X`, and `council_result.json` independently reported `member_count = 5`. The retained evidence therefore supports `agent_wrapper_does_not_create_extra_council_seats_on_tested_surface` for this exact Run III Council. It does not claim a universal property for arbitrary wrappers or future Council implementations.
 
-Run III additionally recorded restart recovery with no authority gain and 12/12 deterministic adversarial mutations rejected across the tested authority/evidence/identity boundary.
+Run III additionally recorded restart recovery of the prior Council/session and AGENT-X seat identity from persisted world state, plus 12/12 deterministic adversarial mutations rejected across the tested authority/evidence/identity boundary. The restart inspection was read-only; this record does not infer a resumed post-restart voting authority state from that inspection.
 
 ### Run III qualification
 
@@ -241,7 +241,6 @@ tool_access_does_not_create_governance_authority
 being_correct_does_not_create_epistemic_privilege
 agent_wrapper_does_not_create_extra_council_seats
 agent_wrapper_projection_does_not_import_votes_or_authority_into_fed
-restart_does_not_promote_agent_authority
 ```
 
 ### Run III limitations
