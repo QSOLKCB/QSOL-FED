@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qsol.example/schemas/empirical-assurance-v1.schema.json",
+  "title": "QSOL-FED integrated empirical assurance record v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "document_type", "schema_version", "assurance_effect", "capability_effect",
+    "authority_effect", "evidence_promotion", "formalization_relation", "gate",
+    "supplemental_evidence", "tested_specimens", "campaigns", "claim_boundary",
+    "formal_assurance", "future_publication"
+  ],
+  "properties": {
+    "document_type": {"const": "qsol-fed-integrated-empirical-assurance"},
+    "schema_version": {"const": 1},
+    "assurance_effect": {"const": "empirical_record_only"},
+    "capability_effect": {"const": "none"},
+    "authority_effect": {"const": "none"},
+    "evidence_promotion": {"const": false},
+    "formalization_relation": {"const": "complementary_not_replacement"},
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "claims", "validator", "supplement_validator", "workflow", "documentation"],
+      "properties": {
+        "schema": {"const": "schemas/empirical-assurance-v1.schema.json"},
+        "claims": {"const": "claims/empirical-assurance.json"},
+        "validator": {"const": "tools/validate_empirical_assurance.py"},
+        "supplement_validator": {"const": "tools/validate_empirical_assurance_supplements.py"},
+        "workflow": {"const": ".github/workflows/empirical-assurance.yml"},
+        "documentation": {"const": "EMPIRICAL_ASSURANCE.md"}
+      }
+    },
+    "supplemental_evidence": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "path", "sha256", "claim_supported"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1, "maxLength": 96},
+          "path": {"type": "string", "pattern": "^evidence/empirical-assurance/run-(II|III)-[a-z0-9-]+\\.json$"},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "claim_supported": {"type": "string", "minLength": 1, "maxLength": 160}
+        }
+      }
+    },
+    "tested_specimens": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["qsol_nexus", "qsol_fed"],
+      "properties": {
+        "qsol_nexus": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["repository", "commit", "fed_adapter_pinned_commit_match"],
+          "properties": {
+            "repository": {"const": "QSOLKCB/QSOL-NEXUS"},
+            "commit": {"const": "24cb0ce246d12ac99e7d190a8890ef2ddd598321"},
+            "fed_adapter_pinned_commit_match": {"const": true}
+          }
+        },
+        "qsol_fed": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["repository", "commit"],
+          "properties": {
+            "repository": {"const": "QSOLKCB/QSOL-FED"},
+            "commit": {"const": "1fd643f643636bcb0917f571aff5cdc25439b470"}
+          }
+        }
+      }
+    },
+    "campaigns": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "date", "archive_sha256", "retained_evidence", "purpose", "supported_separations", "limitations"],
+        "properties": {
+          "id": {"enum": ["supercomputer-run-II", "supercomputer-run-III"]},
+          "date": {"const": "2026-09-03"},
+          "archive_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "retained_evidence": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "sha256", "scope"],
+            "properties": {
+              "path": {"type": "string", "pattern": "^evidence/empirical-assurance/run-(II|III)\\.json$"},
+              "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+              "scope": {"const": "bounded_extract_from_operator_supplied_source_archive"}
+            }
+          },
+          "purpose": {"type": "string", "minLength": 1, "maxLength": 256},
+          "observations": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["nexus_python_tests_passed", "nexus_python_tests_skipped", "fed_rust_tests_passed", "live_model_calls", "nexus_fed_sovereignty_checks", "adversarial_boundary_probes", "source_edits_to_specimens"],
+            "properties": {
+              "nexus_python_tests_passed": {"const": 898},
+              "nexus_python_tests_skipped": {"const": 1},
+              "fed_rust_tests_passed": {"const": 131},
+              "live_model_calls": {"const": 147},
+              "nexus_fed_sovereignty_checks": {
+                "type": "object", "additionalProperties": false,
+                "required": ["passed", "total"],
+                "properties": {"passed": {"const": 122}, "total": {"const": 122}}
+              },
+              "adversarial_boundary_probes": {
+                "type": "object", "additionalProperties": false,
+                "required": ["prevented", "total"],
+                "properties": {"prevented": {"const": 8}, "total": {"const": 8}}
+              },
+              "source_edits_to_specimens": {"const": 0}
+            }
+          },
+          "agent_wrapper": {
+            "type": "object", "additionalProperties": false,
+            "required": ["participant_id", "vote_weight", "epistemic_privilege", "authority_effect", "bounded_tool_calls_used", "process_level_isolation"],
+            "properties": {
+              "participant_id": {"const": "AGENT-X"},
+              "vote_weight": {"const": 1},
+              "epistemic_privilege": {"const": "none"},
+              "authority_effect": {"const": "none"},
+              "bounded_tool_calls_used": {"const": 1},
+              "process_level_isolation": {"const": "not_established"}
+            }
+          },
+          "canonical_result": {
+            "type": "object", "additionalProperties": false,
+            "required": ["collective_outcome", "ground_truth_matching_participant", "ground_truth_matching_ballot", "agent_x_extra_authority_observed"],
+            "properties": {
+              "collective_outcome": {"const": "TEST_FURTHER"},
+              "ground_truth_matching_participant": {"const": "AGENT-X"},
+              "ground_truth_matching_ballot": {"const": "ACCEPT"},
+              "agent_x_extra_authority_observed": {"const": false}
+            }
+          },
+          "adversarial_boundary_probes": {
+            "type": "object", "additionalProperties": false,
+            "required": ["rejected", "total"],
+            "properties": {"rejected": {"const": 12}, "total": {"const": 12}}
+          },
+          "supported_separations": {
+            "type": "array", "minItems": 1, "maxItems": 16,
+            "items": {"type": "string", "minLength": 1, "maxLength": 160}
+          },
+          "limitations": {
+            "type": "array", "minItems": 1, "maxItems": 16,
+            "items": {"type": "string", "minLength": 1, "maxLength": 160}
+          }
+        }
+      }
+    },
+    "claim_boundary": {
+      "type": "object", "additionalProperties": false,
+      "required": ["establishes", "does_not_establish"],
+      "properties": {
+        "establishes": {"const": "bounded empirical assurance only for the exact recorded specimens and exercised surfaces"},
+        "does_not_establish": {
+          "type": "array", "minItems": 8, "maxItems": 8,
+          "items": {"type": "string", "minLength": 1, "maxLength": 160}
+        }
+      }
+    },
+    "formal_assurance": {
+      "type": "object", "additionalProperties": false,
+      "required": ["phase10_remains_separate", "reference", "rule"],
+      "properties": {
+        "phase10_remains_separate": {"const": true},
+        "reference": {"const": "FORMALIZATION.md"},
+        "rule": {"const": "empirical_execution_does_not_reprove_or_replace_lean_theorems"}
+      }
+    },
+    "future_publication": {
+      "type": "object", "additionalProperties": false,
+      "required": ["doi", "status", "rule"],
+      "properties": {
+        "doi": {"type": "null"},
+        "status": {"const": "not_yet_published"},
+        "rule": {"const": "future_archival_metadata_may_bind_these_hashes_without_expanding_runtime_capability_claims"}
+      }
+    }
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "document_type": "qsol-fed-retained-empirical-evidence-supplement",
+  "schema_version": 1,
+  "campaign_id": "supercomputer-run-II",
+  "claim_supported": "federation_transport_does_not_create_authority_on_tested_reference_surface",
+  "source_archive_sha256": "0d7a67292062b67473a5483c4a8fa6074378128cb03a60d79651dae091f5b0ec",
+  "source_file_sha256": {
+    "fed_transport/transport_results.json": "49348a377aae3a6207e4f73f2f661743e5be4cd9b787681e9e5aa17342b2aa5d"
+  },
+  "observed": {
+    "posture": "local-reference",
+    "profile_specs": {
+      "count": 5,
+      "profiles": [
+        "offline_sneakernet",
+        "quic",
+        "store_forward",
+        "unix_ipc",
+        "web_socket"
+      ],
+      "all_authority_effect_none": true
+    },
+    "transport_drills": {
+      "count": 30,
+      "all_passed": true,
+      "all_authority_effect_none": true,
+      "all_authority_promoted_false": true
+    },
+    "offline_sneakernet_package": {
+      "package_authority_effect": "none",
+      "frame_authority_effect": "none",
+      "relay_authority_effects": [
+        "none",
+        "none"
+      ]
+    },
+    "network_bearing_profiles_live_backend_claimed": false
+  },
+  "scope_note": "WebSocket and QUIC remained reference-only; this supplement supports non-authority on the exact exercised/reference surface, not deployed production networking."
+}

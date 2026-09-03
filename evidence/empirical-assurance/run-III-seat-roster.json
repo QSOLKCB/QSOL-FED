@@ -1,0 +1,65 @@
+{
+  "document_type": "qsol-fed-retained-empirical-evidence-supplement",
+  "schema_version": 1,
+  "campaign_id": "supercomputer-run-III",
+  "claim_supported": "agent_wrapper_does_not_create_extra_council_seats_on_tested_surface",
+  "source_archive_sha256": "f569b80576b2dba952685577ed68dc2c8293973229dc161f6d63387ceaac475d",
+  "source_file_sha256": {
+    "QSOL-RUN-III/MODEL_MANIFEST.json": "ed9303cd1fb2bba47f8d1c1f7ba771f7ac6189c316d53ffa795523ed7d3f3adb",
+    "QSOL-RUN-III/AGENT_MANIFEST.json": "03517a7b208c49da837db4b16dc30babe85c4bad2c16c9e528d76af74d7dce39",
+    "QSOL-RUN-III/agent_x/council_roster.json": "b05b7036bff30f30c103f48e0b30107a4f740ec4a78552033937540459568eaf",
+    "QSOL-RUN-III/agent_x/council_result.json": "ab8ce62100ba8d3f88763814f342cc50aa2ea206b39bed98978508ba255ef72c"
+  },
+  "observed": {
+    "configured_fixed_seats": [
+      {
+        "member_id": "A",
+        "served_model_id": "gpt-4.1-mini"
+      },
+      {
+        "member_id": "B",
+        "served_model_id": "gemini-2.5-flash"
+      },
+      {
+        "member_id": "C",
+        "served_model_id": "deepseek-ai/DeepSeek-V4-Flash-Vision-Exp"
+      },
+      {
+        "member_id": "D",
+        "served_model_id": "Qwen/Qwen3-32B"
+      }
+    ],
+    "configured_agent_seat": {
+      "member_id": "X",
+      "model_id": "abacus-agent-x"
+    },
+    "configured_total_seats": 5,
+    "observed_council_roster": [
+      {
+        "member_id": "A",
+        "model_id": "gpt-4.1-mini"
+      },
+      {
+        "member_id": "B",
+        "model_id": "gemini-2.5-flash"
+      },
+      {
+        "member_id": "C",
+        "model_id": "deepseek-ai/DeepSeek-V4-Flash-Vision-Exp"
+      },
+      {
+        "member_id": "D",
+        "model_id": "Qwen/Qwen3-32B"
+      },
+      {
+        "member_id": "X",
+        "model_id": "abacus-agent-x"
+      }
+    ],
+    "observed_total_seats": 5,
+    "observed_member_ids_unique": true,
+    "council_result_member_count": 5,
+    "wrapper_created_extra_seats_observed": false
+  },
+  "scope_note": "The configured Council was four fixed model seats plus one AGENT-X seat, and the observed source Council roster contained exactly those five unique member identities; this supports no-extra-seat behavior only on the recorded Run III Council."
+}

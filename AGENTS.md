@@ -6,11 +6,11 @@ QSOL-FED is a security-sensitive federation boundary. Protocol convenience never
 
 ### Read first
 
-Read `README4AI.md`, `CHARTER.md`, `PRIME_DIRECTIVE.md`, all historical/current `claims/*.json`, `invariants/fed-v1.json`, `wire/phase1.json`, `crypto/phase2.json`, `api/phase3.json`, `state/phase4.json`, `state/phase5a-holodeck.json`, `state/phase5.json`, `state/phase5c.json`, `state/phase6.json`, `state/phase7.json`, `state/phase8.json`, `state/phase9.json`, `state/phase10.json`, `claims/phase10.json`, `machine/lean-phase10-manifest.json`, `schemas/lean-phase10-manifest-v1.schema.json`, `FORMALIZATION.md`, `QSOLFed/Model.lean`, `QSOLFed/Theorems.lean`, `QSOLFed/TypeAudit.lean`, `QSOLFed/AxiomAudit.lean`, `tools/validate_phase10_gate.py`, `CANONICAL_JSON.md`, `CRYPTOGRAPHY.md`, `API.md`, `TLS_PROFILE.md`, `FEDERATION_STATE.md`, `HOLODECK.md`, `QSOL_ADAPTERS.md`, `SDK.md`, `docs/THIRD_PARTY_INTEGRATION.md`, `ASSEMBLY.md`, `TRANSPORTS.md`, `MORIARTY.md`, `fixtures/phase9/attack-corpus.json`, `fixtures/phase9/accepted-counterexamples.json`, `src/invariants.rs`, `src/claims.rs`, `src/store.rs`, `src/peering.rs`, `src/bundle.rs`, `src/holodeck.rs`, `src/qsol_adapters.rs`, `src/oracle_live.rs`, `src/sdk.rs`, `src/assembly.rs`, `src/transport.rs`, `tools/run_moriarty.py`, `tools/validate_phase9_gate.py`, and `THREAT_MODEL.md` before changing security, state, simulation, adapter, SDK, governance, transport, archive, relay, NAT, resilience, adversarial-graduation, or assurance semantics.
+Read `README4AI.md`, `CHARTER.md`, `PRIME_DIRECTIVE.md`, all historical/current `claims/*.json`, `invariants/fed-v1.json`, `wire/phase1.json`, `crypto/phase2.json`, `api/phase3.json`, `state/phase4.json`, `state/phase5a-holodeck.json`, `state/phase5.json`, `state/phase5c.json`, `state/phase6.json`, `state/phase7.json`, `state/phase8.json`, `state/phase9.json`, `state/phase10.json`, `claims/phase10.json`, `claims/empirical-assurance.json`, `machine/empirical-assurance.json`, `schemas/empirical-assurance-v1.schema.json`, `evidence/empirical-assurance/run-II.json`, `evidence/empirical-assurance/run-III.json`, `evidence/empirical-assurance/run-II-transport-authority.json`, `evidence/empirical-assurance/run-III-tool-use.json`, `evidence/empirical-assurance/run-III-seat-roster.json`, `EMPIRICAL_ASSURANCE.md`, `.github/workflows/empirical-assurance.yml`, `tools/validate_empirical_assurance.py`, `tools/validate_empirical_assurance_supplements.py`, `machine/lean-phase10-manifest.json`, `schemas/lean-phase10-manifest-v1.schema.json`, `FORMALIZATION.md`, `QSOLFed/Model.lean`, `QSOLFed/Theorems.lean`, `QSOLFed/TypeAudit.lean`, `QSOLFed/AxiomAudit.lean`, `tools/validate_phase10_gate.py`, `CANONICAL_JSON.md`, `CRYPTOGRAPHY.md`, `API.md`, `TLS_PROFILE.md`, `FEDERATION_STATE.md`, `HOLODECK.md`, `QSOL_ADAPTERS.md`, `SDK.md`, `docs/THIRD_PARTY_INTEGRATION.md`, `ASSEMBLY.md`, `TRANSPORTS.md`, `MORIARTY.md`, `fixtures/phase9/attack-corpus.json`, `fixtures/phase9/accepted-counterexamples.json`, `src/invariants.rs`, `src/claims.rs`, `src/store.rs`, `src/peering.rs`, `src/bundle.rs`, `src/holodeck.rs`, `src/qsol_adapters.rs`, `src/oracle_live.rs`, `src/sdk.rs`, `src/assembly.rs`, `src/transport.rs`, `tools/run_moriarty.py`, `tools/validate_phase9_gate.py`, and `THREAT_MODEL.md` before changing security, state, simulation, adapter, SDK, governance, transport, archive, relay, NAT, resilience, adversarial-graduation, formalization, empirical-assurance, or assurance semantics.
 
 ### Core constitutional rules
 
-No peer, model, config, request, signature, trust label, imported bundle, capability advertisement, persisted object, Holodeck program, simulated actor, Council report, ORACLE observation, ORACLE transport response, ARK record, SDK participant, Assembly proposal, Assembly vote, governance receipt, transport frame, NAT ticket, relay receipt, offline package, archive record, partition recovery path, adversarial persona, candidate finding, counterexample record, or MORIARTY report may directly create member-local governance authority, promote evidence, create/reweight local Council votes, install capabilities, rewrite history, mutate citizenship/identity authority, trigger arbitrary remote execution, place secrets in semantic state, or disable constitutional/Holodeck safeguards.
+No peer, model, config, request, signature, trust label, imported bundle, capability advertisement, persisted object, Holodeck program, simulated actor, Council report, ORACLE observation, ORACLE transport response, ARK record, SDK participant, Assembly proposal, Assembly vote, governance receipt, transport frame, NAT ticket, relay receipt, offline package, archive record, partition recovery path, adversarial persona, candidate finding, counterexample record, MORIARTY report, or empirical-assurance record may directly create member-local governance authority, promote evidence, create/reweight local Council votes, install capabilities, rewrite history, mutate citizenship/identity authority, trigger arbitrary remote execution, place secrets in semantic state, or disable constitutional/Holodeck safeguards.
 
 Unknown authority-bearing effects fail closed.
 
@@ -153,9 +153,24 @@ TARGET_BOUND SOURCE RELEASE != POST-TAG FORMALIZATION LAYER
 
 Run `python3 tools/validate_phase10_gate.py`, `lake build`, `lake env lean QSOLFed/TypeAudit.lean`, and `lake env lean QSOLFed/AxiomAudit.lean` after formalization/manifest/contract/claim/documentation changes.
 
+### Current empirical assurance rules
+
+`claims/empirical-assurance.json`, `machine/empirical-assurance.json`, `schemas/empirical-assurance-v1.schema.json`, `evidence/empirical-assurance/run-II.json`, `evidence/empirical-assurance/run-III.json`, `evidence/empirical-assurance/run-II-transport-authority.json`, `evidence/empirical-assurance/run-III-tool-use.json`, `evidence/empirical-assurance/run-III-seat-roster.json`, `EMPIRICAL_ASSURANCE.md`, `tools/validate_empirical_assurance.py`, `tools/validate_empirical_assurance_supplements.py`, and `.github/workflows/empirical-assurance.yml` form one synchronized bounded-assurance preservation contract.
+
+- Runs II and III bind only the exact tested QSOL-FED and QSOL-NEXUS specimens and exercised surfaces. They add no runtime capability, governance authority, evidence promotion, or formal theorem.
+- The retained evidence files are bounded extracts of operator-supplied campaign archives. Their bytes, source-archive identities, selected source-file hashes, claim arrays, limitations, and human documentation must remain synchronized and fail closed on drift.
+- Run II empirically observed provider/vote equality, consensus/evidence separation, minority-report survival through the NEXUS→FED membrane, report/transport non-authority, and a partition/rejoin lifecycle path that refused silent reconciliation, required explicit reconciliation after divergence, and returned the tested peer lifecycle state to `Admitted`.
+- Run II did **not** record complete before/after governance, trust, evidence, capability, history, citizenship, or other member-local sovereign state. The literal limitation `complete_member_local_governance_trust_evidence_state_preservation_not_observed_in_run_II` is mandatory. Do not relabel the lifecycle observation as full member-local state preservation.
+- Run III supports AGENT-X as one non-privileged participant on the tested constitutional/integration surface. Independent process-level agent-wrapper isolation remains not established.
+- Empirical assurance complements Phase 9 and Phase 10. It does not rewrite either historical assurance target.
+
+Run `python3 tools/validate_empirical_assurance.py` after empirical claims, machine record, schema, retained evidence, documentation, README/README4AI, AGENTS, workflow, adapter-pin preservation, or empirical validator changes.
+
 ### Claim discipline
 
-Historical capability manifests: `claims/phase0.json`, `claims/phase2.json`, `claims/phase3.json`, `claims/phase4.json`, `claims/phase5a.json`, `claims/phase5.json`, `claims/phase5c.json`, `claims/phase6.json`, `claims/phase7.json`. Current capability manifest: `claims/phase8.json`. Current adversarial-assurance manifest: `claims/phase9.json`. Current formalization-assurance manifest: `claims/phase10.json`.
+Historical capability manifests: `claims/phase0.json`, `claims/phase2.json`, `claims/phase3.json`, `claims/phase4.json`, `claims/phase5a.json`, `claims/phase5.json`, `claims/phase5c.json`, `claims/phase6.json`, `claims/phase7.json`. Current capability manifest: `claims/phase8.json`. Current adversarial-assurance manifest: `claims/phase9.json`. Current formalization-assurance manifest: `claims/phase10.json`. Current bounded empirical-assurance manifest: `claims/empirical-assurance.json`.
+
+The empirical-assurance manifest is assurance metadata only. It may not expand runtime capability, authority, evidence status, or formal proof claims.
 
 Current hard-false capability claims include `oracle_holodeck_synthetic_admission`, `host_level_sandbox`, `production_networking`, `remote_execution`, and deployed `interoperable_federation`.
 
@@ -164,6 +179,8 @@ Current hard-false capability claims include `oracle_holodeck_synthetic_admissio
 Security-critical changes require synchronized source, machine contract, human docs, schemas, tests, claims, fixtures, and gate validators. Never weaken an old validator merely to make a successor pass. Convert current-state assumptions into historical preservation checks while retaining the old security semantics.
 
 A Phase 9 finding must strengthen the owning regression surface rather than adding a one-off exemption to MORIARTY.
+
+Empirical-assurance changes must synchronize `claims/empirical-assurance.json`, `machine/empirical-assurance.json`, retained evidence, schema, `EMPIRICAL_ASSURANCE.md`, `README4AI.md`, this contribution contract, workflow triggers, and `tools/validate_empirical_assurance.py`. Missing evidence requires narrowing a claim or recording a limitation, never manufacturing stronger evidence.
 
 ### Tests
 
@@ -186,11 +203,12 @@ python3 tools/validate_phase10_gate.py
 lake build
 lake env lean QSOLFed/TypeAudit.lean
 lake env lean QSOLFed/AxiomAudit.lean
+python3 tools/validate_empirical_assurance.py
 ```
 
 ### Architecture rule
 
-QSOL-NEXUS remains a Council service and possible Federation/Assembly participant, not the sovereign owner of QSOL-FED. QSOL-ORACLE remains an evidentiary membrane, QSOL-ARK an archive/recovery system, and third-party nodes remain possible without adopting QSOL governance. The Assembly governs protocol-evolution proposals only; it does not own member-local state. Phase 8 transports move already-identified protocol material; they do not become identity, trust, governance, evidence, or execution authorities. Phase 9 attacks and reports measure the reviewed boundary; they do not become authority, capability, or proof.
+QSOL-NEXUS remains a Council service and possible Federation/Assembly participant, not the sovereign owner of QSOL-FED. QSOL-ORACLE remains an evidentiary membrane, QSOL-ARK an archive/recovery system, and third-party nodes remain possible without adopting QSOL governance. The Assembly governs protocol-evolution proposals only; it does not own member-local state. Phase 8 transports move already-identified protocol material; they do not become identity, trust, governance, evidence, or execution authorities. Phase 9 attacks and reports measure the reviewed boundary; they do not become authority, capability, or proof. Runs II and III are bounded empirical observations; they do not become authority, universal truth, whole-program verification, or substitutes for the formal model.
 
 ### Security comedy clause
 

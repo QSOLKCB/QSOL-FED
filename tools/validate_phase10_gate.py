@@ -9,6 +9,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+PHASE10_PUBLICATION_AI_MANIFEST_COMMIT = "1fd643f643636bcb0917f571aff5cdc25439b470"
+PHASE10_PUBLICATION_AI_MANIFEST_BLOB = "5d19e6f6057e55551a2259a61ae88c61444bdafe"
+CURRENT_AI_MANIFEST_BLOB = "dfa5fb07aa81ffbb0d5c1f46b445f5555632a4c5"
+
 PREIMPORT_BLOBS = {
     "tools/validate_phase10_gate_round11.py": "c9c86f38540077581cfa0aa4d80d899d271252ee",
     "tools/validate_phase10_gate_round10.py": "d40d56c9686821ce5379ecc45b75b65f7f5ffd68",
@@ -18,7 +22,6 @@ PREIMPORT_BLOBS = {
     "schemas/lean-phase10-manifest-v1.schema.json": "ce0fb2c46184c5323ca898d8a90517ea67537809",
     "state/phase10.json": "d167a8123cb0124fdd92e77dc4e8476b5de999af",
     "claims/phase10.json": "7e72230c93fc5ca27500fc41ed3f4523e734d52a",
-    "README4AI.md": "5d19e6f6057e55551a2259a61ae88c61444bdafe",
     "FORMALIZATION.md": "2c5418755af2124f7547b08fd85539d558bd0139",
     "QSOLFed/Model.lean": "7cf071fe7e3787b63fe8979a9f925d7a70dbd7d8",
     "QSOLFed/Theorems.lean": "5d9bbceb06afcd973b01866c30d4b84ea50681fa",
@@ -48,6 +51,46 @@ EXPECTED_FORMALIZATION_ASSURANCE = {
     "source_release_rewritten": False,
     "formalization_creates_authority": False,
 }
+EXPECTED_CURRENT_AI_PHASE10 = {
+    "contract": "state/phase10.json",
+    "assurance_manifest": "claims/phase10.json",
+    "documentation": "FORMALIZATION.md",
+    "theorem_manifest": "machine/lean-phase10-manifest.json",
+    "theorem_manifest_schema": "schemas/lean-phase10-manifest-v1.schema.json",
+    "model": "QSOLFed/Model.lean",
+    "theorems": "QSOLFed/Theorems.lean",
+    "type_audit": "QSOLFed/TypeAudit.lean",
+    "axiom_audit": "QSOLFed/AxiomAudit.lean",
+    "gate_validator": "tools/validate_phase10_gate.py",
+    "workflow": ".github/workflows/phase10-lean.yml",
+    "source_release": "v0.11.0",
+    "source_commit": "c953463724cdf218802e66e16f582ae8d600ca47",
+    "source_tree": "93f23cd7eda6dd92ae13b7bb96bee01935b80731",
+    "source_release_immutable": True,
+    "retained_moriarty_report": "evidence/phase10/moriarty-report-c953463724cdf218802e66e16f582ae8d600ca47.json",
+    "retained_moriarty_report_sha256": "sha256:6c215f44a1c52aa3bfefadc4039013ea69ddbe0f2afd06f6dac27377369b185c",
+    "lean_version": "4.33.1",
+    "theorem_count": 47,
+    "sorry_or_admit": False,
+    "custom_axioms": False,
+    "kernel_axiom_dependencies": False,
+    "whole_implementation_verified": False,
+    "deployment_security_proof": False,
+    "source_release_rewritten": False,
+    "formalization_merge_commit": "9bc0e33fc30ed14b5ca1a3bfbd2e7ecc5059452b",
+    "formalization_merge_tree": "062ca7fd78c5ada08f0f54f7c822337e2fa081e0",
+    "merged_main_phase10_workflow": {"run_id": 33198458502, "run_number": 128, "conclusion": "success"},
+    "merged_main_constitutional_moriarty_workflow": {"run_id": 33198458525, "run_number": 471, "conclusion": "success"},
+    "integration_claim_record_note": "claims/phase10.json is an exact reviewed Phase 10 input and retains its integration-time pre-merge gate_status. Live post-merge completion is evidenced by the formalization merge commit and exact merged-main workflows recorded here; the immutable v0.11.0 theorem target is not rewritten.",
+    "zenodo_publication": {
+        "version": "1.0.0",
+        "doi": "10.5281/zenodo.22149263",
+        "title": "QSOL-FED Lean 4 Formalization: Machine-Checked Constitutional and Protocol Separation Invariants",
+        "citation": "Slade, T. (2026). QSOL-FED Lean 4 Formalization: Machine-Checked Constitutional and Protocol Separation Invariants (Version 1.0.0) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.22149263",
+        "record_license": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
+        "repository_license": "Apache-2.0 unchanged",
+    },
+}
 
 
 def _raw_git(*args: str) -> str:
@@ -63,6 +106,33 @@ def _raw_git(*args: str) -> str:
     return result.stdout.strip()
 
 
+def _verify_historical_ai_manifest() -> None:
+    observed = _raw_git("rev-parse", f"{PHASE10_PUBLICATION_AI_MANIFEST_COMMIT}:README4AI.md")
+    if observed != PHASE10_PUBLICATION_AI_MANIFEST_BLOB:
+        raise RuntimeError(
+            "published Phase 10 README4AI identity drift: "
+            f"expected {PHASE10_PUBLICATION_AI_MANIFEST_BLOB}, observed {observed}"
+        )
+
+
+def _verify_current_ai_manifest() -> None:
+    path = ROOT / "README4AI.md"
+    if not path.is_file():
+        raise RuntimeError("current README4AI.md missing")
+    committed = _raw_git("rev-parse", "HEAD:README4AI.md")
+    if committed != CURRENT_AI_MANIFEST_BLOB:
+        raise RuntimeError(
+            "current README4AI committed identity drift: "
+            f"expected {CURRENT_AI_MANIFEST_BLOB}, observed {committed}"
+        )
+    working = _raw_git("hash-object", str(path))
+    if working != CURRENT_AI_MANIFEST_BLOB:
+        raise RuntimeError(
+            "current README4AI working-tree identity drift: "
+            f"expected {CURRENT_AI_MANIFEST_BLOB}, observed {working}"
+        )
+
+
 def _preflight() -> None:
     for relative, expected in PREIMPORT_BLOBS.items():
         path = ROOT / relative
@@ -74,6 +144,8 @@ def _preflight() -> None:
         working = _raw_git("hash-object", str(path))
         if working != expected:
             raise RuntimeError(f"working-tree exact-byte Phase 10 input drift for {relative}: expected {expected}, observed {working}")
+    _verify_historical_ai_manifest()
+    _verify_current_ai_manifest()
 
 
 _preflight()
@@ -116,6 +188,12 @@ def verify_exact_bytes_still_hold() -> None:
     for relative, expected in PREIMPORT_BLOBS.items():
         require(_raw_git("rev-parse", f"HEAD:{relative}") == expected, f"committed exact-byte Phase 10 input drift for {relative}")
         require(_raw_git("hash-object", str(ROOT / relative)) == expected, f"working-tree exact-byte Phase 10 input drift for {relative}")
+    require(
+        _raw_git("rev-parse", f"{PHASE10_PUBLICATION_AI_MANIFEST_COMMIT}:README4AI.md") == PHASE10_PUBLICATION_AI_MANIFEST_BLOB,
+        "published Phase 10 README4AI identity drift",
+    )
+    require(_raw_git("rev-parse", "HEAD:README4AI.md") == CURRENT_AI_MANIFEST_BLOB, "current committed README4AI identity drift")
+    require(_raw_git("hash-object", str(ROOT / "README4AI.md")) == CURRENT_AI_MANIFEST_BLOB, "current working-tree README4AI identity drift")
 
 
 def verify_claims_and_docs() -> None:
@@ -169,7 +247,9 @@ def verify_round14_boundaries() -> None:
 
 def verify_ai_inventory() -> None:
     ai = json.loads((ROOT / "README4AI.md").read_text(encoding="utf-8"))
-    require(ai.get("phase10_lean", {}).get("type_audit") == "QSOLFed/TypeAudit.lean", "README4AI Phase 10 TypeAudit inventory drift")
+    require(ai.get("phase10_status") == "lean_formalization_merged_main_verified_and_zenodo_published", "README4AI Phase 10 status drift")
+    require(ai.get("formalization_assurance_manifest") == "claims/phase10.json", "README4AI Phase 10 assurance-manifest drift")
+    require(ai.get("phase10_lean") == EXPECTED_CURRENT_AI_PHASE10, "README4AI complete Phase 10 inventory drift")
 
 
 def validate() -> dict:
@@ -197,7 +277,7 @@ def main() -> int:
     if args.json:
         print(json.dumps(result, sort_keys=True))
     else:
-        print(f"Phase 10 gate: OK ({result['theorem_count']} theorem declarations/source-types + elaborated environment types + exact contract/model/document bytes bound to {result['target_tag']})")
+        print("Phase 10 gate: OK")
     return 0
 
 
