@@ -10,9 +10,30 @@
     "schema": "schemas/empirical-assurance-v1.schema.json",
     "claims": "claims/empirical-assurance.json",
     "validator": "tools/validate_empirical_assurance.py",
+    "supplement_validator": "tools/validate_empirical_assurance_supplements.py",
     "workflow": ".github/workflows/empirical-assurance.yml",
     "documentation": "EMPIRICAL_ASSURANCE.md"
   },
+  "supplemental_evidence": [
+    {
+      "id": "run-II-transport-authority",
+      "path": "evidence/empirical-assurance/run-II-transport-authority.json",
+      "sha256": "1e8115c2dda143e480c61de88b9f4ff5193956df663eaf799431c883f34bccd4",
+      "claim_supported": "federation_transport_does_not_create_authority_on_tested_reference_surface"
+    },
+    {
+      "id": "run-III-tool-use",
+      "path": "evidence/empirical-assurance/run-III-tool-use.json",
+      "sha256": "2168b77f9a7e70315bc3f01f934f9e6ad45e86370c7b948fe0d3b15c75533cce",
+      "claim_supported": "tool_access_does_not_create_governance_authority_on_tested_surface"
+    },
+    {
+      "id": "run-III-seat-roster",
+      "path": "evidence/empirical-assurance/run-III-seat-roster.json",
+      "sha256": "342f4e0ab46745f7f83dd92e68a8d5b8d73df0b9e0bd1917b0755b8d06116265",
+      "claim_supported": "agent_wrapper_does_not_create_extra_council_seats_on_tested_surface"
+    }
+  ],
   "tested_specimens": {
     "qsol_nexus": {
       "repository": "QSOLKCB/QSOL-NEXUS",
