@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 PHASE10_PUBLICATION_AI_MANIFEST_COMMIT = "1fd643f643636bcb0917f571aff5cdc25439b470"
 PHASE10_PUBLICATION_AI_MANIFEST_BLOB = "5d19e6f6057e55551a2259a61ae88c61444bdafe"
+CURRENT_AI_MANIFEST_BLOB = "64806ea18e1cf3f303726f9928f0b54312bb1af2"
 
 PREIMPORT_BLOBS = {
     "tools/validate_phase10_gate_round11.py": "c9c86f38540077581cfa0aa4d80d899d271252ee",
@@ -114,6 +115,24 @@ def _verify_historical_ai_manifest() -> None:
         )
 
 
+def _verify_current_ai_manifest() -> None:
+    path = ROOT / "README4AI.md"
+    if not path.is_file():
+        raise RuntimeError("current README4AI.md missing")
+    committed = _raw_git("rev-parse", "HEAD:README4AI.md")
+    if committed != CURRENT_AI_MANIFEST_BLOB:
+        raise RuntimeError(
+            "current README4AI committed identity drift: "
+            f"expected {CURRENT_AI_MANIFEST_BLOB}, observed {committed}"
+        )
+    working = _raw_git("hash-object", str(path))
+    if working != CURRENT_AI_MANIFEST_BLOB:
+        raise RuntimeError(
+            "current README4AI working-tree identity drift: "
+            f"expected {CURRENT_AI_MANIFEST_BLOB}, observed {working}"
+        )
+
+
 def _preflight() -> None:
     for relative, expected in PREIMPORT_BLOBS.items():
         path = ROOT / relative
@@ -126,6 +145,7 @@ def _preflight() -> None:
         if working != expected:
             raise RuntimeError(f"working-tree exact-byte Phase 10 input drift for {relative}: expected {expected}, observed {working}")
     _verify_historical_ai_manifest()
+    _verify_current_ai_manifest()
 
 
 _preflight()
@@ -172,6 +192,8 @@ def verify_exact_bytes_still_hold() -> None:
         _raw_git("rev-parse", f"{PHASE10_PUBLICATION_AI_MANIFEST_COMMIT}:README4AI.md") == PHASE10_PUBLICATION_AI_MANIFEST_BLOB,
         "published Phase 10 README4AI identity drift",
     )
+    require(_raw_git("rev-parse", "HEAD:README4AI.md") == CURRENT_AI_MANIFEST_BLOB, "current committed README4AI identity drift")
+    require(_raw_git("hash-object", str(ROOT / "README4AI.md")) == CURRENT_AI_MANIFEST_BLOB, "current working-tree README4AI identity drift")
 
 
 def verify_claims_and_docs() -> None:
