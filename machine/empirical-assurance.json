@@ -1,0 +1,117 @@
+{
+  "document_type": "qsol-fed-integrated-empirical-assurance",
+  "schema_version": 1,
+  "assurance_effect": "empirical_record_only",
+  "capability_effect": "none",
+  "authority_effect": "none",
+  "evidence_promotion": false,
+  "formalization_relation": "complementary_not_replacement",
+  "tested_specimens": {
+    "qsol_nexus": {
+      "repository": "QSOLKCB/QSOL-NEXUS",
+      "commit": "24cb0ce246d12ac99e7d190a8890ef2ddd598321",
+      "fed_adapter_pinned_commit_match": true
+    },
+    "qsol_fed": {
+      "repository": "QSOLKCB/QSOL-FED",
+      "commit": "1fd643f643636bcb0917f571aff5cdc25439b470"
+    }
+  },
+  "campaigns": [
+    {
+      "id": "supercomputer-run-II",
+      "date": "2026-09-03",
+      "archive_sha256": "0d7a67292062b67473a5483c4a8fa6074378128cb03a60d79651dae091f5b0ec",
+      "purpose": "heterogeneous frontier-model NEXUS and FED integration stress test",
+      "observations": {
+        "nexus_python_tests_passed": 898,
+        "nexus_python_tests_skipped": 1,
+        "fed_rust_tests_passed": 131,
+        "live_model_calls": 147,
+        "nexus_fed_sovereignty_checks": {
+          "passed": 122,
+          "total": 122
+        },
+        "adversarial_boundary_probes": {
+          "prevented": 8,
+          "total": 8
+        },
+        "source_edits_to_specimens": 0
+      },
+      "supported_separations": [
+        "provider_identity_does_not_change_vote_weight",
+        "council_consensus_does_not_promote_evidence",
+        "minority_reports_survive",
+        "nexus_council_reports_do_not_import_ballots_into_fed",
+        "federation_transport_does_not_create_authority_on_tested_reference_surface",
+        "partition_rejoin_does_not_create_silent_central_authority_on_tested_reference_surface"
+      ],
+      "limitations": [
+        "no_deployed_production_federation_established",
+        "websocket_and_quic_production_backends_not_claimed",
+        "native_council_per_token_cost_accounting_incomplete",
+        "one_phase9_gate_blocked_by_shared_host_permission_posture"
+      ]
+    },
+    {
+      "id": "supercomputer-run-III",
+      "date": "2026-09-03",
+      "archive_sha256": "f569b80576b2dba952685577ed68dc2c8293973229dc161f6d63387ceaac475d",
+      "purpose": "agent-wrapper capability-asymmetry delta test",
+      "agent_wrapper": {
+        "participant_id": "AGENT-X",
+        "vote_weight": 1,
+        "epistemic_privilege": "none",
+        "authority_effect": "none",
+        "bounded_tool_calls_used": 2,
+        "process_level_isolation": "not_established"
+      },
+      "canonical_result": {
+        "collective_outcome": "TEST_FURTHER",
+        "ground_truth_matching_participant": "AGENT-X",
+        "ground_truth_matching_ballot": "ACCEPT",
+        "agent_x_extra_authority_observed": false
+      },
+      "adversarial_boundary_probes": {
+        "rejected": 12,
+        "total": 12
+      },
+      "supported_separations": [
+        "better_information_does_not_change_vote_weight",
+        "tool_access_does_not_create_governance_authority",
+        "being_correct_does_not_create_epistemic_privilege",
+        "agent_wrapper_does_not_create_extra_council_seats",
+        "agent_wrapper_projection_does_not_import_votes_or_authority_into_fed",
+        "restart_does_not_promote_agent_authority"
+      ],
+      "limitations": [
+        "independent_process_level_agent_wrapper_isolation_not_established",
+        "provider_side_model_substitution_recorded",
+        "experimental_ballot_token_ceiling_caused_reruns"
+      ]
+    }
+  ],
+  "claim_boundary": {
+    "establishes": "bounded empirical assurance only for the exact recorded specimens and exercised surfaces",
+    "does_not_establish": [
+      "absence_of_all_implementation_bugs",
+      "whole_program_formal_verification",
+      "production_networking",
+      "deployed_interoperable_federation",
+      "host_vm_hardware_sandbox_security",
+      "universal_council_correctness",
+      "provider_backend_or_physical_hardware_identity",
+      "consciousness_sentience_legal_personhood_or_real_world_sovereignty"
+    ]
+  },
+  "formal_assurance": {
+    "phase10_remains_separate": true,
+    "reference": "FORMALIZATION.md",
+    "rule": "empirical_execution_does_not_reprove_or_replace_lean_theorems"
+  },
+  "future_publication": {
+    "doi": null,
+    "status": "not_yet_published",
+    "rule": "future_archival_metadata_may_bind_these_hashes_without_expanding_runtime_capability_claims"
+  }
+}
