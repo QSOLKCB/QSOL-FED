@@ -80,7 +80,7 @@ The same `world_a/repeat_1` Council produced:
 consensus_label = UNANIMOUS
 disposition     = REJECT
 tally           = REJECT: 5
-evidence_state  = UNTESTED
+evidence_state = UNTESTED
 ```
 
 The retained observation therefore records `consensus_promoted_evidence = false`. CI binds the exact source result/telemetry hashes and requires this unanimous-consensus/untested-evidence combination before accepting `council_consensus_does_not_promote_evidence`.
