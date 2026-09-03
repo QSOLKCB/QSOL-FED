@@ -50,6 +50,46 @@ EXPECTED_FORMALIZATION_ASSURANCE = {
     "source_release_rewritten": False,
     "formalization_creates_authority": False,
 }
+EXPECTED_CURRENT_AI_PHASE10 = {
+    "contract": "state/phase10.json",
+    "assurance_manifest": "claims/phase10.json",
+    "documentation": "FORMALIZATION.md",
+    "theorem_manifest": "machine/lean-phase10-manifest.json",
+    "theorem_manifest_schema": "schemas/lean-phase10-manifest-v1.schema.json",
+    "model": "QSOLFed/Model.lean",
+    "theorems": "QSOLFed/Theorems.lean",
+    "type_audit": "QSOLFed/TypeAudit.lean",
+    "axiom_audit": "QSOLFed/AxiomAudit.lean",
+    "gate_validator": "tools/validate_phase10_gate.py",
+    "workflow": ".github/workflows/phase10-lean.yml",
+    "source_release": "v0.11.0",
+    "source_commit": "c953463724cdf218802e66e16f582ae8d600ca47",
+    "source_tree": "93f23cd7eda6dd92ae13b7bb96bee01935b80731",
+    "source_release_immutable": True,
+    "retained_moriarty_report": "evidence/phase10/moriarty-report-c953463724cdf218802e66e16f582ae8d600ca47.json",
+    "retained_moriarty_report_sha256": "sha256:6c215f44a1c52aa3bfefadc4039013ea69ddbe0f2afd06f6dac27377369b185c",
+    "lean_version": "4.33.1",
+    "theorem_count": 47,
+    "sorry_or_admit": False,
+    "custom_axioms": False,
+    "kernel_axiom_dependencies": False,
+    "whole_implementation_verified": False,
+    "deployment_security_proof": False,
+    "source_release_rewritten": False,
+    "formalization_merge_commit": "9bc0e33fc30ed14b5ca1a3bfbd2e7ecc5059452b",
+    "formalization_merge_tree": "062ca7fd78c5ada08f0f54f7c822337e2fa081e0",
+}
+EXPECTED_CURRENT_AI_PHASE10_WORKFLOWS = {
+    "merged_main_phase10_workflow": {"run_id": 33198458502, "run_number": 128, "conclusion": "success"},
+    "merged_main_constitutional_moriarty_workflow": {"run_id": 33198458525, "run_number": 471, "conclusion": "success"},
+}
+EXPECTED_CURRENT_AI_ZENODO = {
+    "version": "1.0.0",
+    "doi": "10.5281/zenodo.22149263",
+    "title": "QSOL-FED Lean 4 Formalization: Machine-Checked Constitutional and Protocol Separation Invariants",
+    "record_license": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
+    "repository_license": "Apache-2.0 unchanged",
+}
 
 
 def _raw_git(*args: str) -> str:
@@ -185,8 +225,21 @@ def verify_round14_boundaries() -> None:
 
 def verify_ai_inventory() -> None:
     ai = json.loads((ROOT / "README4AI.md").read_text(encoding="utf-8"))
-    require(ai.get("phase10_lean", {}).get("type_audit") == "QSOLFed/TypeAudit.lean", "README4AI Phase 10 TypeAudit inventory drift")
-    require(ai.get("phase10_lean", {}).get("source_commit") == "c953463724cdf218802e66e16f582ae8d600ca47", "README4AI Phase 10 source identity drift")
+    require(ai.get("phase10_status") == "lean_formalization_merged_main_verified_and_zenodo_published", "README4AI Phase 10 status drift")
+    require(ai.get("formalization_assurance_manifest") == "claims/phase10.json", "README4AI Phase 10 assurance-manifest drift")
+    phase10 = ai.get("phase10_lean")
+    require(isinstance(phase10, dict), "README4AI Phase 10 inventory missing")
+    for key, expected in EXPECTED_CURRENT_AI_PHASE10.items():
+        require(phase10.get(key) == expected, f"README4AI Phase 10 field drift: {key}")
+    for key, expected in EXPECTED_CURRENT_AI_PHASE10_WORKFLOWS.items():
+        require(phase10.get(key) == expected, f"README4AI Phase 10 workflow evidence drift: {key}")
+    publication = phase10.get("zenodo_publication")
+    require(isinstance(publication, dict), "README4AI Phase 10 Zenodo publication missing")
+    for key, expected in EXPECTED_CURRENT_AI_ZENODO.items():
+        require(publication.get(key) == expected, f"README4AI Phase 10 Zenodo field drift: {key}")
+    require(phase10.get("whole_implementation_verified") is False, "README4AI may not claim whole implementation verification")
+    require(phase10.get("deployment_security_proof") is False, "README4AI may not claim deployment security proof")
+    require(phase10.get("source_release_rewritten") is False, "README4AI may not claim the source release was rewritten")
 
 
 def validate() -> dict:
