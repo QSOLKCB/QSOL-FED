@@ -42,8 +42,8 @@ The retained extract records the source archive identity, hashes of the source f
 
 Recorded Run II results include:
 
-- NEXUS baseline: 898 Python tests passed with 1 skip; Rust TUI tests also passed.
-- QSOL-FED baseline: 131 Rust tests passed; Python SDK conformance tests passed.
+- NEXUS baseline: 898 Python tests passed with 1 skip.
+- QSOL-FED baseline: 131 Rust tests passed.
 - Five live NEXUS Councils with 147 real model calls.
 - 122/122 recorded sovereignty checks holding across projected Council reports.
 - 8/8 adversarial boundary probes prevented.
