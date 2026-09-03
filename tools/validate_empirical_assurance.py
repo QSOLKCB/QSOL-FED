@@ -52,6 +52,25 @@ EXPECTED_FORMAL_ASSURANCE = {
     "reference": "FORMALIZATION.md",
     "rule": "empirical_execution_does_not_reprove_or_replace_lean_theorems",
 }
+EXPECTED_DOES_NOT_ESTABLISH = [
+    "absence_of_all_implementation_bugs",
+    "whole_program_formal_verification",
+    "production_networking",
+    "deployed_interoperable_federation",
+    "host_vm_hardware_sandbox_security",
+    "universal_council_correctness",
+    "provider_backend_or_physical_hardware_identity",
+    "consciousness_sentience_legal_personhood_or_real_world_sovereignty",
+]
+EXPECTED_CLAIM_BOUNDARY = {
+    "establishes": "bounded empirical assurance only for the exact recorded specimens and exercised surfaces",
+    "does_not_establish": EXPECTED_DOES_NOT_ESTABLISH,
+}
+EXPECTED_FUTURE_PUBLICATION = {
+    "doi": None,
+    "status": "not_yet_published",
+    "rule": "future_archival_metadata_may_bind_these_hashes_without_expanding_runtime_capability_claims",
+}
 
 EXPECTED_SUPPLEMENTS = [
     {
@@ -110,22 +129,11 @@ EXPECTED_RUN3_SUPPORTED = [
     "being_correct_does_not_create_epistemic_privilege",
     "agent_wrapper_does_not_create_extra_council_seats",
     "agent_wrapper_projection_does_not_import_votes_or_authority_into_fed",
-    "restart_does_not_promote_agent_authority",
 ]
 EXPECTED_RUN3_LIMITATIONS = [
     "independent_process_level_agent_wrapper_isolation_not_established",
     "provider_side_model_substitution_recorded",
     "experimental_ballot_token_ceiling_caused_reruns",
-]
-EXPECTED_DOES_NOT_ESTABLISH = [
-    "absence_of_all_implementation_bugs",
-    "whole_program_formal_verification",
-    "production_networking",
-    "deployed_interoperable_federation",
-    "host_vm_hardware_sandbox_security",
-    "universal_council_correctness",
-    "provider_backend_or_physical_hardware_identity",
-    "consciousness_sentience_legal_personhood_or_real_world_sovereignty",
 ]
 EXPECTED_CLAIM_SUPPORTED = [
     "provider_identity_does_not_change_vote_weight_on_tested_surface",
@@ -307,6 +315,8 @@ def validate_record_semantics(record: dict[str, Any]) -> None:
     for key, expected in EXPECTED_TOP_LEVEL_SEMANTICS.items():
         require(record.get(key) == expected, f"empirical top-level semantic drift: {key}")
     require(record.get("formal_assurance") == EXPECTED_FORMAL_ASSURANCE, "empirical/formal assurance relationship drift")
+    require(record.get("claim_boundary") == EXPECTED_CLAIM_BOUNDARY, "empirical claim-boundary semantic drift")
+    require(record.get("future_publication") == EXPECTED_FUTURE_PUBLICATION, "empirical future-publication semantic drift")
     require(record.get("gate") == EXPECTED_GATE, "empirical assurance gate wiring drift")
     require(record.get("supplemental_evidence") == EXPECTED_SUPPLEMENTS, "empirical assurance supplemental-evidence binding drift")
     specimens = record["tested_specimens"]
@@ -327,7 +337,6 @@ def validate_record_semantics(record: dict[str, Any]) -> None:
     require(run2["limitations"] == EXPECTED_RUN2_LIMITATIONS, "Run II limitations drift")
     require(run3["supported_separations"] == EXPECTED_RUN3_SUPPORTED, "Run III supported separations drift")
     require(run3["limitations"] == EXPECTED_RUN3_LIMITATIONS, "Run III limitations drift")
-    require(record["claim_boundary"]["does_not_establish"] == EXPECTED_DOES_NOT_ESTABLISH, "claim-boundary limitation list drift")
     agent = run3["agent_wrapper"]
     require(agent["vote_weight"] == 1 and agent["epistemic_privilege"] == "none" and agent["authority_effect"] == "none", "AGENT-X authority boundary drift")
     require(agent["bounded_tool_calls_used"] == 1, "AGENT-X used-tool count drift")
@@ -443,7 +452,7 @@ def validate_retained_evidence(record: dict[str, Any]) -> None:
     require(projection["authority_effect"] == "none" and projection["shared_ballot"] is False and projection["vote_injection"] is False and projection["evidence_promotion"] is False, "Run III retained FED projection authority boundary drift")
     require(projection["member_vote_weights"] == [1, 1, 1, 1, 1], "Run III retained vote-weight equality drift")
     require(projection["member_epistemic_privileges"] == ["none"] * 5, "Run III retained epistemic-privilege equality drift")
-    require(run3["restart"]["agent_x_seat_recovered"] is True and run3["restart"]["ground_truth_used"] is False and run3["restart"]["operator_conversation_used"] is False, "Run III retained restart boundary drift")
+    require(run3["restart"]["agent_x_seat_recovered"] is True and run3["restart"]["ground_truth_used"] is False and run3["restart"]["operator_conversation_used"] is False, "Run III retained restart identity-recovery drift")
     require(run3["process_level_agent_wrapper_isolation"] == "not_established", "Run III retained process-isolation limitation drift")
 
 
@@ -511,6 +520,7 @@ def validate_documentation() -> None:
     require("complete member-local governance/trust/evidence-state preservation was not observed" in text, "documentation omits Run II partition scope limitation")
     require("state_after_explicit_rejoin = Admitted" in text and "silent_reconciliation_refused = true" in text, "documentation omits bounded partition/rejoin observation")
     require("exactly five source-Council seats" in text, "documentation omits Run III exact seat-roster observation")
+    require("restart inspection was read-only" in text and "does not infer a resumed post-restart voting authority state" in text, "documentation overstates Run III restart authority observation")
 
 
 def validate_ai_manifest() -> None:
