@@ -7,7 +7,8 @@
   "required": [
     "document_type", "schema_version", "assurance_effect", "capability_effect",
     "authority_effect", "evidence_promotion", "formalization_relation", "gate",
-    "tested_specimens", "campaigns", "claim_boundary", "formal_assurance", "future_publication"
+    "supplemental_evidence", "tested_specimens", "campaigns", "claim_boundary",
+    "formal_assurance", "future_publication"
   ],
   "properties": {
     "document_type": {"const": "qsol-fed-integrated-empirical-assurance"},
@@ -20,13 +21,30 @@
     "gate": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schema", "claims", "validator", "workflow", "documentation"],
+      "required": ["schema", "claims", "validator", "supplement_validator", "workflow", "documentation"],
       "properties": {
         "schema": {"const": "schemas/empirical-assurance-v1.schema.json"},
         "claims": {"const": "claims/empirical-assurance.json"},
         "validator": {"const": "tools/validate_empirical_assurance.py"},
+        "supplement_validator": {"const": "tools/validate_empirical_assurance_supplements.py"},
         "workflow": {"const": ".github/workflows/empirical-assurance.yml"},
         "documentation": {"const": "EMPIRICAL_ASSURANCE.md"}
+      }
+    },
+    "supplemental_evidence": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "path", "sha256", "claim_supported"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1, "maxLength": 96},
+          "path": {"type": "string", "pattern": "^evidence/empirical-assurance/run-(II|III)-[a-z0-9-]+\\.json$"},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "claim_supported": {"type": "string", "minLength": 1, "maxLength": 160}
+        }
       }
     },
     "tested_specimens": {
