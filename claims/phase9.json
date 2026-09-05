@@ -109,6 +109,7 @@
     "probe_writable_scan_persistent_churn_rejects": true,
     "probe_writable_scan_binds_queued_directory_identity": true,
     "probe_writable_scan_cgroup_suspended": true,
+    "probe_writable_scan_all_threads_verified": true,
     "per_probe_cargo_home": true,
     "verified_cargo_registry_archives": true,
     "staged_rust_toolchain_runtime": true

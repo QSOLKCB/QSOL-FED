@@ -611,7 +611,7 @@ def probe_cgroup_root(path: Path) -> Path:
         fail("moriarty_probe_cgroup_path_invalid")
     if not (cgroup_root / "cgroup.controllers").is_file():
         fail("moriarty_probe_cgroup_v2_required")
-    for name in ("cgroup.procs", "memory.max", "pids.max"):
+    for name in ("cgroup.procs", "cgroup.threads", "memory.max", "pids.max"):
         if not (root / name).is_file():
             fail(f"moriarty_probe_cgroup_file_missing:{name}")
     _parse_cgroup_limit(root / "memory.max", PROBE_CGROUP_MEMORY_BYTES, "memory_max")
@@ -636,9 +636,21 @@ def probe_cgroup_pids(root: Path) -> tuple[int, ...]:
         fail("moriarty_probe_cgroup_process_list_invalid")
 
 
-def _probe_pid_stopped(pid: int) -> bool | None:
+def probe_cgroup_threads(root: Path) -> tuple[int, ...]:
+    """Return every thread ID currently resident in the dedicated probe cgroup."""
     try:
-        status = Path(f"/proc/{pid}/status").read_text(encoding="ascii")
+        values = (root / "cgroup.threads").read_text(encoding="ascii").splitlines()
+        tids = tuple(sorted(int(value) for value in values if value))
+    except (OSError, UnicodeError, ValueError):
+        fail("moriarty_probe_cgroup_thread_list_invalid")
+    if len(tids) != len(set(tids)):
+        fail("moriarty_probe_cgroup_thread_list_duplicate")
+    return tids
+
+
+def _probe_task_stopped(task_id: int) -> bool | None:
+    try:
+        status = Path(f"/proc/{task_id}/status").read_text(encoding="ascii")
     except FileNotFoundError:
         return None
     except (OSError, UnicodeError):
@@ -651,7 +663,7 @@ def _probe_pid_stopped(pid: int) -> bool | None:
 
 
 def _suspend_probe_cgroup(root: Path) -> tuple[int, ...] | None:
-    """SIGSTOP every task in the dedicated probe cgroup and prove quiescence."""
+    """SIGSTOP each process, then prove every cgroup thread is quiescent."""
     deadline = time.monotonic() + PROBE_CGROUP_SUSPEND_TIMEOUT_SECONDS
     while True:
         try:
@@ -669,18 +681,26 @@ def _suspend_probe_cgroup(root: Path) -> tuple[int, ...] | None:
                 return None
         time.sleep(0.001)
         try:
-            current = probe_cgroup_pids(root)
+            threads = probe_cgroup_threads(root)
         except SystemExit:
             return None
-        if not current:
+        if not threads:
             return ()
-        if all(_probe_pid_stopped(pid) is True for pid in current):
+        if all(_probe_task_stopped(tid) is True for tid in threads):
             try:
-                confirm = probe_cgroup_pids(root)
+                confirm_threads = probe_cgroup_threads(root)
+                confirm_pids = probe_cgroup_pids(root)
             except SystemExit:
                 return None
-            if confirm == current and all(_probe_pid_stopped(pid) is True for pid in confirm):
-                return confirm
+            if (
+                confirm_threads == threads
+                and confirm_pids == pids
+                and all(_probe_task_stopped(tid) is True for tid in confirm_threads)
+            ):
+                # Once every thread is stopped and the complete thread set is
+                # stable, no task in this cgroup can create another thread or
+                # move a payload until the harness explicitly resumes it.
+                return confirm_threads
         if time.monotonic() >= deadline:
             return None
 
@@ -706,11 +726,16 @@ def _resume_probe_cgroup(root: Path) -> bool:
             return False
         time.sleep(0.001)
         try:
-            current = probe_cgroup_pids(root)
+            threads = probe_cgroup_threads(root)
         except SystemExit:
             return False
-        if all(_probe_pid_stopped(pid) is not True for pid in current):
-            return True
+        if all(_probe_task_stopped(tid) is not True for tid in threads):
+            try:
+                confirm = probe_cgroup_threads(root)
+            except SystemExit:
+                return False
+            if confirm == threads and all(_probe_task_stopped(tid) is not True for tid in confirm):
+                return True
         if time.monotonic() >= deadline:
             return False
 
