@@ -11,12 +11,17 @@ def replace_once(path: str, old: str, new: str) -> None:
     target.write_text(text.replace(old, new, 1), encoding="utf-8")
 
 
-# 1. Make live writable accounting observe one coherent cgroup-frozen snapshot.
+# 1. Make live writable accounting observe one coherent, cgroup-complete snapshot.
 isolation = "tools/moriarty_isolation.py"
 replace_once(
     isolation,
+    "import resource\nimport stat\n",
+    "import resource\nimport signal\nimport stat\n",
+)
+replace_once(
+    isolation,
     "PROBE_CGROUP_PIDS = 128\nMAX_TOOLCHAIN_STAGE_FILE_BYTES",
-    "PROBE_CGROUP_PIDS = 128\nPROBE_CGROUP_FREEZE_TIMEOUT_SECONDS = 1.0\nMAX_TOOLCHAIN_STAGE_FILE_BYTES",
+    "PROBE_CGROUP_PIDS = 128\nPROBE_CGROUP_SUSPEND_TIMEOUT_SECONDS = 1.0\nMAX_TOOLCHAIN_STAGE_FILE_BYTES",
 )
 replace_once(
     isolation,
@@ -33,7 +38,7 @@ replace_once(
     "    # snapshots. Bounded churn therefore fails closed.\n"
     "    return False\n\n\n"
     "def probe_writable_tree_within_limits(paths: tuple[Path, ...]) -> bool:\n"
-    "    \"\"\"Account a coherent writable snapshot while any live probe tasks are frozen.\"\"\"\n"
+    "    \"\"\"Account one coherent writable snapshot while live probe tasks are suspended.\"\"\"\n"
     "    cgroup_value = os.environ.get(\"MORIARTY_PROBE_CGROUP\")\n"
     "    if not cgroup_value:\n"
     "        return _probe_writable_tree_scan(paths)\n"
@@ -44,68 +49,108 @@ replace_once(
     "        return False\n"
     "    if not active:\n"
     "        return _probe_writable_tree_scan(paths)\n"
-    "    if not _set_probe_cgroup_frozen(cgroup, True):\n"
+    "    suspended = _suspend_probe_cgroup(cgroup)\n"
+    "    if suspended is None:\n"
+    "        _resume_probe_cgroup(cgroup)\n"
     "        return False\n"
     "    result = False\n"
     "    try:\n"
     "        result = _probe_writable_tree_scan(paths)\n"
     "    finally:\n"
-    "        if not _set_probe_cgroup_frozen(cgroup, False):\n"
+    "        if not _resume_probe_cgroup(cgroup):\n"
     "            result = False\n"
     "    return result\n\n\n"
     "def _mountinfo_unescape(value: str) -> str:\n",
 )
 replace_once(
     isolation,
-    '    for name in ("cgroup.procs", "memory.max", "pids.max"):\n',
-    '    for name in ("cgroup.procs", "cgroup.freeze", "cgroup.events", "memory.max", "pids.max"):\n',
-)
-replace_once(
-    isolation,
-    '    if not os.access(root / "cgroup.procs", os.W_OK):\n'
-    '        fail("moriarty_probe_cgroup_not_delegated")\n'
-    '    return root\n\n\n'
-    'def probe_cgroup_pids(root: Path) -> tuple[int, ...]:\n',
-    '    if not os.access(root / "cgroup.procs", os.W_OK):\n'
-    '        fail("moriarty_probe_cgroup_not_delegated")\n'
-    '    if not os.access(root / "cgroup.freeze", os.W_OK):\n'
-    '        fail("moriarty_probe_cgroup_freeze_not_delegated")\n'
-    '    return root\n\n\n'
-    'def _probe_cgroup_frozen_state(root: Path) -> bool | None:\n'
+    'def probe_cgroup_pids(root: Path) -> tuple[int, ...]:\n'
     '    try:\n'
-    '        fields = dict(\n'
-    '            line.split(None, 1)\n'
-    '            for line in (root / "cgroup.events").read_text(encoding="ascii").splitlines()\n'
-    '            if line.strip()\n'
-    '        )\n'
+    '        values = (root / "cgroup.procs").read_text(encoding="ascii").splitlines()\n'
+    '        return tuple(sorted(int(value) for value in values if value))\n'
     '    except (OSError, UnicodeError, ValueError):\n'
-    '        return None\n'
-    '    value = fields.get("frozen")\n'
-    '    if value == "1":\n'
-    '        return True\n'
-    '    if value == "0":\n'
-    '        return False\n'
-    '    return None\n\n\n'
-    'def _set_probe_cgroup_frozen(root: Path, frozen: bool) -> bool:\n'
-    '    payload = b"1\\n" if frozen else b"0\\n"\n'
+    '        fail("moriarty_probe_cgroup_process_list_invalid")\n\n\n'
+    'def kill_probe_cgroup(root: Path) -> None:\n',
+    'def probe_cgroup_pids(root: Path) -> tuple[int, ...]:\n'
     '    try:\n'
-    '        fd = os.open(root / "cgroup.freeze", os.O_WRONLY | os.O_CLOEXEC)\n'
-    '        try:\n'
-    '            if os.write(fd, payload) != len(payload):\n'
-    '                return False\n'
-    '        finally:\n'
-    '            os.close(fd)\n'
-    '    except OSError:\n'
+    '        values = (root / "cgroup.procs").read_text(encoding="ascii").splitlines()\n'
+    '        return tuple(sorted(int(value) for value in values if value))\n'
+    '    except (OSError, UnicodeError, ValueError):\n'
+    '        fail("moriarty_probe_cgroup_process_list_invalid")\n\n\n'
+    'def _probe_pid_stopped(pid: int) -> bool | None:\n'
+    '    try:\n'
+    '        status = Path(f"/proc/{pid}/status").read_text(encoding="ascii")\n'
+    '    except FileNotFoundError:\n'
+    '        return None\n'
+    '    except (OSError, UnicodeError):\n'
     '        return False\n'
-    '    deadline = time.monotonic() + PROBE_CGROUP_FREEZE_TIMEOUT_SECONDS\n'
+    '    for line in status.splitlines():\n'
+    '        if line.startswith("State:"):\n'
+    '            fields = line.split()\n'
+    '            return len(fields) >= 2 and fields[1] in {"T", "t"}\n'
+    '    return False\n\n\n'
+    'def _suspend_probe_cgroup(root: Path) -> tuple[int, ...] | None:\n'
+    '    \"\"\"SIGSTOP every task in the dedicated probe cgroup and prove quiescence.\"\"\"\n'
+    '    deadline = time.monotonic() + PROBE_CGROUP_SUSPEND_TIMEOUT_SECONDS\n'
     '    while True:\n'
-    '        state = _probe_cgroup_frozen_state(root)\n'
-    '        if state is frozen:\n'
-    '            return True\n'
-    '        if state is None or time.monotonic() >= deadline:\n'
+    '        try:\n'
+    '            pids = probe_cgroup_pids(root)\n'
+    '        except SystemExit:\n'
+    '            return None\n'
+    '        if not pids:\n'
+    '            return ()\n'
+    '        for pid in pids:\n'
+    '            try:\n'
+    '                os.kill(pid, signal.SIGSTOP)\n'
+    '            except ProcessLookupError:\n'
+    '                pass\n'
+    '            except OSError:\n'
+    '                return None\n'
+    '        time.sleep(0.001)\n'
+    '        try:\n'
+    '            current = probe_cgroup_pids(root)\n'
+    '        except SystemExit:\n'
+    '            return None\n'
+    '        if not current:\n'
+    '            return ()\n'
+    '        if all(_probe_pid_stopped(pid) is True for pid in current):\n'
+    '            try:\n'
+    '                confirm = probe_cgroup_pids(root)\n'
+    '            except SystemExit:\n'
+    '                return None\n'
+    '            if confirm == current and all(_probe_pid_stopped(pid) is True for pid in confirm):\n'
+    '                return confirm\n'
+    '        if time.monotonic() >= deadline:\n'
+    '            return None\n\n\n'
+    'def _resume_probe_cgroup(root: Path) -> bool:\n'
+    '    deadline = time.monotonic() + PROBE_CGROUP_SUSPEND_TIMEOUT_SECONDS\n'
+    '    while True:\n'
+    '        try:\n'
+    '            pids = probe_cgroup_pids(root)\n'
+    '        except SystemExit:\n'
     '            return False\n'
-    '        time.sleep(0.001)\n\n\n'
-    'def probe_cgroup_pids(root: Path) -> tuple[int, ...]:\n',
+    '        if not pids:\n'
+    '            return True\n'
+    '        ok = True\n'
+    '        for pid in pids:\n'
+    '            try:\n'
+    '                os.kill(pid, signal.SIGCONT)\n'
+    '            except ProcessLookupError:\n'
+    '                pass\n'
+    '            except OSError:\n'
+    '                ok = False\n'
+    '        if not ok:\n'
+    '            return False\n'
+    '        time.sleep(0.001)\n'
+    '        try:\n'
+    '            current = probe_cgroup_pids(root)\n'
+    '        except SystemExit:\n'
+    '            return False\n'
+    '        if all(_probe_pid_stopped(pid) is not True for pid in current):\n'
+    '            return True\n'
+    '        if time.monotonic() >= deadline:\n'
+    '            return False\n\n\n'
+    'def kill_probe_cgroup(root: Path) -> None:\n',
 )
 
 # 2. Strengthen the Phase 9 gate and add the exact cross-root regression.
@@ -120,7 +165,7 @@ replace_once(
     '        "probe_writable_scan_binds_queued_directory_identity",\n'
     '        "per_probe_cargo_home", "verified_cargo_registry_archives", "staged_rust_toolchain_runtime",\n'
     '        "production_credentials_used",',
-    '        "probe_writable_scan_binds_queued_directory_identity", "probe_writable_scan_cgroup_frozen",\n'
+    '        "probe_writable_scan_binds_queued_directory_identity", "probe_writable_scan_cgroup_suspended",\n'
     '        "per_probe_cargo_home", "verified_cargo_registry_archives", "staged_rust_toolchain_runtime",\n'
     '        "production_credentials_used",',
 )
@@ -129,37 +174,31 @@ replace_once(
     '        "probe_writable_scan_binds_queued_directory_identity",\n'
     '        "per_probe_cargo_home", "verified_cargo_registry_archives", "staged_rust_toolchain_runtime",\n'
     '    ):\n',
-    '        "probe_writable_scan_binds_queued_directory_identity", "probe_writable_scan_cgroup_frozen",\n'
+    '        "probe_writable_scan_binds_queued_directory_identity", "probe_writable_scan_cgroup_suspended",\n'
     '        "per_probe_cargo_home", "verified_cargo_registry_archives", "staged_rust_toolchain_runtime",\n'
     '    ):\n',
 )
 replace_once(
     validator,
     "'probe_writable_scan_binds_queued_directory_identity', 'rust_toolchain_runtime_staged'}",
-    "'probe_writable_scan_binds_queued_directory_identity', 'probe_writable_scan_cgroup_frozen', 'rust_toolchain_runtime_staged'}",
+    "'probe_writable_scan_binds_queued_directory_identity', 'probe_writable_scan_cgroup_suspended', 'rust_toolchain_runtime_staged'}",
 )
 replace_once(
     validator,
     '        "probe_writable_scan_binds_queued_directory_identity", "rust_toolchain_runtime_staged",\n',
-    '        "probe_writable_scan_binds_queued_directory_identity", "probe_writable_scan_cgroup_frozen",\n'
+    '        "probe_writable_scan_binds_queued_directory_identity", "probe_writable_scan_cgroup_suspended",\n'
     '        "rust_toolchain_runtime_staged",\n',
 )
 replace_once(
     validator,
     '    require(isolation.PROBE_WRITABLE_SCAN_MAX_RESTARTS == 8, "MORIARTY writable-scan restart budget drift")\n',
     '    require(isolation.PROBE_WRITABLE_SCAN_MAX_RESTARTS == 8, "MORIARTY writable-scan restart budget drift")\n'
-    '    require(isolation.PROBE_CGROUP_FREEZE_TIMEOUT_SECONDS == 1.0, "MORIARTY cgroup-freeze timeout drift")\n',
+    '    require(isolation.PROBE_CGROUP_SUSPEND_TIMEOUT_SECONDS == 1.0, "MORIARTY cgroup-suspend timeout drift")\n',
 )
 replace_once(
     validator,
     '        "persistent writable-tree churn fails closed",\n',
-    '        "persistent writable-tree churn fails closed", "delegated probe cgroup is frozen",\n',
-)
-replace_once(
-    validator,
-    '    require("memory.max" in workflow and "pids.max" in workflow and "MORIARTY_PROBE_CGROUP" in workflow, "CI MORIARTY cgroup aggregate resource envelope missing")\n',
-    '    require("memory.max" in workflow and "pids.max" in workflow and "MORIARTY_PROBE_CGROUP" in workflow, "CI MORIARTY cgroup aggregate resource envelope missing")\n'
-    '    require("cgroup.freeze" in workflow and \'test -w "$PROBE_CGROUP/cgroup.freeze"\' in workflow, "CI MORIARTY cgroup freeze delegation missing")\n',
+    '        "persistent writable-tree churn fails closed", "delegated probe cgroup is suspended",\n',
 )
 
 cross_root_test = '''    cgroup_value = os.environ.get("MORIARTY_PROBE_CGROUP")
@@ -216,16 +255,18 @@ while True:
                 time.sleep(0.001)
             require(ready.exists() and mover.poll() is None, "cross-root mover did not become ready")
             original_open = isolation.os.open
-            mover_was_frozen = False
+            mover_was_suspended = False
 
             def trigger_cross_root_move(path, flags, *args, **kwargs):
-                nonlocal mover_was_frozen
+                nonlocal mover_was_suspended
                 if not isinstance(path, int) and os.fspath(path) == os.fspath(late) and not trigger.exists():
                     trigger.write_text("go", encoding="ascii")
                     wait_deadline = time.monotonic() + 0.05
                     while not ack.exists() and time.monotonic() < wait_deadline:
                         time.sleep(0.001)
-                    mover_was_frozen = not ack.exists()
+                    mover_was_suspended = (
+                        not ack.exists() and isolation._probe_pid_stopped(mover.pid) is True
+                    )
                 return original_open(path, flags, *args, **kwargs)
 
             try:
@@ -234,10 +275,10 @@ while True:
                     not isolation.probe_writable_tree_within_limits((early, late)),
                     "cross-root move hid an oversized payload from writable accounting",
                 )
-                require(mover_was_frozen, "live writable scan did not freeze the probe cgroup")
+                require(mover_was_suspended, "live writable scan did not suspend the complete probe cgroup")
                 require(
-                    isolation._probe_cgroup_frozen_state(cgroup) is False,
-                    "probe cgroup remained frozen after writable scan",
+                    isolation._probe_pid_stopped(mover.pid) is not True,
+                    "probe task remained suspended after writable scan",
                 )
             finally:
                 isolation.os.open = original_open
@@ -266,51 +307,27 @@ replace_once(
     claims,
     '    "probe_writable_scan_binds_queued_directory_identity": true,\n',
     '    "probe_writable_scan_binds_queued_directory_identity": true,\n'
-    '    "probe_writable_scan_cgroup_frozen": true,\n',
+    '    "probe_writable_scan_cgroup_suspended": true,\n',
 )
 state = "state/phase9.json"
 replace_once(
     state,
     '    "probe_writable_scan_binds_queued_directory_identity": true,\n',
     '    "probe_writable_scan_binds_queued_directory_identity": true,\n'
-    '    "probe_writable_scan_cgroup_frozen": true,\n',
+    '    "probe_writable_scan_cgroup_suspended": true,\n',
 )
 replace_once(
     state,
     "Live writable-tree accounting binds queued directory device/inode identity, opens queued directories no-follow, restarts from the bound roots on transient child ENOENT or identity substitution, and rejects persistent churn after a bounded restart budget.",
-    "Live writable-tree accounting freezes the delegated probe cgroup before binding roots and scanning all writable trees, then thaws it afterward; queued directories remain device/inode-bound and no-follow opened, transient child ENOENT or identity substitution restarts from the bound roots, and persistent churn is rejected after a bounded restart budget.",
+    "Live writable-tree accounting suspends every task in the delegated probe cgroup and proves quiescence before binding roots and scanning all writable trees, then resumes the cgroup afterward; queued directories remain device/inode-bound and no-follow opened, transient child ENOENT or identity substitution restarts from the bound roots, and persistent churn is rejected after a bounded restart budget.",
 )
 
-# 4. Synchronize documentation and CI delegation.
+# 4. Document the coherent-snapshot boundary.
 docs = "MORIARTY.md"
 replace_once(
     docs,
-    'sudo chown "$(id -u):$(id -g)" "$CGROUP/cgroup.procs"\n',
-    'sudo chown "$(id -u):$(id -g)" "$CGROUP/cgroup.procs" "$CGROUP/cgroup.freeze"\n'
-    'test -w "$CGROUP/cgroup.freeze"\n',
-)
-replace_once(
-    docs,
     "Runtime hardening notes: queued writable directories are bound to their discovered device/inode identity, opened with no-follow directory descriptors, and scanned through the opened descriptor.",
-    "Runtime hardening notes: the delegated probe cgroup is frozen before each live writable-tree scan and thawed afterward, so all writable roots are accounted from one coherent probe snapshot. Queued writable directories are bound to their discovered device/inode identity, opened with no-follow directory descriptors, and scanned through the opened descriptor.",
-)
-
-workflow = ".github/workflows/ci.yml"
-replace_once(
-    workflow,
-    '          sudo chown "$(id -u):$(id -g)" "$PROBE_CGROUP/cgroup.procs"\n'
-    '          test -w "$PROBE_CGROUP/cgroup.procs"\n',
-    '          sudo chown "$(id -u):$(id -g)" "$PROBE_CGROUP/cgroup.procs" "$PROBE_CGROUP/cgroup.freeze"\n'
-    '          test -w "$PROBE_CGROUP/cgroup.procs"\n'
-    '          test -w "$PROBE_CGROUP/cgroup.freeze"\n',
-)
-replace_once(
-    workflow,
-    '            if test -d "$PROBE_CGROUP"; then\n'
-    '              while read -r pid; do\n',
-    '            if test -d "$PROBE_CGROUP"; then\n'
-    '              test -w "$PROBE_CGROUP/cgroup.freeze" && echo 0 > "$PROBE_CGROUP/cgroup.freeze" 2>/dev/null || true\n'
-    '              while read -r pid; do\n',
+    "Runtime hardening notes: the delegated probe cgroup is suspended before each live writable-tree scan and resumed afterward, so all writable roots are accounted from one coherent probe snapshot, including descendants that created new sessions. Queued writable directories are bound to their discovered device/inode identity, opened with no-follow directory descriptors, and scanned through the opened descriptor.",
 )
 
 print("PR21 coherent writable-scan patch applied")
