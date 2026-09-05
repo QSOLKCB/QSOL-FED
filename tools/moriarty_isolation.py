@@ -10,6 +10,7 @@ import json
 import os
 import re
 import resource
+import signal
 import stat
 import sys
 import tarfile
@@ -37,8 +38,10 @@ MAX_PROBE_WRITABLE_BYTES = 2 * 1024 * 1024 * 1024
 MAX_PROBE_WRITABLE_ENTRIES = 65_536
 MAX_PROBE_WRITABLE_DEPTH = 64
 PROBE_WRITABLE_CHECK_INTERVAL_SECONDS = 1.0
+PROBE_WRITABLE_SCAN_MAX_RESTARTS = 8
 PROBE_CGROUP_MEMORY_BYTES = 2 * 1024 * 1024 * 1024
 PROBE_CGROUP_PIDS = 128
+PROBE_CGROUP_SUSPEND_TIMEOUT_SECONDS = 1.0
 MAX_TOOLCHAIN_STAGE_FILE_BYTES = 1024 * 1024 * 1024
 MAX_TOOLCHAIN_STAGE_BYTES = 3 * 1024 * 1024 * 1024
 MAX_TOOLCHAIN_STAGE_ENTRIES = 32_768
@@ -386,42 +389,123 @@ def _apply_probe_resource_limits() -> None:
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 
 
-def probe_writable_tree_within_limits(paths: tuple[Path, ...]) -> bool:
-    total_bytes = 0
-    total_entries = 0
+def _probe_writable_tree_scan(paths: tuple[Path, ...]) -> bool:
+    roots: list[tuple[Path, int, int]] = []
     for supplied in paths:
         try:
             root = Path(supplied).resolve(strict=True)
+            info = root.stat()
         except OSError:
             return False
-        if not root.is_dir():
+        if not stat.S_ISDIR(info.st_mode):
             return False
-        stack: list[tuple[Path, int]] = [(root, 0)]
-        while stack:
-            current, depth = stack.pop()
-            if depth > MAX_PROBE_WRITABLE_DEPTH:
-                return False
-            try:
-                with os.scandir(current) as iterator:
-                    for entry in iterator:
-                        total_entries += 1
-                        if total_entries > MAX_PROBE_WRITABLE_ENTRIES:
+        roots.append((root, info.st_dev, info.st_ino))
+
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
+    for _attempt in range(PROBE_WRITABLE_SCAN_MAX_RESTARTS + 1):
+        total_bytes = 0
+        total_entries = 0
+        restart = False
+        for root, root_dev, root_ino in roots:
+            stack: list[tuple[Path, int, int, int]] = [(root, 0, root_dev, root_ino)]
+            while stack:
+                current, depth, expected_dev, expected_ino = stack.pop()
+                if depth > MAX_PROBE_WRITABLE_DEPTH:
+                    return False
+                try:
+                    current_fd = os.open(current, directory_flags)
+                except FileNotFoundError:
+                    if current == root:
+                        return False
+                    restart = True
+                    break
+                except OSError:
+                    return False
+                try:
+                    opened = os.fstat(current_fd)
+                    if (
+                        not stat.S_ISDIR(opened.st_mode)
+                        or opened.st_dev != expected_dev
+                        or opened.st_ino != expected_ino
+                    ):
+                        if current == root:
                             return False
-                        try:
-                            info = entry.stat(follow_symlinks=False)
-                        except OSError:
+                        # The queued pathname was replaced after discovery.
+                        # Restart from the bound roots so a moved subtree is
+                        # re-enumerated instead of scanning the replacement.
+                        restart = True
+                        break
+                    try:
+                        with os.scandir(current_fd) as iterator:
+                            for entry in iterator:
+                                total_entries += 1
+                                if total_entries > MAX_PROBE_WRITABLE_ENTRIES:
+                                    return False
+                                try:
+                                    info = entry.stat(follow_symlinks=False)
+                                except FileNotFoundError:
+                                    # A concurrent unlink/rename invalidates this
+                                    # accounting pass. Restart from the bound roots
+                                    # so a renamed subtree cannot escape counting.
+                                    restart = True
+                                    break
+                                except OSError:
+                                    return False
+                                if stat.S_ISDIR(info.st_mode):
+                                    stack.append(
+                                        (current / entry.name, depth + 1, info.st_dev, info.st_ino)
+                                    )
+                                elif stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode):
+                                    total_bytes += info.st_size
+                                    if total_bytes > MAX_PROBE_WRITABLE_BYTES:
+                                        return False
+                                else:
+                                    return False
+                    except FileNotFoundError:
+                        if current == root:
                             return False
-                        if stat.S_ISDIR(info.st_mode):
-                            stack.append((Path(entry.path), depth + 1))
-                        elif stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode):
-                            total_bytes += info.st_size
-                            if total_bytes > MAX_PROBE_WRITABLE_BYTES:
-                                return False
-                        else:
-                            return False
-            except OSError:
-                return False
-    return True
+                        # Descriptor enumeration raced with transient child
+                        # disappearance. Rebuild accounting from the bound roots.
+                        restart = True
+                    except OSError:
+                        # Enumeration failures such as EIO are closed resource-scan
+                        # failures, not exceptions that may escape run_probe().
+                        return False
+                finally:
+                    os.close(current_fd)
+                if restart:
+                    break
+            if restart:
+                break
+        if not restart:
+            return True
+    # Persistent mutation can otherwise keep producing incomplete
+    # snapshots. Bounded churn therefore fails closed.
+    return False
+
+
+def probe_writable_tree_within_limits(paths: tuple[Path, ...]) -> bool:
+    """Account one coherent writable snapshot while live probe tasks are suspended."""
+    cgroup_value = os.environ.get("MORIARTY_PROBE_CGROUP")
+    if not cgroup_value:
+        return _probe_writable_tree_scan(paths)
+    try:
+        cgroup = probe_cgroup_root(Path(cgroup_value))
+        active = bool(probe_cgroup_pids(cgroup))
+    except SystemExit:
+        return False
+    if not active:
+        return _probe_writable_tree_scan(paths)
+    suspended = _suspend_probe_cgroup(cgroup)
+    if suspended is None:
+        return False
+    result = False
+    try:
+        result = _probe_writable_tree_scan(paths)
+    finally:
+        if not _resume_probe_cgroup(cgroup, suspended):
+            result = False
+    return result
 
 
 def _mountinfo_unescape(value: str) -> str:
@@ -526,7 +610,9 @@ def probe_cgroup_root(path: Path) -> Path:
         fail("moriarty_probe_cgroup_path_invalid")
     if not (cgroup_root / "cgroup.controllers").is_file():
         fail("moriarty_probe_cgroup_v2_required")
-    for name in ("cgroup.procs", "memory.max", "pids.max"):
+    if not hasattr(os, "pidfd_open") or not hasattr(signal, "pidfd_send_signal"):
+        fail("moriarty_probe_cgroup_pidfd_signaling_required")
+    for name in ("cgroup.procs", "cgroup.threads", "memory.max", "pids.max"):
         if not (root / name).is_file():
             fail(f"moriarty_probe_cgroup_file_missing:{name}")
     _parse_cgroup_limit(root / "memory.max", PROBE_CGROUP_MEMORY_BYTES, "memory_max")
@@ -551,17 +637,238 @@ def probe_cgroup_pids(root: Path) -> tuple[int, ...]:
         fail("moriarty_probe_cgroup_process_list_invalid")
 
 
+def probe_cgroup_threads(root: Path) -> tuple[int, ...]:
+    """Return every thread ID currently resident in the dedicated probe cgroup."""
+    try:
+        values = (root / "cgroup.threads").read_text(encoding="ascii").splitlines()
+        tids = tuple(sorted(int(value) for value in values if value))
+    except (OSError, UnicodeError, ValueError):
+        fail("moriarty_probe_cgroup_thread_list_invalid")
+    if len(tids) != len(set(tids)):
+        fail("moriarty_probe_cgroup_thread_list_duplicate")
+    return tids
+
+
+def _probe_task_stopped(task_id: int) -> bool | None:
+    try:
+        status = Path(f"/proc/{task_id}/status").read_text(encoding="ascii")
+    except FileNotFoundError:
+        return None
+    except (OSError, UnicodeError):
+        return False
+    for line in status.splitlines():
+        if line.startswith("State:"):
+            fields = line.split()
+            return len(fields) >= 2 and fields[1] in {"T", "t"}
+    return False
+
+
+def _close_probe_pidfds(handles: tuple[tuple[int, int], ...]) -> None:
+    for _pid, pidfd in handles:
+        try:
+            os.close(pidfd)
+        except OSError:
+            pass
+
+
+def _open_probe_cgroup_pidfds(
+    root: Path,
+    pids: tuple[int, ...],
+) -> tuple[tuple[int, int], ...] | None:
+    """Bind candidate cgroup PIDs to stable task identities before signaling."""
+    opened: list[tuple[int, int]] = []
+    for pid in pids:
+        try:
+            pidfd = os.pidfd_open(pid, 0)
+        except ProcessLookupError:
+            continue
+        except OSError:
+            _close_probe_pidfds(tuple(opened))
+            return None
+        opened.append((pid, pidfd))
+    try:
+        current = set(probe_cgroup_pids(root))
+    except SystemExit:
+        _close_probe_pidfds(tuple(opened))
+        return None
+    kept: list[tuple[int, int]] = []
+    for pid, pidfd in opened:
+        if pid not in current:
+            try:
+                os.close(pidfd)
+            except OSError:
+                pass
+            continue
+        try:
+            # Signal 0 proves that the pidfd-bound identity still exists after
+            # cgroup membership was revalidated. A recycled numeric PID cannot
+            # redirect later signals away from this descriptor-bound identity.
+            signal.pidfd_send_signal(pidfd, 0, None, 0)
+        except ProcessLookupError:
+            try:
+                os.close(pidfd)
+            except OSError:
+                pass
+            continue
+        except OSError:
+            try:
+                os.close(pidfd)
+            except OSError:
+                pass
+            _close_probe_pidfds(tuple(kept))
+            for other_pid, other_fd in opened:
+                if other_fd == pidfd or (other_pid, other_fd) in kept:
+                    continue
+                try:
+                    os.close(other_fd)
+                except OSError:
+                    pass
+            return None
+        kept.append((pid, pidfd))
+    return tuple(kept)
+
+
+def _signal_probe_pidfds(
+    handles: tuple[tuple[int, int], ...],
+    sig: int,
+    *,
+    require_present: bool = False,
+) -> bool:
+    for _pid, pidfd in handles:
+        try:
+            signal.pidfd_send_signal(pidfd, sig, None, 0)
+        except ProcessLookupError:
+            # STOP requires every bound identity to still exist so the caller
+            # can reacquire a coherent cgroup membership snapshot. CONT/KILL
+            # may harmlessly encounter tasks that exited after the operation.
+            if require_present:
+                return False
+        except OSError:
+            return False
+    return True
+
+
+def _suspend_probe_cgroup(root: Path) -> tuple[tuple[int, int], ...] | None:
+    """SIGSTOP pidfd-bound members, then prove every cgroup thread quiescent."""
+    deadline = time.monotonic() + PROBE_CGROUP_SUSPEND_TIMEOUT_SECONDS
+    while True:
+        try:
+            pids = probe_cgroup_pids(root)
+        except SystemExit:
+            return None
+        if not pids:
+            return ()
+        handles = _open_probe_cgroup_pidfds(root, pids)
+        if handles is None:
+            return None
+        handle_pids = tuple(pid for pid, _fd in handles)
+        if handle_pids != pids:
+            _close_probe_pidfds(handles)
+            if time.monotonic() >= deadline:
+                return None
+            continue
+        if not _signal_probe_pidfds(handles, signal.SIGSTOP, require_present=True):
+            _signal_probe_pidfds(handles, signal.SIGCONT)
+            _close_probe_pidfds(handles)
+            if time.monotonic() >= deadline:
+                return None
+            continue
+
+        # Do not resume merely because sibling threads have not all entered the
+        # stopped state after the first scheduler tick. Keeping the pidfd-bound
+        # process stopped allows a large thread group to converge. Only process
+        # membership drift invalidates the identity set and requires reacquire.
+        while True:
+            try:
+                current_pids = probe_cgroup_pids(root)
+                threads = probe_cgroup_threads(root)
+            except SystemExit:
+                _signal_probe_pidfds(handles, signal.SIGCONT)
+                _close_probe_pidfds(handles)
+                return None
+            if current_pids != pids:
+                _signal_probe_pidfds(handles, signal.SIGCONT)
+                _close_probe_pidfds(handles)
+                break
+            if threads and all(_probe_task_stopped(tid) is True for tid in threads):
+                try:
+                    confirm_threads = probe_cgroup_threads(root)
+                    confirm_pids = probe_cgroup_pids(root)
+                except SystemExit:
+                    _signal_probe_pidfds(handles, signal.SIGCONT)
+                    _close_probe_pidfds(handles)
+                    return None
+                if (
+                    confirm_threads == threads
+                    and confirm_pids == pids
+                    and all(_probe_task_stopped(tid) is True for tid in confirm_threads)
+                ):
+                    # pidfds remain open across the scan, so resume is bound to
+                    # the exact identities that were stopped, never reused PIDs.
+                    return handles
+            if time.monotonic() >= deadline:
+                _signal_probe_pidfds(handles, signal.SIGCONT)
+                _close_probe_pidfds(handles)
+                return None
+            # Reassert the process-directed group stop through the same stable
+            # pidfds so sibling threads created during stop convergence cannot
+            # remain runnable.
+            if not _signal_probe_pidfds(handles, signal.SIGSTOP, require_present=True):
+                _signal_probe_pidfds(handles, signal.SIGCONT)
+                _close_probe_pidfds(handles)
+                break
+            time.sleep(0.001)
+
+
+def _resume_probe_cgroup(root: Path, handles: tuple[tuple[int, int], ...]) -> bool:
+    deadline = time.monotonic() + PROBE_CGROUP_SUSPEND_TIMEOUT_SECONDS
+    try:
+        if not _signal_probe_pidfds(handles, signal.SIGCONT):
+            return False
+        while True:
+            try:
+                pids = probe_cgroup_pids(root)
+            except SystemExit:
+                return False
+            if not pids:
+                return True
+            try:
+                threads = probe_cgroup_threads(root)
+            except SystemExit:
+                return False
+            if all(_probe_task_stopped(tid) is not True for tid in threads):
+                try:
+                    confirm_threads = probe_cgroup_threads(root)
+                    confirm_pids = probe_cgroup_pids(root)
+                except SystemExit:
+                    return False
+                if (
+                    confirm_threads == threads
+                    and confirm_pids == pids
+                    and all(_probe_task_stopped(tid) is not True for tid in confirm_threads)
+                ):
+                    return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.001)
+    finally:
+        _close_probe_pidfds(handles)
+
+
 def kill_probe_cgroup(root: Path) -> None:
-    """Kill every remaining task in the delegated probe cgroup."""
+    """Kill every remaining task using pidfd-bound cgroup membership snapshots."""
     for _ in range(8):
         pids = probe_cgroup_pids(root)
         if not pids:
             return
-        for pid in pids:
-            try:
-                os.kill(pid, 9)
-            except ProcessLookupError:
-                pass
+        handles = _open_probe_cgroup_pidfds(root, pids)
+        if handles is None:
+            fail("moriarty_probe_cgroup_pidfd_open_failed")
+        try:
+            if not _signal_probe_pidfds(handles, signal.SIGKILL):
+                fail("moriarty_probe_cgroup_pidfd_kill_failed")
+        finally:
+            _close_probe_pidfds(handles)
         time.sleep(0.01)
     if probe_cgroup_pids(root):
         fail("moriarty_probe_cgroup_descendants_survived")

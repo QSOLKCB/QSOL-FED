@@ -1628,6 +1628,25 @@ def _probe_failure_result(probe_id: str, kind: str, diagnostic: bytes) -> dict[s
     }
 
 
+
+def _timed_writable_check(
+    paths: tuple[Path, ...],
+    deadline: float,
+    *,
+    now_fn: Any = time.monotonic,
+) -> tuple[bool, float, float, float]:
+    """Run one live scan without charging harness suspension to probe runtime."""
+    started = now_fn()
+    within_limits = probe_writable_tree_within_limits(paths)
+    finished = now_fn()
+    if finished < started:
+        fail("moriarty_writable_scan_monotonic_clock_regressed")
+    suspended_seconds = finished - started
+    adjusted_deadline = deadline + suspended_seconds
+    next_check = finished + _moriarty_isolation.PROBE_WRITABLE_CHECK_INTERVAL_SECONDS
+    return within_limits, adjusted_deadline, next_check, finished
+
+
 def run_probe(
     probe_id: str,
     home: Path,
@@ -1735,11 +1754,13 @@ def run_probe(
         while selector.get_map():
             now = time.monotonic()
             if failure_kind is None and now >= next_writable_check:
-                if not probe_writable_tree_within_limits(tuple(private_writable_paths)):
+                within_limits, deadline, next_writable_check, now = _timed_writable_check(
+                    tuple(private_writable_paths), deadline
+                )
+                if not within_limits:
                     failure_kind = "tool_error"
                     _kill_probe_tree(process)
                     termination_deadline = now + TERMINATION_DRAIN_SECONDS
-                next_writable_check = now + _moriarty_isolation.PROBE_WRITABLE_CHECK_INTERVAL_SECONDS
             remaining = deadline - now
             direct_exited = process.poll() is not None
             if remaining <= 0 and failure_kind is None:
