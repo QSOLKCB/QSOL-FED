@@ -22,12 +22,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("tools/pr21_pidfd_convergence_fix.py")
+          text = path.read_text(encoding="utf-8")
+          old = 'end = text.index("def _resume_probe_cgroup(\\n", start)'
+          new = 'end = text.index("def _resume_probe_cgroup(root: Path, handles: tuple[tuple[int, int], ...]) -> bool:\\n", start)'
+          if text.count(old) != 1:
+              raise SystemExit("pidfd convergence carrier boundary drift")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
           python3 tools/pr21_pidfd_convergence_fix.py
           python3 -m py_compile tools/moriarty_isolation.py tools/run_moriarty.py tools/validate_phase9_gate.py
           git diff --check
           grep -q 'Keeping the pidfd-bound' tools/moriarty_isolation.py || grep -q 'Keeping the pidfd-bound process stopped' tools/moriarty_isolation.py
           grep -q 'require_present=True' tools/moriarty_isolation.py
-          git rm tools/pr21_pidfd_convergence_fix.py
+          git rm -f tools/pr21_pidfd_convergence_fix.py
           git config user.name "EmergentMonk"
           git config user.email "73952179+EmergentMonk@users.noreply.github.com"
           git add tools/moriarty_isolation.py
