@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22345480.svg)](https://doi.org/10.5281/zenodo.22345480)
+
 # QSOL-FED
 
 **Sovereign federation protocol for independent computational worlds, AI councils, research systems, humans and deterministic services.**
