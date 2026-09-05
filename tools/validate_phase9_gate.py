@@ -248,6 +248,8 @@ def _validate_claim_document(previous: dict[str, Any], current: dict[str, Any]) 
         "isolated_source_export", "committed_cargo_lock", "opened_executable_binding",
         "cache_only_cargo_home", "exclusive_external_report_output",
         "remediation_transition_verified", "network_syscalls_denied", "probe_proc_read_isolated",
+        "probe_writable_scan_restarts_on_transient_enoent", "probe_writable_scan_persistent_churn_rejects",
+        "probe_writable_scan_binds_queued_directory_identity",
         "per_probe_cargo_home", "verified_cargo_registry_archives", "staged_rust_toolchain_runtime",
         "production_credentials_used", "production_targets_used", "constitutional_bypass_used",
         "report_is_security_proof", "no_counterexample_found_means_none_exist", "authority_effect",
@@ -274,8 +276,10 @@ def _validate_claim_document(previous: dict[str, Any], current: dict[str, Any]) 
         "accepted_counterexample_registry", "fixed_repository_probe_map", "cross_phase_regression_sweep",
         "isolated_source_export", "committed_cargo_lock", "opened_executable_binding",
         "cache_only_cargo_home", "exclusive_external_report_output", "remediation_transition_verified",
-        "network_syscalls_denied", "probe_proc_read_isolated", "per_probe_cargo_home",
-        "verified_cargo_registry_archives", "staged_rust_toolchain_runtime",
+        "network_syscalls_denied", "probe_proc_read_isolated",
+        "probe_writable_scan_restarts_on_transient_enoent", "probe_writable_scan_persistent_churn_rejects",
+        "probe_writable_scan_binds_queued_directory_identity",
+        "per_probe_cargo_home", "verified_cargo_registry_archives", "staged_rust_toolchain_runtime",
     ):
         require(assurance.get(key) is True, f"Phase 9 assurance drift: {key}")
     for key in (
