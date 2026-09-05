@@ -1,0 +1,35 @@
+name: PR21 pidfd convergence fix
+
+on:
+  push:
+    branches:
+      - ci/moriarty-writable-scan-race
+    paths:
+      - .github/workflows/pr21-pidfd-convergence-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ci/moriarty-writable-scan-race
+          fetch-depth: 0
+      - name: Apply and commit pidfd quiescence convergence fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/pr21_pidfd_convergence_fix.py
+          python3 -m py_compile tools/moriarty_isolation.py tools/run_moriarty.py tools/validate_phase9_gate.py
+          git diff --check
+          grep -q 'Keeping the pidfd-bound' tools/moriarty_isolation.py || grep -q 'Keeping the pidfd-bound process stopped' tools/moriarty_isolation.py
+          grep -q 'require_present=True' tools/moriarty_isolation.py
+          git rm tools/pr21_pidfd_convergence_fix.py
+          git config user.name "EmergentMonk"
+          git config user.email "73952179+EmergentMonk@users.noreply.github.com"
+          git add tools/moriarty_isolation.py
+          git commit -m "fix: let pidfd-bound thread groups reach quiescence"
+          git push origin HEAD:ci/moriarty-writable-scan-race
