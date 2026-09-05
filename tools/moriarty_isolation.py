@@ -10,6 +10,7 @@ import json
 import os
 import re
 import resource
+import signal
 import stat
 import sys
 import tarfile
@@ -40,6 +41,7 @@ PROBE_WRITABLE_CHECK_INTERVAL_SECONDS = 1.0
 PROBE_WRITABLE_SCAN_MAX_RESTARTS = 8
 PROBE_CGROUP_MEMORY_BYTES = 2 * 1024 * 1024 * 1024
 PROBE_CGROUP_PIDS = 128
+PROBE_CGROUP_SUSPEND_TIMEOUT_SECONDS = 1.0
 MAX_TOOLCHAIN_STAGE_FILE_BYTES = 1024 * 1024 * 1024
 MAX_TOOLCHAIN_STAGE_BYTES = 3 * 1024 * 1024 * 1024
 MAX_TOOLCHAIN_STAGE_ENTRIES = 32_768
@@ -387,7 +389,7 @@ def _apply_probe_resource_limits() -> None:
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 
 
-def probe_writable_tree_within_limits(paths: tuple[Path, ...]) -> bool:
+def _probe_writable_tree_scan(paths: tuple[Path, ...]) -> bool:
     roots: list[tuple[Path, int, int]] = []
     for supplied in paths:
         try:
@@ -480,6 +482,31 @@ def probe_writable_tree_within_limits(paths: tuple[Path, ...]) -> bool:
     # Persistent mutation can otherwise keep producing incomplete
     # snapshots. Bounded churn therefore fails closed.
     return False
+
+
+def probe_writable_tree_within_limits(paths: tuple[Path, ...]) -> bool:
+    """Account one coherent writable snapshot while live probe tasks are suspended."""
+    cgroup_value = os.environ.get("MORIARTY_PROBE_CGROUP")
+    if not cgroup_value:
+        return _probe_writable_tree_scan(paths)
+    try:
+        cgroup = probe_cgroup_root(Path(cgroup_value))
+        active = bool(probe_cgroup_pids(cgroup))
+    except SystemExit:
+        return False
+    if not active:
+        return _probe_writable_tree_scan(paths)
+    suspended = _suspend_probe_cgroup(cgroup)
+    if suspended is None:
+        _resume_probe_cgroup(cgroup)
+        return False
+    result = False
+    try:
+        result = _probe_writable_tree_scan(paths)
+    finally:
+        if not _resume_probe_cgroup(cgroup):
+            result = False
+    return result
 
 
 def _mountinfo_unescape(value: str) -> str:
@@ -607,6 +634,85 @@ def probe_cgroup_pids(root: Path) -> tuple[int, ...]:
         return tuple(sorted(int(value) for value in values if value))
     except (OSError, UnicodeError, ValueError):
         fail("moriarty_probe_cgroup_process_list_invalid")
+
+
+def _probe_pid_stopped(pid: int) -> bool | None:
+    try:
+        status = Path(f"/proc/{pid}/status").read_text(encoding="ascii")
+    except FileNotFoundError:
+        return None
+    except (OSError, UnicodeError):
+        return False
+    for line in status.splitlines():
+        if line.startswith("State:"):
+            fields = line.split()
+            return len(fields) >= 2 and fields[1] in {"T", "t"}
+    return False
+
+
+def _suspend_probe_cgroup(root: Path) -> tuple[int, ...] | None:
+    """SIGSTOP every task in the dedicated probe cgroup and prove quiescence."""
+    deadline = time.monotonic() + PROBE_CGROUP_SUSPEND_TIMEOUT_SECONDS
+    while True:
+        try:
+            pids = probe_cgroup_pids(root)
+        except SystemExit:
+            return None
+        if not pids:
+            return ()
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGSTOP)
+            except ProcessLookupError:
+                pass
+            except OSError:
+                return None
+        time.sleep(0.001)
+        try:
+            current = probe_cgroup_pids(root)
+        except SystemExit:
+            return None
+        if not current:
+            return ()
+        if all(_probe_pid_stopped(pid) is True for pid in current):
+            try:
+                confirm = probe_cgroup_pids(root)
+            except SystemExit:
+                return None
+            if confirm == current and all(_probe_pid_stopped(pid) is True for pid in confirm):
+                return confirm
+        if time.monotonic() >= deadline:
+            return None
+
+
+def _resume_probe_cgroup(root: Path) -> bool:
+    deadline = time.monotonic() + PROBE_CGROUP_SUSPEND_TIMEOUT_SECONDS
+    while True:
+        try:
+            pids = probe_cgroup_pids(root)
+        except SystemExit:
+            return False
+        if not pids:
+            return True
+        ok = True
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGCONT)
+            except ProcessLookupError:
+                pass
+            except OSError:
+                ok = False
+        if not ok:
+            return False
+        time.sleep(0.001)
+        try:
+            current = probe_cgroup_pids(root)
+        except SystemExit:
+            return False
+        if all(_probe_pid_stopped(pid) is not True for pid in current):
+            return True
+        if time.monotonic() >= deadline:
+            return False
 
 
 def kill_probe_cgroup(root: Path) -> None:

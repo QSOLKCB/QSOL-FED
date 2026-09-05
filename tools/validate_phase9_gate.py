@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 from pathlib import Path
 from typing import Any, Callable
 
@@ -249,7 +250,7 @@ def _validate_claim_document(previous: dict[str, Any], current: dict[str, Any]) 
         "cache_only_cargo_home", "exclusive_external_report_output",
         "remediation_transition_verified", "network_syscalls_denied", "probe_proc_read_isolated",
         "probe_writable_scan_restarts_on_transient_enoent", "probe_writable_scan_persistent_churn_rejects",
-        "probe_writable_scan_binds_queued_directory_identity",
+        "probe_writable_scan_binds_queued_directory_identity", "probe_writable_scan_cgroup_suspended",
         "per_probe_cargo_home", "verified_cargo_registry_archives", "staged_rust_toolchain_runtime",
         "production_credentials_used", "production_targets_used", "constitutional_bypass_used",
         "report_is_security_proof", "no_counterexample_found_means_none_exist", "authority_effect",
@@ -278,7 +279,7 @@ def _validate_claim_document(previous: dict[str, Any], current: dict[str, Any]) 
         "cache_only_cargo_home", "exclusive_external_report_output", "remediation_transition_verified",
         "network_syscalls_denied", "probe_proc_read_isolated",
         "probe_writable_scan_restarts_on_transient_enoent", "probe_writable_scan_persistent_churn_rejects",
-        "probe_writable_scan_binds_queued_directory_identity",
+        "probe_writable_scan_binds_queued_directory_identity", "probe_writable_scan_cgroup_suspended",
         "per_probe_cargo_home", "verified_cargo_registry_archives", "staged_rust_toolchain_runtime",
     ):
         require(assurance.get(key) is True, f"Phase 9 assurance drift: {key}")
@@ -353,7 +354,7 @@ def validate_contract() -> None:
         require(operator[key] is False, f"MORIARTY operator boundary weakened: {key}")
 
     execution = state["execution_boundary"]
-    expected_execution_fields = {'fixed_repository_probe_map', 'production_credentials_allowed', 'probe_output_bounded', 'production_targets_allowed', 'target_is_exact_git_commit', 'report_output_external_private_exclusive', 'semantic_payload_execution_allowed', 'untracked_inputs_excluded', 'tracked_worktree_must_be_clean', 'cargo_target_outside_source', 'authority_effect', 'probe_process_group_isolated', 'arbitrary_command_execution', 'outbound_network_targeting_allowed', 'checked_out_head_must_equal_target', 'cargo_home_cache_only', 'exact_source_export', 'constitutional_bypass_allowed', 'target_commit_format', 'shell_execution', 'source_export_read_only', 'tool_exec_via_open_descriptor', 'probe_environment_allowlisted', 'probe_network_syscalls_denied', 'probe_proc_read_isolated', 'probe_writable_scan_restarts_on_transient_enoent', 'probe_writable_scan_persistent_churn_rejects', 'probe_writable_scan_binds_queued_directory_identity', 'rust_toolchain_runtime_staged'}
+    expected_execution_fields = {'fixed_repository_probe_map', 'production_credentials_allowed', 'probe_output_bounded', 'production_targets_allowed', 'target_is_exact_git_commit', 'report_output_external_private_exclusive', 'semantic_payload_execution_allowed', 'untracked_inputs_excluded', 'tracked_worktree_must_be_clean', 'cargo_target_outside_source', 'authority_effect', 'probe_process_group_isolated', 'arbitrary_command_execution', 'outbound_network_targeting_allowed', 'checked_out_head_must_equal_target', 'cargo_home_cache_only', 'exact_source_export', 'constitutional_bypass_allowed', 'target_commit_format', 'shell_execution', 'source_export_read_only', 'tool_exec_via_open_descriptor', 'probe_environment_allowlisted', 'probe_network_syscalls_denied', 'probe_proc_read_isolated', 'probe_writable_scan_restarts_on_transient_enoent', 'probe_writable_scan_persistent_churn_rejects', 'probe_writable_scan_binds_queued_directory_identity', 'probe_writable_scan_cgroup_suspended', 'rust_toolchain_runtime_staged'}
     require(set(execution) == expected_execution_fields, "MORIARTY execution boundary field set is not closed")
     required_true = {
         "target_is_exact_git_commit", "checked_out_head_must_equal_target", "tracked_worktree_must_be_clean",
@@ -363,7 +364,8 @@ def validate_contract() -> None:
         "cargo_target_outside_source", "report_output_external_private_exclusive",
         "probe_network_syscalls_denied", "probe_proc_read_isolated",
         "probe_writable_scan_restarts_on_transient_enoent", "probe_writable_scan_persistent_churn_rejects",
-        "probe_writable_scan_binds_queued_directory_identity", "rust_toolchain_runtime_staged",
+        "probe_writable_scan_binds_queued_directory_identity", "probe_writable_scan_cgroup_suspended",
+        "rust_toolchain_runtime_staged",
     }
     for key in required_true:
         require(execution[key] is True, f"MORIARTY exact/fixed execution boundary drift: {key}")
@@ -734,6 +736,7 @@ def validate_probe_map() -> None:
     require(0 < isolation.PROBE_RLIMIT_FSIZE_BYTES <= 512 * 1024 * 1024, "MORIARTY file-size ceiling invalid")
     require(0 < isolation.MAX_PROBE_WRITABLE_BYTES <= 2 * 1024 * 1024 * 1024, "MORIARTY aggregate writable-byte ceiling invalid")
     require(isolation.PROBE_WRITABLE_SCAN_MAX_RESTARTS == 8, "MORIARTY writable-scan restart budget drift")
+    require(isolation.PROBE_CGROUP_SUSPEND_TIMEOUT_SECONDS == 1.0, "MORIARTY cgroup-suspend timeout drift")
     require(0 < isolation.MAX_TOOLCHAIN_STAGE_BYTES <= 3 * 1024 * 1024 * 1024, "MORIARTY toolchain stage byte ceiling invalid")
     require(0 < isolation.MAX_TOOLCHAIN_STAGE_ENTRIES <= 32768, "MORIARTY toolchain stage entry ceiling invalid")
     system_reads = moriarty._system_read_paths()
@@ -865,7 +868,7 @@ def validate_docs_and_ci() -> None:
         "reopens the owning phase", "production credentials", "production targets",
         "cargo test --all-targets --frozen", "read-only exact-commit export",
         "fail-before/pass-after", "stable through resolution",
-        "persistent writable-tree churn fails closed",
+        "persistent writable-tree churn fails closed", "delegated probe cgroup is suspended",
     ):
         require(marker in docs, f"MORIARTY.md marker missing: {marker}")
 
@@ -1261,6 +1264,99 @@ def validate_writable_scan_race_regressions() -> None:
             )
         finally:
             isolation.os.open = original_open
+
+    cgroup_value = os.environ.get("MORIARTY_PROBE_CGROUP")
+    require(cgroup_value is not None, "cross-root writable-scan regression requires probe cgroup")
+    cgroup = isolation.probe_cgroup_root(Path(cgroup_value))
+    require(not isolation.probe_cgroup_pids(cgroup), "cross-root regression requires an empty probe cgroup")
+    with tempfile.TemporaryDirectory(prefix="moriarty-scan-cross-root-") as temp_dir:
+        root = Path(temp_dir).resolve(strict=True)
+        early = root / "early"
+        late = root / "late"
+        control = root / "control"
+        early.mkdir()
+        late.mkdir()
+        control.mkdir()
+        payload = late / "oversized"
+        payload.write_bytes(b"")
+        os.truncate(payload, isolation.MAX_PROBE_WRITABLE_BYTES + 1)
+        trigger = control / "trigger"
+        ack = control / "ack"
+        ready = control / "ready"
+        mover_program = r"""
+import time
+import sys
+from pathlib import Path
+early = Path(sys.argv[1])
+late = Path(sys.argv[2])
+trigger = Path(sys.argv[3])
+ack = Path(sys.argv[4])
+ready = Path(sys.argv[5])
+ready.write_text("ready", encoding="ascii")
+while not trigger.exists():
+    time.sleep(0.001)
+try:
+    (late / "oversized").rename(early / "oversized")
+except FileNotFoundError:
+    pass
+ack.write_text("moved", encoding="ascii")
+while True:
+    time.sleep(1)
+"""
+        mover = subprocess.Popen(
+            [sys.executable, "-I", "-c", mover_program, str(early), str(late), str(trigger), str(ack), str(ready)],
+            cwd=root,
+            env={"PATH": "/usr/bin:/bin", "HOME": str(control), "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"},
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            preexec_fn=lambda: isolation._join_probe_cgroup(cgroup),
+        )
+        try:
+            deadline = time.monotonic() + 1.0
+            while not ready.exists() and mover.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.001)
+            require(ready.exists() and mover.poll() is None, "cross-root mover did not become ready")
+            original_open = isolation.os.open
+            mover_was_suspended = False
+
+            def trigger_cross_root_move(path, flags, *args, **kwargs):
+                nonlocal mover_was_suspended
+                if not isinstance(path, int) and os.fspath(path) == os.fspath(late) and not trigger.exists():
+                    trigger.write_text("go", encoding="ascii")
+                    wait_deadline = time.monotonic() + 0.05
+                    while not ack.exists() and time.monotonic() < wait_deadline:
+                        time.sleep(0.001)
+                    mover_was_suspended = (
+                        not ack.exists() and isolation._probe_pid_stopped(mover.pid) is True
+                    )
+                return original_open(path, flags, *args, **kwargs)
+
+            try:
+                isolation.os.open = trigger_cross_root_move
+                require(
+                    not isolation.probe_writable_tree_within_limits((early, late)),
+                    "cross-root move hid an oversized payload from writable accounting",
+                )
+                require(mover_was_suspended, "live writable scan did not suspend the complete probe cgroup")
+                require(
+                    isolation._probe_pid_stopped(mover.pid) is not True,
+                    "probe task remained suspended after writable scan",
+                )
+            finally:
+                isolation.os.open = original_open
+        finally:
+            try:
+                mover.kill()
+            except ProcessLookupError:
+                pass
+            try:
+                mover.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                isolation.kill_probe_cgroup(cgroup)
+                mover.wait(timeout=1.0)
+            require(not isolation.probe_cgroup_pids(cgroup), "cross-root mover leaked from probe cgroup")
 
     with tempfile.TemporaryDirectory(prefix="moriarty-scan-bound-") as temp_dir:
         root = Path(temp_dir).resolve(strict=True)
