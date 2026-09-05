@@ -105,6 +105,9 @@
     "remediation_transition_verified": true,
     "network_syscalls_denied": true,
     "probe_proc_read_isolated": true,
+    "probe_writable_scan_restarts_on_transient_enoent": true,
+    "probe_writable_scan_persistent_churn_rejects": true,
+    "probe_writable_scan_binds_queued_directory_identity": true,
     "per_probe_cargo_home": true,
     "verified_cargo_registry_archives": true,
     "staged_rust_toolchain_runtime": true
