@@ -251,7 +251,10 @@ def _validate_claim_document(previous: dict[str, Any], current: dict[str, Any]) 
         "remediation_transition_verified", "network_syscalls_denied", "probe_proc_read_isolated",
         "probe_writable_scan_restarts_on_transient_enoent", "probe_writable_scan_persistent_churn_rejects",
         "probe_writable_scan_binds_queued_directory_identity", "probe_writable_scan_cgroup_suspended",
-        "probe_writable_scan_all_threads_verified", "per_probe_cargo_home", "verified_cargo_registry_archives", "staged_rust_toolchain_runtime",
+        "probe_writable_scan_all_threads_verified", "probe_cgroup_signals_pidfd_bound",
+        "probe_writable_scan_suspension_not_charged_to_timeout",
+        "probe_writable_scan_next_check_from_completion",
+        "per_probe_cargo_home", "verified_cargo_registry_archives", "staged_rust_toolchain_runtime",
         "production_credentials_used", "production_targets_used", "constitutional_bypass_used",
         "report_is_security_proof", "no_counterexample_found_means_none_exist", "authority_effect",
     }
@@ -280,7 +283,10 @@ def _validate_claim_document(previous: dict[str, Any], current: dict[str, Any]) 
         "network_syscalls_denied", "probe_proc_read_isolated",
         "probe_writable_scan_restarts_on_transient_enoent", "probe_writable_scan_persistent_churn_rejects",
         "probe_writable_scan_binds_queued_directory_identity", "probe_writable_scan_cgroup_suspended",
-        "probe_writable_scan_all_threads_verified", "per_probe_cargo_home", "verified_cargo_registry_archives", "staged_rust_toolchain_runtime",
+        "probe_writable_scan_all_threads_verified", "probe_cgroup_signals_pidfd_bound",
+        "probe_writable_scan_suspension_not_charged_to_timeout",
+        "probe_writable_scan_next_check_from_completion",
+        "per_probe_cargo_home", "verified_cargo_registry_archives", "staged_rust_toolchain_runtime",
     ):
         require(assurance.get(key) is True, f"Phase 9 assurance drift: {key}")
     for key in (
@@ -354,7 +360,7 @@ def validate_contract() -> None:
         require(operator[key] is False, f"MORIARTY operator boundary weakened: {key}")
 
     execution = state["execution_boundary"]
-    expected_execution_fields = {'fixed_repository_probe_map', 'production_credentials_allowed', 'probe_output_bounded', 'production_targets_allowed', 'target_is_exact_git_commit', 'report_output_external_private_exclusive', 'semantic_payload_execution_allowed', 'untracked_inputs_excluded', 'tracked_worktree_must_be_clean', 'cargo_target_outside_source', 'authority_effect', 'probe_process_group_isolated', 'arbitrary_command_execution', 'outbound_network_targeting_allowed', 'checked_out_head_must_equal_target', 'cargo_home_cache_only', 'exact_source_export', 'constitutional_bypass_allowed', 'target_commit_format', 'shell_execution', 'source_export_read_only', 'tool_exec_via_open_descriptor', 'probe_environment_allowlisted', 'probe_network_syscalls_denied', 'probe_proc_read_isolated', 'probe_writable_scan_restarts_on_transient_enoent', 'probe_writable_scan_persistent_churn_rejects', 'probe_writable_scan_binds_queued_directory_identity', 'probe_writable_scan_cgroup_suspended', 'probe_writable_scan_all_threads_verified', 'rust_toolchain_runtime_staged'}
+    expected_execution_fields = {'fixed_repository_probe_map', 'production_credentials_allowed', 'probe_output_bounded', 'production_targets_allowed', 'target_is_exact_git_commit', 'report_output_external_private_exclusive', 'semantic_payload_execution_allowed', 'untracked_inputs_excluded', 'tracked_worktree_must_be_clean', 'cargo_target_outside_source', 'authority_effect', 'probe_process_group_isolated', 'arbitrary_command_execution', 'outbound_network_targeting_allowed', 'checked_out_head_must_equal_target', 'cargo_home_cache_only', 'exact_source_export', 'constitutional_bypass_allowed', 'target_commit_format', 'shell_execution', 'source_export_read_only', 'tool_exec_via_open_descriptor', 'probe_environment_allowlisted', 'probe_network_syscalls_denied', 'probe_proc_read_isolated', 'probe_writable_scan_restarts_on_transient_enoent', 'probe_writable_scan_persistent_churn_rejects', 'probe_writable_scan_binds_queued_directory_identity', 'probe_writable_scan_cgroup_suspended', 'probe_writable_scan_all_threads_verified', 'probe_cgroup_signals_pidfd_bound', 'probe_writable_scan_suspension_not_charged_to_timeout', 'probe_writable_scan_next_check_from_completion', 'rust_toolchain_runtime_staged'}
     require(set(execution) == expected_execution_fields, "MORIARTY execution boundary field set is not closed")
     required_true = {
         "target_is_exact_git_commit", "checked_out_head_must_equal_target", "tracked_worktree_must_be_clean",
@@ -365,7 +371,9 @@ def validate_contract() -> None:
         "probe_network_syscalls_denied", "probe_proc_read_isolated",
         "probe_writable_scan_restarts_on_transient_enoent", "probe_writable_scan_persistent_churn_rejects",
         "probe_writable_scan_binds_queued_directory_identity", "probe_writable_scan_cgroup_suspended",
-        "probe_writable_scan_all_threads_verified", "rust_toolchain_runtime_staged",
+        "probe_writable_scan_all_threads_verified", "probe_cgroup_signals_pidfd_bound",
+        "probe_writable_scan_suspension_not_charged_to_timeout",
+        "probe_writable_scan_next_check_from_completion", "rust_toolchain_runtime_staged",
     }
     for key in required_true:
         require(execution[key] is True, f"MORIARTY exact/fixed execution boundary drift: {key}")
@@ -737,6 +745,23 @@ def validate_probe_map() -> None:
     require(0 < isolation.MAX_PROBE_WRITABLE_BYTES <= 2 * 1024 * 1024 * 1024, "MORIARTY aggregate writable-byte ceiling invalid")
     require(isolation.PROBE_WRITABLE_SCAN_MAX_RESTARTS == 8, "MORIARTY writable-scan restart budget drift")
     require(isolation.PROBE_CGROUP_SUSPEND_TIMEOUT_SECONDS == 1.0, "MORIARTY cgroup-suspend timeout drift")
+    require(hasattr(isolation.os, "pidfd_open") and hasattr(isolation.signal, "pidfd_send_signal"), "MORIARTY pidfd signaling unavailable")
+    original_writable_check = moriarty.probe_writable_tree_within_limits
+    ticks = iter((100.0, 101.5))
+    try:
+        moriarty.probe_writable_tree_within_limits = lambda _paths: True
+        allowed, adjusted_deadline, scheduled, finished = moriarty._timed_writable_check(
+            (Path("/synthetic-slow-scan"),), 400.0, now_fn=lambda: next(ticks)
+        )
+    finally:
+        moriarty.probe_writable_tree_within_limits = original_writable_check
+    require(allowed, "synthetic slow allowed writable scan was rejected")
+    require(adjusted_deadline == 401.5, "writable-scan suspension time was charged to probe deadline")
+    require(finished == 101.5, "writable-scan completion timestamp drift")
+    require(
+        scheduled == 101.5 + isolation.PROBE_WRITABLE_CHECK_INTERVAL_SECONDS,
+        "next writable scan was not scheduled from scan completion",
+    )
     require(0 < isolation.MAX_TOOLCHAIN_STAGE_BYTES <= 3 * 1024 * 1024 * 1024, "MORIARTY toolchain stage byte ceiling invalid")
     require(0 < isolation.MAX_TOOLCHAIN_STAGE_ENTRIES <= 32768, "MORIARTY toolchain stage entry ceiling invalid")
     system_reads = moriarty._system_read_paths()
@@ -833,7 +858,7 @@ def validate_runner_source() -> None:
         "production_credentials_used", "production_targets_used", "constitutional_bypass_used",
         "security_proof", "no_counterexample_found_implies_none_exist", "stdout_truncated", "stderr_truncated",
         "_bootstrap_verified_blob", "compile(expected", "ALLOWED_OWNER_PHASES", "_RUNTIME_NORMALIZATIONS", "close_fds=True",
-        "probe_writable_tree_within_limits", "probe_quota_root", "MORIARTY_RUST_TOOLCHAIN_ROOT",
+        "probe_writable_tree_within_limits", "_timed_writable_check", "probe_quota_root", "MORIARTY_RUST_TOOLCHAIN_ROOT",
         "MORIARTY_CARGO_CACHE_ROOT", "MORIARTY_PROBE_WRITABLE_ROOT", "allow_abbrev=False",
         "_reject_repository_cargo_execution_hooks", "_cleanup_replay_workspace_paths",
     ):
@@ -869,6 +894,7 @@ def validate_docs_and_ci() -> None:
         "cargo test --all-targets --frozen", "read-only exact-commit export",
         "fail-before/pass-after", "stable through resolution",
         "persistent writable-tree churn fails closed", "delegated probe cgroup is suspended",
+        "pidfds", "Suspension time is excluded",
         "every cgroup thread is verified stopped",
     ):
         require(marker in docs, f"MORIARTY.md marker missing: {marker}")
@@ -1271,6 +1297,8 @@ def validate_writable_scan_race_regressions() -> None:
     cgroup = isolation.probe_cgroup_root(Path(cgroup_value))
     require(not isolation.probe_cgroup_pids(cgroup), "cross-root regression requires an empty probe cgroup")
     require((cgroup / "cgroup.threads").is_file(), "probe cgroup thread enumeration unavailable")
+    stale_identity = isolation._open_probe_cgroup_pidfds(cgroup, (os.getpid(),))
+    require(stale_identity == (), "stale/recycled outside-cgroup PID identity was admitted for signaling")
     with tempfile.TemporaryDirectory(prefix="moriarty-scan-cross-root-") as temp_dir:
         root = Path(temp_dir).resolve(strict=True)
         early = root / "early"

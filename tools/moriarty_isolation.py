@@ -498,13 +498,12 @@ def probe_writable_tree_within_limits(paths: tuple[Path, ...]) -> bool:
         return _probe_writable_tree_scan(paths)
     suspended = _suspend_probe_cgroup(cgroup)
     if suspended is None:
-        _resume_probe_cgroup(cgroup)
         return False
     result = False
     try:
         result = _probe_writable_tree_scan(paths)
     finally:
-        if not _resume_probe_cgroup(cgroup):
+        if not _resume_probe_cgroup(cgroup, suspended):
             result = False
     return result
 
@@ -611,6 +610,8 @@ def probe_cgroup_root(path: Path) -> Path:
         fail("moriarty_probe_cgroup_path_invalid")
     if not (cgroup_root / "cgroup.controllers").is_file():
         fail("moriarty_probe_cgroup_v2_required")
+    if not hasattr(os, "pidfd_open") or not hasattr(signal, "pidfd_send_signal"):
+        fail("moriarty_probe_cgroup_pidfd_signaling_required")
     for name in ("cgroup.procs", "cgroup.threads", "memory.max", "pids.max"):
         if not (root / name).is_file():
             fail(f"moriarty_probe_cgroup_file_missing:{name}")
@@ -662,8 +663,65 @@ def _probe_task_stopped(task_id: int) -> bool | None:
     return False
 
 
-def _suspend_probe_cgroup(root: Path) -> tuple[int, ...] | None:
-    """SIGSTOP each process, then prove every cgroup thread is quiescent."""
+def _close_probe_pidfds(handles: tuple[tuple[int, int], ...]) -> None:
+    for _pid, pidfd in handles:
+        try:
+            os.close(pidfd)
+        except OSError:
+            pass
+
+
+def _open_probe_cgroup_pidfds(
+    root: Path,
+    pids: tuple[int, ...],
+) -> tuple[tuple[int, int], ...] | None:
+    """Bind candidate cgroup PIDs to stable task identities before signaling."""
+    opened: list[tuple[int, int]] = []
+    try:
+        for pid in pids:
+            try:
+                pidfd = os.pidfd_open(pid, 0)
+            except ProcessLookupError:
+                continue
+            except OSError:
+                return None
+            opened.append((pid, pidfd))
+        try:
+            current = set(probe_cgroup_pids(root))
+        except SystemExit:
+            return None
+        kept: list[tuple[int, int]] = []
+        for pid, pidfd in opened:
+            if pid in current:
+                kept.append((pid, pidfd))
+            else:
+                try:
+                    os.close(pidfd)
+                except OSError:
+                    pass
+        opened = kept
+        return tuple(opened)
+    finally:
+        # Ownership transfers only on a successful return.
+        if opened and any(pid not in locals().get("current", set()) for pid, _fd in opened):
+            _close_probe_pidfds(tuple(opened))
+
+
+def _signal_probe_pidfds(handles: tuple[tuple[int, int], ...], sig: int) -> bool:
+    for _pid, pidfd in handles:
+        try:
+            signal.pidfd_send_signal(pidfd, sig, None, 0)
+        except ProcessLookupError:
+            # The bound task exited; stable membership checks decide whether the
+            # suspension snapshot must be retried.
+            continue
+        except OSError:
+            return False
+    return True
+
+
+def _suspend_probe_cgroup(root: Path) -> tuple[tuple[int, int], ...] | None:
+    """SIGSTOP pidfd-bound members, then prove every cgroup thread quiescent."""
     deadline = time.monotonic() + PROBE_CGROUP_SUSPEND_TIMEOUT_SECONDS
     while True:
         try:
@@ -672,85 +730,97 @@ def _suspend_probe_cgroup(root: Path) -> tuple[int, ...] | None:
             return None
         if not pids:
             return ()
-        for pid in pids:
-            try:
-                os.kill(pid, signal.SIGSTOP)
-            except ProcessLookupError:
-                pass
-            except OSError:
+        handles = _open_probe_cgroup_pidfds(root, pids)
+        if handles is None:
+            return None
+        handle_pids = tuple(pid for pid, _fd in handles)
+        if handle_pids != pids:
+            _close_probe_pidfds(handles)
+            if time.monotonic() >= deadline:
                 return None
+            continue
+        if not _signal_probe_pidfds(handles, signal.SIGSTOP):
+            _signal_probe_pidfds(handles, signal.SIGCONT)
+            _close_probe_pidfds(handles)
+            return None
         time.sleep(0.001)
         try:
             threads = probe_cgroup_threads(root)
         except SystemExit:
+            _signal_probe_pidfds(handles, signal.SIGCONT)
+            _close_probe_pidfds(handles)
             return None
-        if not threads:
-            return ()
-        if all(_probe_task_stopped(tid) is True for tid in threads):
+        if threads and all(_probe_task_stopped(tid) is True for tid in threads):
             try:
                 confirm_threads = probe_cgroup_threads(root)
                 confirm_pids = probe_cgroup_pids(root)
             except SystemExit:
+                _signal_probe_pidfds(handles, signal.SIGCONT)
+                _close_probe_pidfds(handles)
                 return None
             if (
                 confirm_threads == threads
                 and confirm_pids == pids
                 and all(_probe_task_stopped(tid) is True for tid in confirm_threads)
             ):
-                # Once every thread is stopped and the complete thread set is
-                # stable, no task in this cgroup can create another thread or
-                # move a payload until the harness explicitly resumes it.
-                return confirm_threads
+                # pidfds remain open across the scan, so resume is bound to the
+                # exact identities that were stopped rather than reusable PID values.
+                return handles
+        _signal_probe_pidfds(handles, signal.SIGCONT)
+        _close_probe_pidfds(handles)
         if time.monotonic() >= deadline:
             return None
 
 
-def _resume_probe_cgroup(root: Path) -> bool:
+def _resume_probe_cgroup(root: Path, handles: tuple[tuple[int, int], ...]) -> bool:
     deadline = time.monotonic() + PROBE_CGROUP_SUSPEND_TIMEOUT_SECONDS
-    while True:
-        try:
-            pids = probe_cgroup_pids(root)
-        except SystemExit:
+    try:
+        if not _signal_probe_pidfds(handles, signal.SIGCONT):
             return False
-        if not pids:
-            return True
-        ok = True
-        for pid in pids:
+        while True:
             try:
-                os.kill(pid, signal.SIGCONT)
-            except ProcessLookupError:
-                pass
-            except OSError:
-                ok = False
-        if not ok:
-            return False
-        time.sleep(0.001)
-        try:
-            threads = probe_cgroup_threads(root)
-        except SystemExit:
-            return False
-        if all(_probe_task_stopped(tid) is not True for tid in threads):
-            try:
-                confirm = probe_cgroup_threads(root)
+                pids = probe_cgroup_pids(root)
             except SystemExit:
                 return False
-            if confirm == threads and all(_probe_task_stopped(tid) is not True for tid in confirm):
+            if not pids:
                 return True
-        if time.monotonic() >= deadline:
-            return False
+            try:
+                threads = probe_cgroup_threads(root)
+            except SystemExit:
+                return False
+            if all(_probe_task_stopped(tid) is not True for tid in threads):
+                try:
+                    confirm_threads = probe_cgroup_threads(root)
+                    confirm_pids = probe_cgroup_pids(root)
+                except SystemExit:
+                    return False
+                if (
+                    confirm_threads == threads
+                    and confirm_pids == pids
+                    and all(_probe_task_stopped(tid) is not True for tid in confirm_threads)
+                ):
+                    return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.001)
+    finally:
+        _close_probe_pidfds(handles)
 
 
 def kill_probe_cgroup(root: Path) -> None:
-    """Kill every remaining task in the delegated probe cgroup."""
+    """Kill every remaining task using pidfd-bound cgroup membership snapshots."""
     for _ in range(8):
         pids = probe_cgroup_pids(root)
         if not pids:
             return
-        for pid in pids:
-            try:
-                os.kill(pid, 9)
-            except ProcessLookupError:
-                pass
+        handles = _open_probe_cgroup_pidfds(root, pids)
+        if handles is None:
+            fail("moriarty_probe_cgroup_pidfd_open_failed")
+        try:
+            if not _signal_probe_pidfds(handles, signal.SIGKILL):
+                fail("moriarty_probe_cgroup_pidfd_kill_failed")
+        finally:
+            _close_probe_pidfds(handles)
         time.sleep(0.01)
     if probe_cgroup_pids(root):
         fail("moriarty_probe_cgroup_descendants_survived")

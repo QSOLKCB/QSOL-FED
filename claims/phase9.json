@@ -110,6 +110,9 @@
     "probe_writable_scan_binds_queued_directory_identity": true,
     "probe_writable_scan_cgroup_suspended": true,
     "probe_writable_scan_all_threads_verified": true,
+    "probe_cgroup_signals_pidfd_bound": true,
+    "probe_writable_scan_suspension_not_charged_to_timeout": true,
+    "probe_writable_scan_next_check_from_completion": true,
     "per_probe_cargo_home": true,
     "verified_cargo_registry_archives": true,
     "staged_rust_toolchain_runtime": true
