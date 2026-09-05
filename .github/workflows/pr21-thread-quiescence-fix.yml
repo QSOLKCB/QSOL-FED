@@ -46,7 +46,7 @@ jobs:
           grep -q 'cgroup.threads' tools/moriarty_isolation.py
           grep -q 'worker_count = 120' tools/validate_phase9_gate.py
           grep -q 'every cgroup thread is verified stopped' MORIARTY.md
-          git rm tools/pr21_thread_quiescence_fix.py
+          git rm -f tools/pr21_thread_quiescence_fix.py
           git config user.name "EmergentMonk"
           git config user.email "73952179+EmergentMonk@users.noreply.github.com"
           git add tools/moriarty_isolation.py tools/validate_phase9_gate.py state/phase9.json claims/phase9.json MORIARTY.md
